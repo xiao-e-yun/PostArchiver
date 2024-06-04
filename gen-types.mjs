@@ -7,8 +7,9 @@ const files = fs.readdirSync(directory);
 
 let tags = "v0.0.0";
 try {
-  tags = execSync("git describe --tags | grep -oP '^v?\K[0-9]+\.[0-9]+\.[0-9]+'").toString().trim();
+  tags = execSync("git describe --tags").toString().trim();
 } catch {}
+tags = tags.match(/v(\d+\.\d+\.\d+)/)[1];
 
 let indexTs = "// This file is generated automatically\n";
 indexTs += `\n// Build Tags: v${tags}\n`;
