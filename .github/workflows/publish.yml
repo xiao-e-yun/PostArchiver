@@ -5,6 +5,9 @@ on:
       
 name: Publish
 
+permissions:
+  id-token: write
+
 jobs:
   audit:
     name: Audit
