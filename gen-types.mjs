@@ -21,7 +21,7 @@ for (const file of files) {
 fs.writeFileSync(path.join(directory, "index.ts"), indexTs);
 
 const packageJson = `{
-  "name": "@post-archiver/types",
+  "name": "post-archiver",
   "description": "Types for Post Archiver, https://github.com/xiao-e-yun/PostArchiver",
   "version": "${tags}",
   "types": "./index.ts",
