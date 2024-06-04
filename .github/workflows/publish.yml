@@ -45,7 +45,7 @@ jobs:
       # get the version from the git tag
       # use cargo v to update the version in Cargo.toml
       - name: cargo update version
-        run: cargo v $(git describe --tags)
+        run: cargo v $(git describe --tags | grep -oP '^v?\K[0-9]+\.[0-9]+\.[0-9]+') -y
 
       - name: cargo login
         run: cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}

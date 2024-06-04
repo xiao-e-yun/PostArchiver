@@ -7,11 +7,11 @@ const files = fs.readdirSync(directory);
 
 let tags = "v0.0.0";
 try {
-  tags = execSync("git describe --tags").toString().trim();
+  tags = execSync("git describe --tags | grep -oP '^v?\K[0-9]+\.[0-9]+\.[0-9]+'").toString().trim();
 } catch {}
 
 let indexTs = "// This file is generated automatically\n";
-indexTs += `\n// Build Tags: ${tags}\n`;
+indexTs += `\n// Build Tags: v${tags}\n`;
 
 for (const file of files) {
   if (file === "index.ts") continue;
