@@ -17,7 +17,6 @@ pub struct ArchiveAuthorsList(pub Vec<ArchiveAuthorsItem>);
 #[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ArchiveAuthorsItem {
     pub id: String,
-    pub url: PathBuf,
     pub name: String,
     pub r#type: ArchiveByType,
     #[cfg_attr(feature = "typescript", ts(optional))]
@@ -31,7 +30,6 @@ pub struct ArchiveAuthorsItem {
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveAuthor {
     pub id: String,
-    pub url: PathBuf,
     pub name: String,
     pub r#type: ArchiveByType,
     pub posts: Vec<ArchivePostShort>,
@@ -63,10 +61,11 @@ pub struct ArchivePost {
 #[serde(rename_all = "camelCase")]
 pub struct ArchivePostShort {
     pub id: String,
+    pub url: PathBuf,
     pub title: String,
     pub author: String,
-    pub thumb: Option<PathBuf>,
     pub r#type: ArchiveByType,
+    pub thumb: Option<PathBuf>,
     pub updated: DateTime<Local>,
 }
 

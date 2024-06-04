@@ -39,7 +39,6 @@ impl ArchiveAuthorsList {
 impl ArchiveAuthorsItem {
   pub fn extend(&mut self, rhs: Self) {
       self.id = rhs.id;
-      self.url = rhs.url;
       self.name = rhs.name;
       self.r#type = rhs.r#type;
       self.thumb = rhs.thumb.or(self.thumb.clone());
@@ -71,7 +70,6 @@ impl Into<ArchiveAuthorsItem> for ArchiveAuthor {
   fn into(self) -> ArchiveAuthorsItem {
       ArchiveAuthorsItem {
           id: self.id,
-          url: self.url,
           name: self.name,
           thumb: self.thumb,
           r#type: self.r#type,
@@ -84,7 +82,9 @@ impl Into<ArchiveAuthorsItem> for ArchiveAuthor {
 
 impl Into<ArchivePostShort> for ArchivePost {
   fn into(self) -> ArchivePostShort {
+    let url = PathBuf::from(&self.author).join(&self.id);
       ArchivePostShort {
+          url,
           id: self.id,
           title: self.title,
           author: self.author,
