@@ -118,7 +118,7 @@ pub enum ArchiveContent {
 pub struct ArchiveComment {
     pub user: String,
     pub text: String,
-    #[cfg_attr(feature = "typescript", ts(type = "ArchiveComment[] | undefined"))]
+    #[cfg_attr(feature = "typescript", ts(as = "Option<Vec<ArchiveComment>>", optional))]
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub replies: Vec<ArchiveComment>,
 }
