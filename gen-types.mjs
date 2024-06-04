@@ -7,7 +7,7 @@ const files = fs.readdirSync(directory);
 
 let tags = "v0.0.0";
 try {
-  const tags = execSync("git describe --tags").toString().trim();
+  tags = execSync("git describe --tags").toString().trim();
 } catch {}
 
 let indexTs = "// This file is generated automatically\n";
@@ -27,7 +27,7 @@ const packageJson = `{
   "types": "./index.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xiao-e-yun/PostArchiver.git"
+    "url": "git+https://github.com/xiao-e-yun/PostArchiver.git"
   },
   "author": "xiao-e-yun",
   "license": "BSD-3-Clause",
