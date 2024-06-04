@@ -2,7 +2,7 @@
 name = "post-archiver"
 version = "0.0.0"
 edition = "2021"
-license = "BSD 3-Clause"
+license = "BSD-3-Clause"
 description = "A Unify Archive"
 authors = ["xiao-e-yun <a0970323059@gmail.com>"]
 repository = "https://github.com/xiao-e-yun/PostArchiver"
