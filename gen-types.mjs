@@ -27,11 +27,11 @@ const packageJson = `{
   "types": "./index.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xiao-e-yun/PostArchiver.git",
+    "url": "https://github.com/xiao-e-yun/PostArchiver.git"
   },
   "author": "xiao-e-yun",
   "license": "BSD-3-Clause",
-  "homepage": "https://github.com/xiao-e-yun/PostArchiver",
+  "homepage": "https://github.com/xiao-e-yun/PostArchiver"
 }`;
 
 fs.writeFileSync(path.join(directory, "package.json"), packageJson);
