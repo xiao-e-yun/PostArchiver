@@ -41,12 +41,8 @@ jobs:
       - name: "cargo release publish"
         run: |-
           cargo publish \
-            --workspace \
-            --allow-branch HEAD \
             --allow-dirty \
-            --no-confirm \
             --no-verify \
-            --execute
 
 
   ts_publish:
