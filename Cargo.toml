@@ -1,6 +1,6 @@
 [package]
 name = "post-archiver"
-version = "0.0.0"
+version = "0.1.8"
 edition = "2021"
 license = "BSD-3-Clause"
 description = "A Unify Archive"
