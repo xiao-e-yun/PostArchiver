@@ -66,7 +66,7 @@ jobs:
             --execute
 
   ts_publish:
-    name: Build (typescript)
+    name: Publish (npm)
     needs:
       - audit
 
@@ -89,5 +89,6 @@ jobs:
         run: node gen-types.mjs
 
       - run: npm publish --provenance --access public
+        working-directory: ./bindings
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
