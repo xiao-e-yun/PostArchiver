@@ -1,0 +1,13 @@
+[package]
+name = "post-archiver"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+typescript = ["ts-rs"]
+ts-rs = ["dep:ts-rs"]
+
+[dependencies]
+serde = { version = "1.0.203", features = ["derive"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+ts-rs = { version = "8.1.0", features = ["chrono-impl", "no-serde-warnings"], optional = true }
