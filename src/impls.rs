@@ -40,7 +40,7 @@ impl ArchiveAuthorsItem {
   pub fn extend(&mut self, rhs: Self) {
       self.id = rhs.id;
       self.name = rhs.name;
-      self.r#type = rhs.r#type;
+      self.from = rhs.from;
       self.thumb = rhs.thumb.or(self.thumb.clone());
   }
 }
@@ -61,7 +61,7 @@ impl ArchiveAuthor {
       self.id = rhs.id;
       self.posts = posts;
       self.name = rhs.name;
-      self.r#type = rhs.r#type;
+      self.from = rhs.from;
       self.thumb = rhs.thumb.or(self.thumb.clone());
   }
 }
@@ -72,7 +72,7 @@ impl Into<ArchiveAuthorsItem> for ArchiveAuthor {
           id: self.id,
           name: self.name,
           thumb: self.thumb,
-          r#type: self.r#type,
+          from: self.from,
       }
   }
 }
@@ -88,7 +88,7 @@ impl Into<ArchivePostShort> for ArchivePost {
           id: self.id,
           title: self.title,
           author: self.author,
-          r#type: self.r#type,
+          from: self.from,
           updated: self.updated,
           thumb: self.thumb,
       }

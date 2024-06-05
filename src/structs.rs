@@ -1,4 +1,4 @@
-use std::{hash::Hash, path::PathBuf};
+use std::{collections::HashSet, hash::Hash, path::PathBuf};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -9,29 +9,29 @@ use ts_rs::TS;
 
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveAuthorsList(pub Vec<ArchiveAuthorsItem>);
 
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveAuthorsItem {
     pub id: String,
     pub name: String,
-    pub r#type: ArchiveByType,
     #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumb: Option<PathBuf>,
+    pub from: HashSet<ArchiveFrom>,
 }
 
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveAuthor {
     pub id: String,
     pub name: String,
-    pub r#type: ArchiveByType,
+    pub from: HashSet<ArchiveFrom>,
     pub posts: Vec<ArchivePostShort>,
     #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,8 +46,8 @@ pub struct ArchivePost {
     pub id: String,
     pub title: String,
     pub author: String,
+    pub from: ArchiveFrom,
     pub thumb: Option<PathBuf>,
-    pub r#type: ArchiveByType,
     pub files: Vec<ArchiveFile>,
     pub updated: DateTime<Local>,
     pub published: DateTime<Local>,
@@ -64,7 +64,7 @@ pub struct ArchivePostShort {
     pub url: PathBuf,
     pub title: String,
     pub author: String,
-    pub r#type: ArchiveByType,
+    pub from: ArchiveFrom,
     pub thumb: Option<PathBuf>,
     pub updated: DateTime<Local>,
 }
@@ -94,7 +94,7 @@ pub enum ArchiveFile {
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub enum ArchiveByType {
+pub enum ArchiveFrom {
     Fanbox,
 }
 
