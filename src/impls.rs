@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, path::PathBuf};
+use std::{collections::{HashMap, HashSet}, hash::Hash, path::PathBuf};
 
 use crate::structs::*;
 
@@ -79,6 +79,13 @@ impl Into<ArchiveAuthorsItem> for ArchiveAuthor {
 //==============================================================================
 // Post
 //==============================================================================
+impl Hash for ArchivePostShort {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.from.hash(state);
+        self.author.hash(state);
+    }
+}
 
 impl Into<ArchivePostShort> for ArchivePost {
   fn into(self) -> ArchivePostShort {
