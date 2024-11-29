@@ -16,6 +16,7 @@ indexTs += `\n// Build Tags: v${tags}\n`;
 
 for (const file of files) {
   if (file === "index.ts") continue;
+  if (!file.endsWith(".ts")) continue;
   indexTs += `export * from './${file}';\n`;
 }
 
