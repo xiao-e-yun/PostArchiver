@@ -32,11 +32,15 @@ pub struct ArchiveAuthor {
     pub id: String,
     pub name: String,
     pub from: HashSet<ArchiveFrom>,
-    pub posts: Vec<ArchivePostShort>,
     #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumb: Option<PathBuf>,
 }
+
+#[cfg_attr(feature = "typescript", derive(TS))]
+#[cfg_attr(feature = "typescript", ts(export))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ArchiveAuthorPosts(pub Vec<ArchivePostShort>);
 
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
