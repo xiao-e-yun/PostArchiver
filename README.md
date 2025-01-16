@@ -10,6 +10,9 @@ Provide API to web, just deploy a Static Server.
 ### Output
 * Code by your self
 
+### Docs
+[Docs](docs/intro.md)
+
 ## Install
 
 ### For Rust

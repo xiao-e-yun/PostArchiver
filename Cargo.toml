@@ -9,10 +9,16 @@ repository = "https://github.com/xiao-e-yun/PostArchiver"
 
 
 [features]
-typescript = ["ts-rs"]
-ts-rs = ["dep:ts-rs"]
+typescript = ["dep:ts-rs"]
+utils = ["dep:mime_guess"]
+
 
 [dependencies]
-serde = { version = "1.0.203", features = ["derive"] }
+serde = { version = "1.0.203", features = ["derive", "std"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-ts-rs = { version = "8.1.0", features = ["chrono-impl", "no-serde-warnings"], optional = true }
+
+# typescript
+ts-rs = { version = "10.1.0", features = ["chrono-impl", "no-serde-warnings"], optional = true }
+
+# utils
+mime_guess = { version = "2.0.5", optional = true }
