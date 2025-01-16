@@ -1,11 +1,11 @@
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
-use std::{ collections::HashMap, hash::Hash, path::PathBuf };
+use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
-use crate::id::{ AuthorId, FileMetaId, PostId };
+use crate::id::{AuthorId, FileMetaId, PostId};
 
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
@@ -41,12 +41,12 @@ impl Hash for FileMeta {
 
 impl PartialEq for FileMeta {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id &&
-            self.post == other.post &&
-            self.author == other.author &&
-            self.filename == other.filename &&
-            self.mime == other.mime &&
-            self.extra == other.extra
+        self.id == other.id
+            && self.post == other.post
+            && self.author == other.author
+            && self.filename == other.filename
+            && self.mime == other.mime
+            && self.extra == other.extra
     }
 }
 

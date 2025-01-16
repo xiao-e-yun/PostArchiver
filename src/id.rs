@@ -1,7 +1,7 @@
 use crate::wrraper;
 
 use core::fmt;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 

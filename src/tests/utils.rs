@@ -1,8 +1,11 @@
-use crate::{file_meta::FileMeta, id::{ AuthorId, FileMetaId, PostId }, utils::get_mime};
+use crate::{
+    file_meta::FileMeta,
+    id::{AuthorId, FileMetaId, PostId},
+    utils::get_mime,
+};
 
 #[test]
 fn test_guess_mime() {
-
     let file_meta = FileMeta {
         id: FileMetaId::new(0),
         author: AuthorId::new(0),

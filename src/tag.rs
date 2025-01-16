@@ -1,6 +1,6 @@
-use std::hash::{ Hash, Hasher };
+use std::hash::{Hash, Hasher};
 
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "typescript")]
 use ts_rs::TS;

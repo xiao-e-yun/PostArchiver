@@ -1,7 +1,7 @@
-use std::hash::{ Hash, Hasher };
+use std::hash::{Hash, Hasher};
 
-use chrono::{DateTime,Utc};
-use serde::{ Deserialize, Serialize };
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
@@ -9,7 +9,11 @@ pub mod content;
 
 pub use content::*;
 
-use crate::{ comment::Comment, id::{ AuthorId, FileMetaId, PostId, PostSourceId }, link::Link };
+use crate::{
+    comment::Comment,
+    id::{AuthorId, FileMetaId, PostId, PostSourceId},
+    link::Link,
+};
 
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
@@ -40,11 +44,11 @@ impl Hash for Post {
 
 impl PartialEq for Post {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id &&
-            self.author == other.author &&
-            self.source == other.source &&
-            self.updated == other.updated &&
-            self.published == other.published
+        self.id == other.id
+            && self.author == other.author
+            && self.source == other.source
+            && self.updated == other.updated
+            && self.published == other.published
     }
 }
 impl Eq for Post {}

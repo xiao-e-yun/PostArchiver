@@ -1,4 +1,4 @@
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 #[cfg(feature = "typescript")]
