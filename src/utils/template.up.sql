@@ -5,7 +5,7 @@ CREATE TABLE
     authors (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL COLLATE NOCASE,
-        links TEXT NOT NULL DEFAULT '[]',
+        links JSON NOT NULL DEFAULT '[]',
         thumb INTEGER,
         updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -28,9 +28,9 @@ CREATE TABLE
         author INTEGER NOT NULL,
         source TEXT,
         title TEXT NOT NULL,
-        content TEXT NOT NULL,
+        content JSON NOT NULL,
         thumb INTEGER,
-        comments TEXT NOT NULL DEFAULT '[]',
+        comments JSON NOT NULL DEFAULT '[]',
         updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         published DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (author) REFERENCES authors (id) ON DELETE CASCADE
@@ -44,15 +44,23 @@ CREATE INDEX posts_updated_idx ON posts (updated);
 
 -- Tags ---------------------------------------------------
 CREATE TABLE
-    post_tags (
+    tags (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE COLLATE NOCASE
     );
 
 INSERT INTO
-    post_tags (id, name)
+    tags (id, name)
 VALUES
     (0, 'unknown');
+
+CREATE TABLE post_tags (
+    post INTEGER NOT NULL,
+    tag INTEGER NOT NULL,
+    PRIMARY KEY (post, tag),
+    FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE,
+    FOREIGN KEY (tag) REFERENCES tags (id) ON DELETE CASCADE
+);
 
 ------------------------------------------------------------
 -- File Meta System
@@ -64,7 +72,7 @@ CREATE TABLE
         author INTEGER NOT NULL,
         post INTEGER NOT NULL,
         mime TEXT NOT NULL,
-        extra TEXT NOT NULL DEFAULT '{}',
+        extra JSON NOT NULL DEFAULT '{}',
         FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE
     );
 
