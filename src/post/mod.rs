@@ -11,7 +11,7 @@ pub use content::*;
 
 use crate::{
     comment::Comment,
-    id::{AuthorId, FileMetaId, PostId, PostSourceId},
+    id::{AuthorId, FileMetaId, PostId},
     link::Link,
 };
 
@@ -21,8 +21,7 @@ use crate::{
 pub struct Post {
     pub id: PostId,
     pub author: AuthorId,
-    pub source: PostSourceId,
-    pub source_link: Option<Link>,
+    pub source: Option<String>,
     pub title: String,
     pub content: Vec<Content>,
     pub links: Vec<Link>,
@@ -52,3 +51,5 @@ impl PartialEq for Post {
     }
 }
 impl Eq for Post {}
+
+pub struct 
