@@ -14,7 +14,6 @@ pub use tag::*;
 use crate::{
     comment::Comment,
     id::{AuthorId, FileMetaId, PostId},
-    link::Link,
 };
 
 #[cfg_attr(feature = "typescript", derive(TS))]
@@ -26,7 +25,6 @@ pub struct Post {
     pub source: Option<String>,
     pub title: String,
     pub content: Vec<Content>,
-    pub links: Vec<Link>,
     pub thumb: Option<FileMetaId>,
     pub comments: Vec<Comment>,
     pub updated: DateTime<Utc>,
