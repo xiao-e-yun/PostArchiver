@@ -6,8 +6,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub mod content;
+pub mod tag;
 
 pub use content::*;
+pub use tag::*;
 
 use crate::{
     comment::Comment,
@@ -51,5 +53,3 @@ impl PartialEq for Post {
     }
 }
 impl Eq for Post {}
-
-pub struct 

@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
-use crate::id::PostSourceId;
+use crate::id::PostTagId;
 
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Tag {
-    pub id: PostSourceId,
+    pub id: PostTagId,
     pub name: String,
 }
 

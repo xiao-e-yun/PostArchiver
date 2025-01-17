@@ -60,4 +60,4 @@ macro_rules! define_id {
 define_id!(AuthorId);
 define_id!(PostId);
 define_id!(FileMetaId);
-define_id!(PostSourceId);
+define_id!(PostTagId);
