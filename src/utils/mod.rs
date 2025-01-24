@@ -1,3 +1,5 @@
+pub mod rusqlite;
+
 use mime_guess::MimeGuess;
 
 pub const DATABASE_NAME: &str = "post-archiver.db";
