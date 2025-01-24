@@ -7,7 +7,7 @@ CREATE TABLE
         name TEXT NOT NULL COLLATE NOCASE,
         links JSON NOT NULL DEFAULT '[]',
         thumb INTEGER,
-        updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        updated DATETIME NOT NULL DEFAULT "1970-01-01 00:00:00"
     );
 
 -- Alias ---------------------------------------------------
@@ -108,16 +108,22 @@ END;
 CREATE TRIGGER update_author_on_post_insert AFTER INSERT ON posts BEGIN
 UPDATE authors
 SET
-    updated = CURRENT_TIMESTAMP
-WHERE
-    id = NEW.author;
-
-UPDATE authors
-SET
     thumb = NEW.thumb
 WHERE
     id = NEW.author
-    AND NEW.thumb IS NOT NULL;
+    AND NEW.thumb IS NOT NULL
+    AND (
+        updated < NEW.updated
+        OR thumb IS NULL
+    );
+
+
+UPDATE authors
+SET
+    updated = NEW.updated
+WHERE
+    id = NEW.author
+    AND updated < NEW.updated;
 
 END;
 
@@ -125,15 +131,20 @@ CREATE TRIGGER update_author_on_post_update AFTER
 UPDATE ON posts BEGIN
 UPDATE authors
 SET
-    updated = CURRENT_TIMESTAMP
-WHERE
-    id = NEW.author;
-
-UPDATE authors
-SET
     thumb = NEW.thumb
 WHERE
     id = NEW.author
-    AND NEW.thumb IS NOT NULL;
+    AND NEW.thumb IS NOT NULL
+    AND (
+        updated < NEW.updated
+        OR thumb IS NULL
+    );
+
+UPDATE authors
+SET
+    updated = NEW.updated
+WHERE
+    id = NEW.author
+    AND updated < NEW.updated;
 
 END;
