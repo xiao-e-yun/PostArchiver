@@ -54,13 +54,14 @@ INSERT INTO
 VALUES
     (0, 'unknown');
 
-CREATE TABLE post_tags (
-    post INTEGER NOT NULL,
-    tag INTEGER NOT NULL,
-    PRIMARY KEY (post, tag),
-    FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE,
-    FOREIGN KEY (tag) REFERENCES tags (id) ON DELETE CASCADE
-);
+CREATE TABLE
+    post_tags (
+        post INTEGER NOT NULL,
+        tag INTEGER NOT NULL,
+        PRIMARY KEY (post, tag),
+        FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE,
+        FOREIGN KEY (tag) REFERENCES tags (id) ON DELETE CASCADE
+    );
 
 ------------------------------------------------------------
 -- File Meta System
