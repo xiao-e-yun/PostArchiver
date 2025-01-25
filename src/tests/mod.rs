@@ -1,8 +1,5 @@
 use crate::file_meta::FileMeta;
 
-#[cfg(feature = "utils")]
-mod utils;
-
 #[test]
 fn test_file_meta_path() {
     use crate::id::{AuthorId, FileMetaId, PostId};
