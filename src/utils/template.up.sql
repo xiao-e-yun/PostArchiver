@@ -82,7 +82,7 @@ CREATE INDEX file_metas_post_idx ON file_metas (post);
 ------------------------------------------------------------
 -- Thumb System
 ------------------------------------------------------------
--- update post thumb 
+-- update post thumb
 CREATE TRIGGER update_post_thumb_on_file_meta_insert AFTER INSERT ON file_metas BEGIN
 UPDATE posts
 SET
@@ -108,16 +108,25 @@ END;
 CREATE TRIGGER update_author_on_post_insert AFTER INSERT ON posts BEGIN
 UPDATE authors
 SET
-    thumb = NEW.thumb
+    thumb = (
+        SELECT
+            thumb
+        FROM
+            posts
+        WHERE
+            posts.author = authors.id
+            AND posts.thumb IS NOT NULL
+        ORDER BY
+            posts.updated DESC
+        LIMIT
+            1
+    )
 WHERE
     id = NEW.author
-    AND NEW.thumb IS NOT NULL
     AND (
         updated < NEW.updated
         OR thumb IS NULL
     );
-
-
 UPDATE authors
 SET
     updated = NEW.updated
@@ -129,12 +138,24 @@ END;
 
 CREATE TRIGGER update_author_on_post_update AFTER
 UPDATE ON posts BEGIN
+
 UPDATE authors
 SET
-    thumb = NEW.thumb
+    thumb = (
+        SELECT
+            thumb
+        FROM
+            posts
+        WHERE
+            posts.author = authors.id
+            AND posts.thumb IS NOT NULL
+        ORDER BY
+            posts.updated DESC
+        LIMIT
+            1
+    )
 WHERE
     id = NEW.author
-    AND NEW.thumb IS NOT NULL
     AND (
         updated < NEW.updated
         OR thumb IS NULL
