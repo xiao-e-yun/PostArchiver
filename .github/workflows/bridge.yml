@@ -45,7 +45,7 @@ jobs:
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
         
-          manifest-path: post-archiver-bridge
+          manifest-path: post-archiver-bridge/Cargo.toml
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
           # Note that glob pattern is not supported yet.
           bin: post-archiver-bridge
