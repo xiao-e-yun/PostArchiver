@@ -12,7 +12,7 @@ log = "0.4.25"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.137"
 simple_logger = "5.0.0"
-rusqlite = { version = "0.32", features = ["chrono"] }
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
 chrono = "0.4.39"
 mime_guess = "2.0.5"
 tokio = { version = "1.43.0", default-features = false, features = ["fs", "rt"] }
