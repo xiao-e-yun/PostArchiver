@@ -9,6 +9,6 @@ pub struct Comment {
     pub user: String,
     pub text: String,
     #[cfg_attr(feature = "typescript", ts(as = "Option<Vec<Comment>>", optional))]
-    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    #[serde(skip_serializing_if = "<[_]>::is_empty", default)]
     pub replies: Vec<Comment>,
 }
