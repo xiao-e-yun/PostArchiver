@@ -5,7 +5,7 @@ use std::fs;
 
 use clap::Parser;
 use config::Config;
-use log::{info, warn};
+use log::{info, warn, error};
 
 fn main() {
     simple_logger::init().unwrap();
@@ -28,7 +28,8 @@ fn main() {
     }
 
     if !config.source.is_dir() {
-        panic!("Source does not exist");
+        error!("Source does not exist");
+        return;
     }
 
     if !config.target.exists() {
