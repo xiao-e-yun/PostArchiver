@@ -1,5 +1,18 @@
 ------------------------------------------------------------
--- Author System
+-- Base
+------------------------------------------------------------
+CREATE TABLE post_archiver_meta (
+    version INTEGER NOT NULL PRIMARY KEY,
+)
+
+CREATE TABLE features (
+    name TEXT NOT NULL PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0,
+    extra JSON NOT NULL DEFAULT '{}'
+);
+
+------------------------------------------------------------
+-- Author
 ------------------------------------------------------------
 CREATE TABLE
     authors (
@@ -20,7 +33,7 @@ CREATE TABLE
     );
 
 ------------------------------------------------------------
--- Post System
+-- Post
 ------------------------------------------------------------
 CREATE TABLE
     posts (
@@ -64,7 +77,7 @@ CREATE TABLE
     );
 
 ------------------------------------------------------------
--- File Meta System
+-- File Meta
 ------------------------------------------------------------
 CREATE TABLE
     file_metas (
@@ -78,94 +91,3 @@ CREATE TABLE
     );
 
 CREATE INDEX file_metas_post_idx ON file_metas (post);
-
-------------------------------------------------------------
--- Thumb System
-------------------------------------------------------------
--- update post thumb
-CREATE TRIGGER update_post_thumb_on_file_meta_insert AFTER INSERT ON file_metas BEGIN
-UPDATE posts
-SET
-    thumb = NEW.id
-WHERE
-    id = NEW.post
-    AND NEW.mime LIKE 'image/%';
-
-END;
-
-CREATE TRIGGER update_post_thumb_on_file_meta_update AFTER
-UPDATE ON file_metas BEGIN
-UPDATE posts
-SET
-    thumb = NEW.id
-WHERE
-    id = NEW.post
-    AND NEW.mime LIKE 'image/%';
-
-END;
-
--- update author updatedTime and thumb
-CREATE TRIGGER update_author_on_post_insert AFTER INSERT ON posts BEGIN
-UPDATE authors
-SET
-    thumb = (
-        SELECT
-            thumb
-        FROM
-            posts
-        WHERE
-            posts.author = authors.id
-            AND posts.thumb IS NOT NULL
-        ORDER BY
-            posts.updated DESC
-        LIMIT
-            1
-    )
-WHERE
-    id = NEW.author
-    AND (
-        updated < NEW.updated
-        OR thumb IS NULL
-    );
-UPDATE authors
-SET
-    updated = NEW.updated
-WHERE
-    id = NEW.author
-    AND updated < NEW.updated;
-
-END;
-
-CREATE TRIGGER update_author_on_post_update AFTER
-UPDATE ON posts BEGIN
-
-UPDATE authors
-SET
-    thumb = (
-        SELECT
-            thumb
-        FROM
-            posts
-        WHERE
-            posts.author = authors.id
-            AND posts.thumb IS NOT NULL
-        ORDER BY
-            posts.updated DESC
-        LIMIT
-            1
-    )
-WHERE
-    id = NEW.author
-    AND (
-        updated < NEW.updated
-        OR thumb IS NULL
-    );
-
-UPDATE authors
-SET
-    updated = NEW.updated
-WHERE
-    id = NEW.author
-    AND updated < NEW.updated;
-
-END;
