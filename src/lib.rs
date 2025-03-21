@@ -6,6 +6,7 @@ pub mod link;
 pub mod macros;
 pub mod post;
 pub mod tag;
+pub mod importer;
 
 pub use author::*;
 pub use comment::*;
