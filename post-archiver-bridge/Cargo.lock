@@ -428,6 +428,15 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 
 [[package]]
 name = "post-archiver"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "post-archiver"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a67b766035b0dbbf3069719ee1d7d4cde01377d9b7291066d85ea9dbd12f8ca"
@@ -448,15 +457,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "post-archiver"
-version = "0.3.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "post-archiver-bridge"
 version = "0.1.0"
 dependencies = [
@@ -464,9 +464,9 @@ dependencies = [
  "clap",
  "log",
  "mime_guess",
+ "post-archiver 0.0.0",
  "post-archiver 0.1.14",
  "post-archiver 0.2.5",
- "post-archiver 0.3.0",
  "rusqlite",
  "serde",
  "serde_json",
