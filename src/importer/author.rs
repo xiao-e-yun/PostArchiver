@@ -14,7 +14,7 @@ where
     pub fn check_author(&self, alias: &[String]) -> Result<Option<AuthorId>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT id FROM author_alias WHERE source IN (?)")?;
+            .prepare_cached("SELECT target FROM author_alias WHERE source IN (?)")?;
         stmt.query_row([alias.join(",")], |row| row.get(0))
             .optional()
     }
@@ -32,15 +32,16 @@ where
         &self,
         author: &UnsyncAuthor,
     ) -> Result<AuthorId, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "INSERT INTO author (name, links, updated) VALUES (?, ?, ?) RETURNING id",
-        )?;
+        let mut stmt = self
+            .conn()
+            .prepare_cached("INSERT INTO authors (name, links) VALUES (?, ?) RETURNING id")?;
 
         let links = serde_json::to_string(&author.links).unwrap();
-        let id: AuthorId = stmt
-            .query_row(params![&author.name, &links, &author.updated], |row| {
-                row.get(0)
-            })?;
+        let id: AuthorId = stmt.query_row(params![&author.name, &links], |row| row.get(0))?;
+
+        if let Some(updated) = author.updated {
+            self.set_author_updated(id, &updated)?;
+        };
 
         self.set_author_alias(&id, &author.alias)?;
         Ok(id)
@@ -51,8 +52,12 @@ where
         author: &UnsyncAuthor,
     ) -> Result<AuthorId, rusqlite::Error> {
         self.set_author_links_by_merge(id, &author.links)?;
-        self.set_author_updated_by_latest(id, &author.updated)?;
         self.set_author_alias(&id, &author.alias)?;
+
+        if let Some(updated) = author.updated {
+            self.set_author_updated(id, &updated)?;
+        }
+
         Ok(id)
     }
 
@@ -62,8 +67,8 @@ where
             .conn()
             .prepare_cached("SELECT * FROM authors WHERE id = ?")?;
         stmt.query_row([author], |row| {
-            let links: Vec<u8> = row.get("links")?;
-            let links: Vec<Link> = serde_json::from_slice(&links).unwrap();
+            let links: String = row.get("links")?;
+            let links: Vec<Link> = serde_json::from_str(&links).unwrap();
             Ok(Author {
                 links,
                 id: row.get("id")?,
@@ -106,7 +111,7 @@ where
     {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE author SET name = ? WHERE id = ?")?;
+            .prepare_cached("UPDATE authors SET name = ? WHERE id = ?")?;
         stmt.execute(params![name, &author])?;
         Ok(())
     }
@@ -117,14 +122,14 @@ where
     ) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE author SET thumb = ? WHERE id = ?")?;
+            .prepare_cached("UPDATE authors SET thumb = ? WHERE id = ?")?;
         stmt.execute(params![thumb, &author])?;
         Ok(())
     }
     pub fn set_author_thumb_by_latest(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE author SET thumb = (SELECT thumb FROM posts WHERE id = ? AND thumb IS NOT NULL ORDER BY updated DESC LIMIT 1) WHERE id = ?")?;
+            .prepare_cached("UPDATE authors SET thumb = (SELECT thumb FROM posts WHERE author = ? AND thumb IS NOT NULL ORDER BY updated DESC LIMIT 1) WHERE id = ?")?;
         stmt.execute(params![author, author])?;
         Ok(())
     }
@@ -136,7 +141,7 @@ where
         let links = serde_json::to_string(links).unwrap();
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE author SET links = ? WHERE id = ?")?;
+            .prepare_cached("UPDATE authors SET links = ? WHERE id = ?")?;
         stmt.execute(params![links, &author])?;
         Ok(())
     }
@@ -147,7 +152,7 @@ where
     ) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT links FROM author WHERE id = ?")?;
+            .prepare_cached("SELECT links FROM authors WHERE id = ?")?;
         let old_links: String = stmt.query_row(&[&author], |row| row.get(0))?;
         let old_links: HashSet<Link> = serde_json::from_str(&old_links).unwrap();
         let links = HashSet::from_iter(links.iter().cloned());
@@ -161,19 +166,15 @@ where
     ) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE author SET updated = ? WHERE id = ?")?;
+            .prepare_cached("UPDATE authors SET updated = ? WHERE id = ?")?;
         stmt.execute(params![updated, &author])?;
         Ok(())
     }
-    pub fn set_author_updated_by_latest(
-        &self,
-        author: AuthorId,
-        updated: &DateTime<Utc>,
-    ) -> Result<(), rusqlite::Error> {
+    pub fn set_author_updated_by_latest(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE author SET updated = ? WHERE id = ? AND updated < ?")?;
-        stmt.execute(params![updated, &author, updated])?;
+            .prepare_cached("UPDATE authors SET updated = (SELECT updated FROM posts WHERE author = ? ORDER BY updated DESC LIMIT 1) WHERE id = ?")?;
+        stmt.execute(params![author, author])?;
         Ok(())
     }
 }
@@ -183,7 +184,7 @@ pub struct UnsyncAuthor {
     name: String,
     links: Vec<Link>,
     alias: Vec<String>,
-    updated: DateTime<Utc>,
+    updated: Option<DateTime<Utc>>,
 }
 
 impl UnsyncAuthor {
@@ -192,7 +193,7 @@ impl UnsyncAuthor {
             name: name.into(),
             alias: Vec::new(),
             links: Vec::new(),
-            updated: Utc::now(),
+            updated: None,
         }
     }
 
@@ -205,7 +206,7 @@ impl UnsyncAuthor {
     pub fn links(self, links: Vec<Link>) -> Self {
         Self { links, ..self }
     }
-    pub fn updated(self, updated: DateTime<Utc>) -> Self {
+    pub fn updated(self, updated: Option<DateTime<Utc>>) -> Self {
         Self { updated, ..self }
     }
 

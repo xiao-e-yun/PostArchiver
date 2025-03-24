@@ -1,15 +1,14 @@
 ------------------------------------------------------------
 -- Base
 ------------------------------------------------------------
-CREATE TABLE post_archiver_meta (
-    version INTEGER NOT NULL PRIMARY KEY,
-)
-
-CREATE TABLE features (
-    name TEXT NOT NULL PRIMARY KEY,
-    value INTEGER NOT NULL DEFAULT 0,
-    extra JSON NOT NULL DEFAULT '{}'
-);
+CREATE TABLE
+    post_archiver_meta (version TEXT NOT NULL PRIMARY KEY);
+CREATE TABLE
+    features (
+        name TEXT NOT NULL PRIMARY KEY,
+        value INTEGER NOT NULL DEFAULT 0,
+        extra JSON NOT NULL DEFAULT '{}'
+    );
 
 ------------------------------------------------------------
 -- Author

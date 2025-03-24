@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-post-archiver-latest = { package = "post-archiver", path = "../", features = ["utils"] }
+post-archiver-latest = { package = "post-archiver", path = "../" }
 post-archiver-v0-1 = { package = "post-archiver", version = "0.1.14" }
+post-archiver-v0-2 = { package = "post-archiver", version = "0.2.5", features = ["utils"] }
 
 clap = { version = "4.5.27", features = ["derive"] }
 log = "0.4.25"

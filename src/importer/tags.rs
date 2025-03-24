@@ -17,7 +17,7 @@ where
         // check if tag exists
         let exist = self
             .conn()
-            .query_row("SELECT id FROM tag WHERE name = ?", [&tag], |row| {
+            .query_row("SELECT id FROM tags WHERE name = ?", [&tag], |row| {
                 row.get(0)
             })
             .optional()?;
@@ -30,7 +30,7 @@ where
             }
             // if tag does not exist, insert the tag and return the id
             None => self.conn().query_row(
-                "INSERT INTO tag (name) VALUES (?) RETURNING id",
+                "INSERT INTO tags (name) VALUES (?) RETURNING id",
                 [&tag],
                 |row| row.get(0),
             ),
@@ -39,8 +39,7 @@ where
         // insert into cache
         self.tags_cache
             .borrow_mut()
-            .insert(tag.to_string(), id)
-            .unwrap();
+            .insert(tag.to_string(), id);
 
         Ok(id)
     }

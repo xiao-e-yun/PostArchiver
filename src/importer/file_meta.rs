@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash, path::PathBuf};
+use std::{collections::HashMap, fmt::Display, hash::Hash, path::PathBuf};
 
 use rusqlite::{params, OptionalExtension};
 
@@ -133,4 +133,16 @@ pub enum ImportFileMetaMethod {
     Url(String),
     File(PathBuf),
     Data(Vec<u8>),
+    Custom,
+}
+
+impl Display for ImportFileMetaMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImportFileMetaMethod::Url(url) => write!(f, "Url({})", url),
+            ImportFileMetaMethod::File(path) => write!(f, "File({})", path.display()),
+            ImportFileMetaMethod::Data(data) => write!(f, "Data({} bytes)", data.len()),
+            ImportFileMetaMethod::Custom => write!(f, "Custom"),
+        }
+    }
 }

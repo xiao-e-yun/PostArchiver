@@ -14,15 +14,21 @@ impl<T> PostArchiverImporter<T>
 where
     T: ImportConnection,
 {
-    pub fn check_post(&self, source: &String) -> Result<Option<PostId>, rusqlite::Error> {
+    pub fn check_post(
+        &self,
+        source: &String,
+        updated: &DateTime<Utc>,
+    ) -> Result<Option<PostId>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
-        stmt.query_row(&[&source], |row| row.get(0)).optional()
+            .prepare_cached("SELECT id FROM posts WHERE source = ? AND updated >= ?")?;
+
+        stmt.query_row(params![source, updated], |row| row.get(0))
+            .optional()
     }
     pub fn import_post_meta(&self, post: UnsyncPost) -> Result<PartialSyncPost, rusqlite::Error> {
         let exist = if let Some(source) = &post.source {
-            self.check_post(source)?
+            self.check_post(source, &post.updated)?
         } else {
             None
         };
@@ -82,10 +88,8 @@ where
         post: PartialSyncPost,
         files: &HashMap<String, FileMetaId>,
     ) -> Result<Post, rusqlite::Error> {
-        // import content
-        let content = post.content.expect("content is required");
-
-        let content: Vec<Content> = content
+        let content: Vec<Content> = post
+            .content
             .into_iter()
             .map(|content| match content {
                 UnsyncContent::Text(text) => Content::Text(text),
@@ -100,6 +104,8 @@ where
         let thumb = post
             .thumb
             .map(|thumb| *files.get(&thumb.filename).expect("thumb unynced"));
+
+        self.set_post_thumb(post.id, &thumb)?;
 
         Ok(Post {
             id: post.id,
@@ -239,20 +245,18 @@ pub struct UnsyncPost {
 }
 
 impl UnsyncPost {
-    pub fn collect_files(&self) -> Vec<UnsyncFileMeta> {
-        let mut files = HashMap::new();
-        for content in &self.content {
-            match content {
-                UnsyncContent::File(file) => {
-                    files.insert(file.filename.clone(), file);
-                }
-                _ => {}
-            }
+    pub fn new(author: AuthorId) -> Self {
+        Self {
+            author,
+            source: None,
+            title: String::new(),
+            content: Vec::new(),
+            thumb: None,
+            comments: Vec::new(),
+            updated: Utc::now(),
+            published: Utc::now(),
+            tags: Vec::new(),
         }
-        if let Some(thumb) = &self.thumb {
-            files.insert(thumb.filename.clone(), thumb);
-        }
-        files.into_values().cloned().collect::<Vec<_>>()
     }
 
     pub fn author(self, author: AuthorId) -> Self {
@@ -285,23 +289,32 @@ impl UnsyncPost {
 
     pub fn sync(
         self,
-        importer: PostArchiverImporter<impl ImportConnection>,
+        importer: &PostArchiverImporter<impl ImportConnection>,
     ) -> Result<(Post, Vec<(PathBuf, ImportFileMetaMethod)>), rusqlite::Error> {
-        let metas = self.collect_files();
-        let post = importer.import_post_meta(self)?;
+        let mut post = importer.import_post_meta(self)?;
 
+        // select first image as thumb if not set
+        post.thumb = post.thumb.clone().or_else(|| {
+            post.content.iter().find_map(|content| match content {
+                UnsyncContent::File(file) => {
+                    if file.mime.starts_with("image/") {
+                        Some(file.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+        });
+
+        let metas = post.collect_files();
         let mut files = Vec::with_capacity(metas.capacity());
 
-        let mut thumb = post.thumb.clone();
         let metas: HashMap<String, FileMetaId> = metas
             .into_iter()
             .map(|raw| {
                 let (file, method) =
                     importer.import_file_meta(post.author, post.id, raw.clone())?;
-
-                if thumb.is_none() && file.mime.starts_with("image/") {
-                    thumb = Some(raw.clone());
-                };
 
                 // push to files
                 files.push((importer.path.join(file.path()), method));
@@ -309,7 +322,8 @@ impl UnsyncPost {
             })
             .collect::<Result<_, rusqlite::Error>>()?;
 
-        let post = importer.import_post(post.thumb(thumb), &metas)?;
+        let post = importer.import_post(post, &metas)?;
+        importer.set_author_thumb_by_latest(post.author)?;
 
         Ok((post, files))
     }
@@ -335,7 +349,7 @@ pub struct PartialSyncPost {
     pub author: AuthorId,
     pub source: Option<String>,
     pub title: String,
-    pub content: Option<Vec<UnsyncContent>>,
+    pub content: Vec<UnsyncContent>,
     pub thumb: Option<UnsyncFileMeta>,
     pub comments: Vec<Comment>,
     pub updated: DateTime<Utc>,
@@ -347,22 +361,39 @@ impl PartialSyncPost {
         Self {
             id,
             author,
-            content: None,
             thumb: post.thumb,
             source: post.source,
             title: post.title,
+            content: post.content,
             comments: post.comments,
             updated: post.updated,
             published: post.published,
         }
     }
     pub fn content(self, content: Vec<UnsyncContent>) -> Self {
-        Self {
-            content: Some(content),
-            ..self
-        }
+        Self { content, ..self }
     }
     pub fn thumb(self, thumb: Option<UnsyncFileMeta>) -> Self {
         Self { thumb, ..self }
+    }
+    pub fn collect_files(&self) -> Vec<UnsyncFileMeta> {
+        let mut files = HashMap::new();
+        for content in &self.content {
+            match content {
+                UnsyncContent::File(file) => {
+                    files.insert(file.filename.clone(), file.clone());
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(thumb) = self
+            .thumb
+            .clone()
+            .filter(|thumb| files.get(&thumb.filename).is_none())
+        {
+            files.insert(thumb.filename.clone(), thumb);
+        }
+        files.into_values().collect::<Vec<_>>()
     }
 }

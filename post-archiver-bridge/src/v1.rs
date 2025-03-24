@@ -2,21 +2,21 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 use chrono::{DateTime, Local};
 use log::{info, warn};
-use post_archiver_latest::{AuthorId, Comment, Content, FileMetaId, Link, PostId, PostTagId};
+use post_archiver_v0_2::{AuthorId, Comment, Content, FileMetaId, Link, PostId, PostTagId};
 use post_archiver_v0_1::{ArchiveContent, ArchiveFile, ArchiveFrom};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
-use crate::{Bridge, config::Config};
+use crate::{config::Config, Migration};
 
 #[derive(Debug, Clone, Default)]
-pub struct BridgeV1 {
+pub struct Bridge {
     fanbox_tag: Option<PostTagId>,
     fanbox_dl_tag: Option<PostTagId>,
 }
 
-impl Bridge for BridgeV1 {
+impl Migration for Bridge {
     const VERSION: &'static str = "v0.1";
 
     fn verify(&mut self, config: &Config) -> bool {
@@ -37,7 +37,7 @@ impl Bridge for BridgeV1 {
             }
 
             let conn = Connection::open(&db_path).expect("Failed to create database");
-            conn.execute_batch(post_archiver_latest::utils::TEMPLATE_DATABASE_UP_SQL)
+            conn.execute_batch(post_archiver_v0_2::utils::TEMPLATE_DATABASE_UP_SQL)
                 .expect("Failed to create tables");
             conn
         };
@@ -114,12 +114,8 @@ impl Bridge for BridgeV1 {
                     serde_json::from_slice(&post).expect("Unable to parse post");
 
                 let is_fanbox_dl = post.content
-                    .first()
-                    .map_or(
-                        false,
-                        |content|
-                            matches!(content, post_archiver_v0_1::ArchiveContent::Text(text) if text == "Archive from `fanbox-dl`")
-                    );
+                    .first().is_some_and(|content|
+                            matches!(content, post_archiver_v0_1::ArchiveContent::Text(text) if text == "Archive from `fanbox-dl`"));
 
                 let source = if is_fanbox_dl {
                     None
@@ -262,13 +258,13 @@ impl Bridge for BridgeV1 {
                     .map(|content| match content {
                         ArchiveContent::Text(text) => Content::Text(text.clone()),
                         ArchiveContent::Image(path) => {
-                            Content::File(file_map.get(path).unwrap().clone())
+                            Content::File(*file_map.get(path).unwrap())
                         }
                         ArchiveContent::Video(path) => {
-                            Content::File(file_map.get(path).unwrap().clone())
+                            Content::File(*file_map.get(path).unwrap())
                         }
                         ArchiveContent::File(path) => {
-                            Content::File(file_map.get(path).unwrap().clone())
+                            Content::File(*file_map.get(path).unwrap())
                         }
                     })
                     .collect::<Vec<_>>();

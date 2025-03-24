@@ -1,7 +1,8 @@
 pub mod config;
 mod v1;
+mod v2;
 
-use std::fs;
+use std::{fs, io, path::Path};
 
 use clap::Parser;
 use config::Config;
@@ -32,13 +33,30 @@ fn main() {
         return;
     }
 
-    if !config.target.exists() {
-        warn!("Creating target directory");
-        fs::create_dir_all(&config.target).expect("Unable to create target directory");
-        info!("");
-    }
+    if !config.overwrite {
+        if config.target.exists() {
+            error!("target is already exists");
+        } else {
+            copy_dir_all(&config.source, &config.target).unwrap();
 
-    v1::BridgeV1::verify_and_upgrade(&mut config);
+            // https://stackoverflow.com/a/65192210/15859431
+            fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+                fs::create_dir_all(&dst)?;
+                for entry in fs::read_dir(src)? {
+                    let entry = entry?;
+                    let ty = entry.file_type()?;
+                    if ty.is_dir() {
+                        copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+                    } else {
+                        fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+                    }
+                }
+                Ok(())
+            }
+        }}
+
+    v1::Bridge::verify_and_upgrade(&mut config);
+    v2::Bridge::verify_and_upgrade(&mut config);
 
     if config.updated {
         info!("Successfully updated");
@@ -47,7 +65,8 @@ fn main() {
     }
 }
 
-pub trait Bridge: Default {
+
+pub trait Migration: Default {
     const VERSION: &'static str;
     fn verify(&mut self, config: &Config) -> bool;
     fn upgrade(&mut self, config: &mut Config);

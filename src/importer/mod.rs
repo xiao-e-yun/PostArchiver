@@ -6,11 +6,12 @@ pub mod tags;
 use std::{
     cell::RefCell,
     collections::HashMap,
+    panic,
     path::{Path, PathBuf},
     rc::Rc,
 };
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::{Connection,  Transaction};
 
 use crate::{
     utils::{DATABASE_NAME, DATABASE_VERSION},
@@ -35,10 +36,12 @@ impl PostArchiverImporter<Connection> {
             panic!("Database already exists");
         }
 
-        let conn = Connection::open(db_path)?;
+        let conn = Connection::open(
+            &db_path,
+        )?;
 
         // run the template sql
-        conn.execute_batch(include_str!("template.sql"))?;
+        conn.execute_batch(include_str!("../utils/template.sql"))?;
 
         // push current version
         conn.execute(
@@ -71,10 +74,16 @@ impl PostArchiverImporter<Connection> {
             .query_row("SELECT version FROM post_archiver_meta", [], |row| {
                 row.get(0)
             })
-            .unwrap_or("0.0.1".to_string());
+            .unwrap_or("unknown".to_string());
 
-        let match_version = version.splitn(3, ".").collect::<Vec<_>>()[0..2].join(".");
-        let expect_version = DATABASE_VERSION.splitn(3, ".").collect::<Vec<_>>()[0..2].join(".");
+        let get_compatible_version =
+            |version: &str| version.splitn(3, ".").collect::<Vec<_>>()[0..2].join(".");
+
+        let match_version = match version.as_str() {
+            "unknown" => "unknown".to_string(),
+            version => get_compatible_version(version),
+        };
+        let expect_version = get_compatible_version(DATABASE_VERSION);
 
         if match_version != expect_version {
             panic!(
@@ -113,7 +122,6 @@ impl<'a> PostArchiverImporter<Transaction<'a>> {
         self.conn.commit()
     }
 }
-
 
 impl<T> PostArchiverImporter<T>
 where

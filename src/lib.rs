@@ -6,7 +6,6 @@ pub mod link;
 pub mod macros;
 pub mod post;
 pub mod tag;
-pub mod importer;
 
 pub use author::*;
 pub use comment::*;
@@ -18,6 +17,9 @@ pub use tag::*;
 
 #[cfg(feature = "utils")]
 pub mod utils;
+
+#[cfg(feature = "importer")]
+pub mod importer;
 
 #[cfg(test)]
 mod tests;
