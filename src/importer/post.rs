@@ -17,6 +17,17 @@ where
     pub fn check_post(
         &self,
         source: &String,
+    ) -> Result<Option<PostId>, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
+
+        stmt.query_row(params![source], |row| row.get(0))
+            .optional()
+    }
+    pub fn check_post_with_updated(
+        &self,
+        source: &String,
         updated: &DateTime<Utc>,
     ) -> Result<Option<PostId>, rusqlite::Error> {
         let mut stmt = self
@@ -28,7 +39,7 @@ where
     }
     pub fn import_post_meta(&self, post: UnsyncPost) -> Result<PartialSyncPost, rusqlite::Error> {
         let exist = if let Some(source) = &post.source {
-            self.check_post(source, &post.updated)?
+            self.check_post(source)?
         } else {
             None
         };
