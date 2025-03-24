@@ -17,6 +17,7 @@ pub struct FileMeta {
     pub author: AuthorId,
     pub post: PostId,
     pub mime: String,
+    #[cfg_attr(feature = "typescript", ts(type = "Record<string, any>"))]
     pub extra: HashMap<String,Value>
 }
 
