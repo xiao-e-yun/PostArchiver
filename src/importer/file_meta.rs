@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Display, hash::Hash, path::PathBuf};
 
 use rusqlite::{params, OptionalExtension};
+use serde_json::Value;
 
 use crate::{AuthorId, FileMeta, FileMetaId, PostId};
 
@@ -28,26 +29,13 @@ where
         post: PostId,
         file_meta: UnsyncFileMeta,
     ) -> Result<(FileMeta, ImportFileMetaMethod), rusqlite::Error> {
-        let exist = self.check_file_meta(post, &file_meta.filename)?;
-
-        match exist {
-            Some(id) => self.import_file_meta_by_update(author, post, id, file_meta),
-            None => self.import_file_meta_by_create(author, post, file_meta),
-        }
-    }
-    pub fn import_file_meta_by_create(
-        &self,
-        author: AuthorId,
-        post: PostId,
-        file_meta: UnsyncFileMeta,
-    ) -> Result<(FileMeta, ImportFileMetaMethod), rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
             "INSERT INTO file_metas (filename, author, post, mime, extra) VALUES (?, ?, ?, ?, ?) RETURNING id",
         )?;
 
         let filename = file_meta.filename;
         let mime = file_meta.mime;
-        let extra = serde_json::to_string(&file_meta.extra).unwrap();
+        let extra = serde_json::to_string(&file_meta.extra).unwrap_or_default();
         let id: FileMetaId = stmt
             .query_row(params![&filename, &author, &post, &mime, &extra], |row| {
                 row.get(0)
@@ -81,7 +69,7 @@ where
         })?;
 
         // merge extra
-        let mut extra: HashMap<String, String> = serde_json::from_str(&extra).unwrap();
+        let mut extra: HashMap<String, Value> = serde_json::from_str(&extra).unwrap_or_default();
         extra.extend(file_meta.extra.clone());
 
         let mut stmt = self
@@ -110,7 +98,7 @@ where
 pub struct UnsyncFileMeta {
     pub filename: String,
     pub mime: String,
-    pub extra: HashMap<String, String>,
+    pub extra: HashMap<String, Value>,
     pub method: ImportFileMetaMethod,
 }
 

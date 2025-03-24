@@ -32,10 +32,14 @@ where
     ) -> Result<Option<PostId>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT id FROM posts WHERE source = ? AND updated >= ?")?;
+            .prepare_cached("SELECT id, updated FROM posts WHERE source = ?")?;
 
-        stmt.query_row(params![source, updated], |row| row.get(0))
-            .optional()
+        stmt.query_row::<(PostId,DateTime<Utc>),_,_>(params![source], |row| Ok((row.get(0)?, row.get(1)?)))
+            .optional().map(|query|query.and_then(|(id,last_update)|{
+                if &last_update >= updated {
+                    Some(id) 
+                } else { None }
+            }))
     }
     pub fn import_post_meta(&self, post: UnsyncPost) -> Result<PartialSyncPost, rusqlite::Error> {
         let exist = if let Some(source) = &post.source {
@@ -61,12 +65,12 @@ where
         let comments = serde_json::to_string(&post.comments).unwrap();
         let id = stmt.query_row(
             params![
-                &post.author,
-                &post.source,
-                &post.title,
-                &comments,
-                &post.updated,
-                &post.published
+            &post.author,
+            &post.source,
+            &post.title,
+            &comments,
+            &post.updated,
+            &post.published
             ],
             |row| row.get(0),
         )?;
@@ -108,7 +112,7 @@ where
                     Content::File(*files.get(&file.filename).expect("file unynced"))
                 }
             })
-            .collect();
+        .collect();
 
         self.set_post_content(post.id, &content)?;
 
@@ -331,7 +335,7 @@ impl UnsyncPost {
                 files.push((importer.path.join(file.path()), method));
                 Ok((raw.filename, file.id))
             })
-            .collect::<Result<_, rusqlite::Error>>()?;
+        .collect::<Result<_, rusqlite::Error>>()?;
 
         let post = importer.import_post(post, &metas)?;
         importer.set_author_thumb_by_latest(post.author)?;
@@ -400,8 +404,8 @@ impl PartialSyncPost {
 
         if let Some(thumb) = self
             .thumb
-            .clone()
-            .filter(|thumb| files.get(&thumb.filename).is_none())
+                .clone()
+                .filter(|thumb| files.get(&thumb.filename).is_none())
         {
             files.insert(thumb.filename.clone(), thumb);
         }

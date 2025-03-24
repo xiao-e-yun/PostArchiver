@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use serde_json::Value;
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
@@ -16,7 +17,7 @@ pub struct FileMeta {
     pub author: AuthorId,
     pub post: PostId,
     pub mime: String,
-    pub extra: HashMap<String, String>,
+    pub extra: HashMap<String,Value>
 }
 
 impl FileMeta {
