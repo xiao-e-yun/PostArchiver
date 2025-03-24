@@ -26,7 +26,7 @@ impl FileMeta {
     pub fn path(&self) -> PathBuf {
         PathBuf::from(self.author.to_string())
             .join(self.post.to_string())
-            .join(self.filename.to_string())
+            .join(&self.filename)
     }
 }
 
