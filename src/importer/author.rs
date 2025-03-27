@@ -12,12 +12,17 @@ where
     T: ImportConnection,
 {
     pub fn check_author(&self, alias: &[String]) -> Result<Option<AuthorId>, rusqlite::Error> {
-        let query_array = vec!["?"].repeat(alias.len()).join(",");
-        let mut stmt = self
-            .conn()
-            .prepare(&format!("SELECT target FROM author_alias WHERE source IN ({})",query_array))?;
+        if alias.is_empty() {
+            return Ok(None);
+        }
 
-        stmt.query_row(alias, |row| row.get(0))
+        let query_array = "?,".repeat(alias.len() - 1) + "?";
+
+        let mut stmt = self
+        .conn()
+        .prepare(&format!("SELECT target FROM author_alias WHERE source IN ({})",query_array))?;
+    
+        stmt.query_row(params_from_iter(alias), |row| row.get(0))
             .optional()
     }
     pub fn import_author(&self, author: &UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
