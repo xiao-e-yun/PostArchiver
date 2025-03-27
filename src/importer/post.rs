@@ -3,27 +3,23 @@ use std::{collections::HashMap, path::PathBuf};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
-use crate::{AuthorId, Comment, Content, FileMetaId, Post, PostId, PostTagId};
-
-use super::{
-    file_meta::{ImportFileMetaMethod, UnsyncFileMeta},
-    ImportConnection, PostArchiverImporter,
+use crate::{
+    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    AuthorId, Comment, Content, FileMetaId, Post, PostId, PostTagId,
 };
 
-impl<T> PostArchiverImporter<T>
+use super::file_meta::{ImportFileMetaMethod, UnsyncFileMeta};
+
+impl<T> PostArchiverManager<T>
 where
-    T: ImportConnection,
+    T: PostArchiverConnection,
 {
-    pub fn check_post(
-        &self,
-        source: &String,
-    ) -> Result<Option<PostId>, rusqlite::Error> {
+    pub fn check_post(&self, source: &String) -> Result<Option<PostId>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
 
-        stmt.query_row(params![source], |row| row.get(0))
-            .optional()
+        stmt.query_row(params![source], |row| row.get(0)).optional()
     }
     pub fn check_post_with_updated(
         &self,
@@ -34,12 +30,19 @@ where
             .conn()
             .prepare_cached("SELECT id, updated FROM posts WHERE source = ?")?;
 
-        stmt.query_row::<(PostId,DateTime<Utc>),_,_>(params![source], |row| Ok((row.get(0)?, row.get(1)?)))
-            .optional().map(|query|query.and_then(|(id,last_update)|{
+        stmt.query_row::<(PostId, DateTime<Utc>), _, _>(params![source], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()
+        .map(|query| {
+            query.and_then(|(id, last_update)| {
                 if &last_update >= updated {
-                    Some(id) 
-                } else { None }
-            }))
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+        })
     }
     pub fn import_post_meta(&self, post: UnsyncPost) -> Result<PartialSyncPost, rusqlite::Error> {
         let exist = if let Some(source) = &post.source {
@@ -65,12 +68,12 @@ where
         let comments = serde_json::to_string(&post.comments).unwrap();
         let id = stmt.query_row(
             params![
-            &post.author,
-            &post.source,
-            &post.title,
-            &comments,
-            &post.updated,
-            &post.published
+                &post.author,
+                &post.source,
+                &post.title,
+                &comments,
+                &post.updated,
+                &post.published
             ],
             |row| row.get(0),
         )?;
@@ -112,7 +115,7 @@ where
                     Content::File(*files.get(&file.filename).expect("file unynced"))
                 }
             })
-        .collect();
+            .collect();
 
         self.set_post_content(post.id, &content)?;
 
@@ -304,9 +307,9 @@ impl UnsyncPost {
 
     pub fn sync(
         self,
-        importer: &PostArchiverImporter<impl ImportConnection>,
+        manager: &PostArchiverManager<impl PostArchiverConnection>,
     ) -> Result<(Post, Vec<(PathBuf, ImportFileMetaMethod)>), rusqlite::Error> {
-        let mut post = importer.import_post_meta(self)?;
+        let mut post = manager.import_post_meta(self)?;
 
         // select first image as thumb if not set
         post.thumb = post.thumb.clone().or_else(|| {
@@ -329,16 +332,16 @@ impl UnsyncPost {
             .into_iter()
             .map(|raw| {
                 let (file, method) =
-                    importer.import_file_meta(post.author, post.id, raw.clone())?;
+                    manager.import_file_meta(post.author, post.id, raw.clone())?;
 
                 // push to files
-                files.push((importer.path.join(file.path()), method));
+                files.push((manager.path.join(file.path()), method));
                 Ok((raw.filename, file.id))
             })
-        .collect::<Result<_, rusqlite::Error>>()?;
+            .collect::<Result<_, rusqlite::Error>>()?;
 
-        let post = importer.import_post(post, &metas)?;
-        importer.set_author_thumb_by_latest(post.author)?;
+        let post = manager.import_post(post, &metas)?;
+        manager.set_author_thumb_by_latest(post.author)?;
 
         Ok((post, files))
     }
@@ -404,8 +407,8 @@ impl PartialSyncPost {
 
         if let Some(thumb) = self
             .thumb
-                .clone()
-                .filter(|thumb| files.get(&thumb.filename).is_none())
+            .clone()
+            .filter(|thumb| files.get(&thumb.filename).is_none())
         {
             files.insert(thumb.filename.clone(), thumb);
         }

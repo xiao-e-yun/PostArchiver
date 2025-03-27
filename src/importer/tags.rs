@@ -1,16 +1,17 @@
 use rusqlite::OptionalExtension;
 
-use crate::PostTagId;
+use crate::{
+    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    PostTagId,
+};
 
-use super::{ImportConnection, PostArchiverImporter};
-
-impl<T> PostArchiverImporter<T>
+impl<T> PostArchiverManager<T>
 where
-    T: ImportConnection,
+    T: PostArchiverConnection,
 {
     pub fn import_tag(&self, tag: &str) -> Result<PostTagId, rusqlite::Error> {
         // check cache
-        if let Some(id) = self.tags_cache.borrow().get(tag) {
+        if let Some(id) = self.cache.tags.lock().unwrap().get(tag) {
             return Ok(*id);
         }
 
@@ -25,7 +26,7 @@ where
         let id: PostTagId = match exist {
             // if tag exists, return the id
             Some(id) => {
-                self.tags_cache.borrow_mut().insert(tag.to_string(), id);
+                self.cache.tags.lock().unwrap().insert(tag.to_string(), id);
                 return Ok(id);
             }
             // if tag does not exist, insert the tag and return the id
@@ -37,9 +38,7 @@ where
         }?;
 
         // insert into cache
-        self.tags_cache
-            .borrow_mut()
-            .insert(tag.to_string(), id);
+        self.cache.tags.lock().unwrap().insert(tag.to_string(), id);
 
         Ok(id)
     }

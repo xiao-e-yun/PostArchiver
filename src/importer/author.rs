@@ -1,15 +1,13 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension, ToSql};
+use rusqlite::{params, params_from_iter, OptionalExtension, ToSql};
 
-use crate::{alias::AuthorAlias, Author, AuthorId, FileMetaId, Link};
+use crate::{alias::Alias, utils::manager::{PostArchiverConnection, PostArchiverManager}, Author, AuthorId, FileMetaId, Link};
 
-use super::{ImportConnection, PostArchiverImporter};
-
-impl<T> PostArchiverImporter<T>
+impl<T> PostArchiverManager<T>
 where
-    T: ImportConnection,
+    T: PostArchiverConnection,
 {
     pub fn check_author(&self, alias: &[String]) -> Result<Option<AuthorId>, rusqlite::Error> {
         if alias.is_empty() {
@@ -86,12 +84,12 @@ where
         })
     }
 
-    pub fn get_author_alias(&self, author: &AuthorId) -> Result<Vec<AuthorAlias>, rusqlite::Error> {
+    pub fn get_author_alias(&self, author: &AuthorId) -> Result<Vec<Alias>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM author_alias WHERE target = ?")?;
         let tags = stmt.query_map([author], |row| {
-            Ok(AuthorAlias {
+            Ok(Alias {
                 source: row.get("source")?,
                 target: row.get("target")?,
             })
@@ -219,14 +217,14 @@ impl UnsyncAuthor {
 
     pub fn sync<T>(
         self,
-        importer: &PostArchiverImporter<T>,
-    ) -> Result<(Author, Vec<AuthorAlias>), rusqlite::Error>
+        manager: &PostArchiverManager<T>,
+    ) -> Result<(Author, Vec<Alias>), rusqlite::Error>
     where
-        T: ImportConnection,
+        T: PostArchiverConnection,
     {
-        let id = importer.import_author(&self)?;
-        let author = importer.get_author(&id)?;
-        let alias = importer.get_author_alias(&id)?;
+        let id = manager.import_author(&self)?;
+        let author = manager.get_author(&id)?;
+        let alias = manager.get_author_alias(&id)?;
         Ok((author, alias))
     }
 }
