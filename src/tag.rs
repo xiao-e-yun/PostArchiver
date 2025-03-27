@@ -7,6 +7,14 @@ use ts_rs::TS;
 
 use crate::id::PostTagId;
 
+/// Represents a tag for a post
+///
+/// # Structure
+/// `id` Unique identifier for the tag  
+/// `name` Name of the tag  
+/// 
+/// # Relationships
+/// [`PostTag`](crate::post::tag::PostTag) - Represents the association between a post and its tags
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone)]

@@ -16,6 +16,22 @@ use crate::{
     id::{AuthorId, FileMetaId, PostId},
 };
 
+/// Represents a post
+/// 
+/// # Structure
+/// `id` Unique identifier for the post  
+/// `author` Author of the post  
+/// `source` Optional source reference for the post  
+/// `title` Title of the post  
+/// `content` Content of the post, which can be either text or a file reference  
+/// `thumb` Optional thumbnail/avatar image reference  
+/// `comments` Collection of comments associated with the post  
+/// `updated` Timestamp of when the post was last updated  
+/// `published` Timestamp of when the post was published  
+/// 
+/// # Relationships
+/// [`Author`](crate::author::Author) - Represents the author of the post  
+/// [`PostTag`](crate::post::tag::PostTag) - Represents the association between a post and its tags
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone)]

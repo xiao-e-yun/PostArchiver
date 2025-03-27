@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
+/// will make a struct with the following properties:
 macro_rules! define_id {
     ($name:ident) => {
         #[cfg_attr(feature = "typescript", derive(TS))]
@@ -26,6 +27,7 @@ macro_rules! define_id {
             pub fn new(id: u32) -> Self {
                 Self(id)
             }
+            /// get the raw value of the id
             pub fn raw(&self) -> u32 {
                 self.0
             }

@@ -2,6 +2,7 @@ use rusqlite::{types::FromSql, ToSql};
 
 use crate::{AuthorId, FileMetaId, PostId, PostTagId};
 
+/// This macro defines a wrapper for the given ID type and implements the `FromSql` and `ToSql` traits
 macro_rules! sql_id {
     ($name:ident) => {
         impl FromSql for $name {
