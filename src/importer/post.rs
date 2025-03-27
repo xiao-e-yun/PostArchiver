@@ -331,8 +331,7 @@ impl UnsyncPost {
         let metas: HashMap<String, FileMetaId> = metas
             .into_iter()
             .map(|raw| {
-                let (file, method) =
-                    manager.import_file_meta(post.author, post.id, raw.clone())?;
+                let (file, method) = manager.import_file_meta(post.author, post.id, raw.clone())?;
 
                 // push to files
                 files.push((manager.path.join(file.path()), method));

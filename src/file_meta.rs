@@ -9,7 +9,7 @@ use std::{collections::HashMap, hash::Hash, path::PathBuf};
 use crate::id::{AuthorId, FileMetaId, PostId};
 
 /// Represents a file metadata
-/// 
+///
 /// # Structure
 /// `id` id of the file
 /// `filename` Name of the file  
@@ -31,19 +31,19 @@ pub struct FileMeta {
     pub post: PostId,
     pub mime: String,
     #[cfg_attr(feature = "typescript", ts(type = "Record<string, any>"))]
-    pub extra: HashMap<String,Value>
+    pub extra: HashMap<String, Value>,
 }
 
 impl FileMeta {
     /// Returns relative path to the file.  
     /// it will be `<author>/<post>/<filename>`.  
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// use post_archiver::{FileMeta, AuthorId, PostId, FileMetaId};
     /// use std::collections::HashMap;
     /// use std::path::PathBuf;
-    /// 
+    ///
     /// let file_meta = FileMeta {
     ///     id: FileMetaId::new(6),
     ///     author: AuthorId::new(1),
@@ -52,11 +52,11 @@ impl FileMeta {
     ///     mime: "text/plain".to_string(),
     ///     extra: HashMap::new(),
     /// };
-    /// 
+    ///
     /// let path = file_meta.path();
     /// assert_eq!(path.to_str(), Some("1/2/example.txt"));
     /// ```
-    /// 
+    ///
     pub fn path(&self) -> PathBuf {
         PathBuf::from(self.author.to_string())
             .join(self.post.to_string())

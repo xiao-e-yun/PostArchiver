@@ -1,3 +1,4 @@
+pub mod alias;
 pub mod author;
 pub mod comment;
 pub mod file_meta;
@@ -6,7 +7,6 @@ pub mod link;
 pub mod macros;
 pub mod post;
 pub mod tag;
-pub mod alias;
 
 pub use author::*;
 pub use comment::*;

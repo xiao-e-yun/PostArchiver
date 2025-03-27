@@ -12,7 +12,7 @@ use crate::id::PostTagId;
 /// # Structure
 /// `id` Unique identifier for the tag  
 /// `name` Name of the tag  
-/// 
+///
 /// # Relationships
 /// [`PostTag`](crate::post::tag::PostTag) - Represents the association between a post and its tags
 #[cfg_attr(feature = "typescript", derive(TS))]

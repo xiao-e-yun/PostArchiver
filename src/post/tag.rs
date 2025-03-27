@@ -10,7 +10,7 @@ use ts_rs::TS;
 /// # Structure
 /// `post` id of the post  
 /// `tag` id of the tag  
-/// 
+///
 /// # Relationships
 /// [`Post`](crate::post::Post) - Represents a post that the tag belongs to  
 /// [`Tag`](crate::tag::Tag) - Represents a tag that the post belongs to

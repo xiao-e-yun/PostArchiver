@@ -3,7 +3,11 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, params_from_iter, OptionalExtension, ToSql};
 
-use crate::{alias::Alias, utils::manager::{PostArchiverConnection, PostArchiverManager}, Author, AuthorId, FileMetaId, Link};
+use crate::{
+    alias::Alias,
+    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    Author, AuthorId, FileMetaId, Link,
+};
 
 impl<T> PostArchiverManager<T>
 where
@@ -16,10 +20,11 @@ where
 
         let query_array = "?,".repeat(alias.len() - 1) + "?";
 
-        let mut stmt = self
-        .conn()
-        .prepare(&format!("SELECT target FROM author_alias WHERE source IN ({})",query_array))?;
-    
+        let mut stmt = self.conn().prepare(&format!(
+            "SELECT target FROM author_alias WHERE source IN ({})",
+            query_array
+        ))?;
+
         stmt.query_row(params_from_iter(alias), |row| row.get(0))
             .optional()
     }

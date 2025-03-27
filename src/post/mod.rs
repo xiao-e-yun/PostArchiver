@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Represents a post
-/// 
+///
 /// # Structure
 /// `id` Unique identifier for the post  
 /// `author` Author of the post  
@@ -28,7 +28,7 @@ use crate::{
 /// `comments` Collection of comments associated with the post  
 /// `updated` Timestamp of when the post was last updated  
 /// `published` Timestamp of when the post was published  
-/// 
+///
 /// # Relationships
 /// [`Author`](crate::author::Author) - Represents the author of the post  
 /// [`PostTag`](crate::post::tag::PostTag) - Represents the association between a post and its tags

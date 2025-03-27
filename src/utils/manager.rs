@@ -18,7 +18,7 @@ use super::{DATABASE_NAME, VERSION};
 pub struct PostArchiverManager<T = Connection> {
     pub path: PathBuf,
     conn: T,
-    pub(crate)  cache: Arc<PostArchiverManagerCache>,
+    pub(crate) cache: Arc<PostArchiverManagerCache>,
 }
 
 impl PostArchiverManager {

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Represents a link to a any url
-/// 
+///
 /// # Structure
 /// `name` Name of the link  
 /// `url` URL of the link
@@ -24,14 +24,14 @@ impl Link {
     }
 
     /// Create a new link with the given url
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// use post_archiver::Link;
-    /// 
+    ///
     /// let link = Link::new("Name", "https://example.com");
     /// assert_eq!(link.name, "Name");
-    /// 
+    ///
     /// let link = link.proxy("https://proxy.com");
     /// assert_eq!(link.name, "Name [https://example.com]");
     /// assert_eq!(link.url, "https://proxy.com");
@@ -41,5 +41,4 @@ impl Link {
         let url = url.to_string();
         Link { name, url }
     }
-
 }

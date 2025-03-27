@@ -5,7 +5,7 @@ use ts_rs::TS;
 use crate::id::FileMetaId;
 
 /// Represents the content of a post
-/// 
+///
 /// # Variants
 /// - `Text(String)`  
 ///    Represents a `markdown` text
@@ -26,7 +26,7 @@ pub enum Content {
     /// It should render the text using `markdown`
     Text(String),
     /// Represents a file id that is referenced in the post
-    /// 
+    ///
     /// # Transform
     /// It should get the file metadata from `file_metas` using the id
     File(FileMetaId),

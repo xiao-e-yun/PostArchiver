@@ -3,12 +3,12 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Represents a comment on a post
-/// 
+///
 /// # Structure
 /// `user` Name of the user who made the comment  
 /// `text` Content of the comment  
 /// `replies` nested comments (replies)  
-/// 
+///
 /// # Relationships
 /// [`Post`](crate::post::Post) - Represents a post that the comment belongs to
 #[cfg_attr(feature = "typescript", derive(TS))]

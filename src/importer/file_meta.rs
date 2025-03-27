@@ -3,7 +3,10 @@ use std::{collections::HashMap, fmt::Display, hash::Hash, path::PathBuf};
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
-use crate::{utils::manager::{PostArchiverConnection, PostArchiverManager}, AuthorId, FileMeta, FileMetaId, PostId};
+use crate::{
+    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    AuthorId, FileMeta, FileMetaId, PostId,
+};
 
 impl<T> PostArchiverManager<T>
 where
