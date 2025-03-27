@@ -6,14 +6,12 @@ use std::{
 
 use rusqlite::{Connection, Transaction};
 
+use crate::utils::{DATABASE_NAME, VERSION};
 use crate::PostTagId;
-
-use super::{DATABASE_NAME, VERSION};
 
 /// manager for the archive
 ///
 /// Provides common functions to manage the archive
-#[cfg(feature = "importer")]
 #[derive(Debug)]
 pub struct PostArchiverManager<T = Connection> {
     pub path: PathBuf,
@@ -36,7 +34,7 @@ impl PostArchiverManager {
         let conn = Connection::open(&db_path)?;
 
         // run the template sql
-        conn.execute_batch(include_str!("../utils/template.sql"))?;
+        conn.execute_batch(include_str!("utils/template.sql"))?;
 
         // push current version
         conn.execute(
@@ -94,6 +92,24 @@ impl PostArchiverManager {
         Self::open(&path)
             .transpose()
             .unwrap_or_else(|| Self::create(&path))
+    }
+    pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
+        let path = std::env::temp_dir();
+
+        let conn = Connection::open_in_memory()?;
+
+        // run the template sql
+        conn.execute_batch(include_str!("utils/template.sql"))?;
+
+        // push current version
+        conn.execute(
+            "INSERT INTO post_archiver_meta (version) VALUES (?)",
+            &[VERSION],
+        )?;
+
+        let cache = Arc::new(PostArchiverManagerCache::new());
+
+        Ok(Self { conn, path, cache })
     }
 
     pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction>, rusqlite::Error> {

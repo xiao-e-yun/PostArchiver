@@ -5,7 +5,7 @@ use rusqlite::{params, params_from_iter, OptionalExtension, ToSql};
 
 use crate::{
     alias::Alias,
-    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{PostArchiverConnection, PostArchiverManager},
     Author, AuthorId, FileMetaId, Link,
 };
 

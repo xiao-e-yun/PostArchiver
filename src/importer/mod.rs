@@ -17,6 +17,12 @@
 //!
 
 pub mod author;
+pub use author::*;
+
 pub mod file_meta;
+pub use file_meta::*;
+
 pub mod post;
+pub use post::*;
+
 pub mod tags;

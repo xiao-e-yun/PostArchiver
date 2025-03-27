@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
 use crate::{
-    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{PostArchiverConnection, PostArchiverManager},
     AuthorId, Comment, Content, FileMetaId, Post, PostId, PostTagId,
 };
 
@@ -340,6 +340,7 @@ impl UnsyncPost {
             .collect::<Result<_, rusqlite::Error>>()?;
 
         let post = manager.import_post(post, &metas)?;
+        manager.set_author_updated_by_latest(post.author)?;
         manager.set_author_thumb_by_latest(post.author)?;
 
         Ok((post, files))

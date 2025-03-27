@@ -1,8 +1,5 @@
 pub mod id;
 
-#[cfg(feature = "importer")]
-pub mod manager;
-
 /// Relative path to the database file
 pub const DATABASE_NAME: &str = "post-archiver.db";
 

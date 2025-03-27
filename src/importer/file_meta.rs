@@ -4,7 +4,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::{
-    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{PostArchiverConnection, PostArchiverManager},
     AuthorId, FileMeta, FileMetaId, PostId,
 };
 

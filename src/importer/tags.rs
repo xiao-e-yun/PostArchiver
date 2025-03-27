@@ -1,7 +1,7 @@
 use rusqlite::OptionalExtension;
 
 use crate::{
-    utils::manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{PostArchiverConnection, PostArchiverManager},
     PostTagId,
 };
 
