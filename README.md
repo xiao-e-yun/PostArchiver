@@ -1,13 +1,13 @@
 # PostArchiver
 Types for Archiver
-For `FanboxArchive` of Unify Archive.  
-Provide API to web, just deploy a Static Server.  
+A simple unify post archive.
 
 ### Input
 * [FanboxArchive](https://github.com/xiao-e-yun/FanboxArchive)
 * Planing
 
 ### Output
+* [PostArchiverViewer](https://github.com/xiao-e-yun/PostArchiverViewer)
 * Code by your self
 
 ### Docs
