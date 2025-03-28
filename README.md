@@ -1,6 +1,7 @@
 # PostArchiver
 Types for Archiver
 A simple unify post archive.
+[Docs.rs](https://docs.rs/post-archiver/latest/post_archiver/)
 
 ### Input
 * [FanboxArchive](https://github.com/xiao-e-yun/FanboxArchive)
@@ -10,18 +11,11 @@ A simple unify post archive.
 * [PostArchiverViewer](https://github.com/xiao-e-yun/PostArchiverViewer)
 * Code by your self
 
-### Docs
-[Docs](docs/intro.md)
-
 ## Install
 
 ### For Rust
 ```sh
 cargo add post-archiver
-```
-use it (check `src/structs.rs` to know more)
-```rs
-use post_archiver::*;
 ```
 
 ### For TypeScript
@@ -31,7 +25,7 @@ npm add -D post-archiver
 
 Import you need types
 ```ts
-import type { ArchivePost } from "post-archiver"
+import type { Post } from "post-archiver"
 ```
 
 ## Build 
