@@ -38,7 +38,7 @@ pub struct Alias {
     /// 2. id (e.g. `18623`, `11g978qh2ki-1hhf98aq9533a`)
     /// 3. full name (e.g. `The Octocat`, `Jack Dorsey`)
     ///
-    /// ## Example
+    /// ## Examples
     /// `github:octocat`, `x:jack`.
     ///
     pub source: String,

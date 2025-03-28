@@ -6,7 +6,7 @@
 /// - `From<TargetType> for RawType` (for the inner type)
 /// - `From<RawType> for TargetType` (for the tuple struct)
 ///
-/// # Example
+/// # Examples
 /// ```rust
 /// use post_archiver::wrraper;
 ///

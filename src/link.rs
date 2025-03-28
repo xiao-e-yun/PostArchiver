@@ -25,7 +25,7 @@ impl Link {
 
     /// Create a new link with the given url
     ///
-    /// # Example
+    /// # Examples
     /// ```rust
     /// use post_archiver::Link;
     ///

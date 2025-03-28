@@ -1,5 +1,8 @@
 use crate::file_meta::FileMeta;
 
+#[cfg(feature = "importer")]
+mod importer;
+
 #[test]
 fn test_file_meta_path() {
     use crate::id::{AuthorId, FileMetaId, PostId};

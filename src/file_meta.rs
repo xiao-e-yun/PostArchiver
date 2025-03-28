@@ -38,7 +38,7 @@ impl FileMeta {
     /// Returns relative path to the file.  
     /// it will be `<author>/<post>/<filename>`.  
     ///
-    /// # Example
+    /// # Examples
     /// ```rust
     /// use post_archiver::{FileMeta, AuthorId, PostId, FileMetaId};
     /// use std::collections::HashMap;

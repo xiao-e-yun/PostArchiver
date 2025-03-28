@@ -12,6 +12,31 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Look up file metadata by post ID and filename, returning its ID if found.
+    ///
+    /// Given a post ID and filename, searches the database for a matching file metadata entry.
+    /// Returns `Some(FileMetaId)` if found, `None` if no matching metadata exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error querying the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::PostId;
+    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let manager = PostArchiverManager::open_in_memory()?;
+    ///     let post_id = PostId(1);
+    ///     
+    ///     if let Some(id) = manager.check_file_meta(post_id, "image.jpg")? {
+    ///         println!("File metadata exists with ID: {}", id);
+    ///     }
+    ///     
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn check_file_meta(
         &self,
         post: PostId,
@@ -24,6 +49,39 @@ where
         stmt.query_row(params![post, filename], |row| row.get(0))
             .optional()
     }
+    /// Create a new file metadata entry in the archive.
+    ///
+    /// Creates a new file metadata record for a given post, returning both the created
+    /// metadata and the method for importing the actual file. The file itself must be
+    /// archived separately after the metadata is created.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::importer::{UnsyncFileMeta, ImportFileMetaMethod};
+    /// # use post_archiver::{AuthorId, PostId};
+    /// # use std::collections::HashMap;
+    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let manager = PostArchiverManager::open_in_memory()?;
+    ///     let author_id = AuthorId(1);
+    ///     let post_id = PostId(1);
+    ///     
+    ///     let file_meta = UnsyncFileMeta {
+    ///         filename: "image.jpg".to_string(),
+    ///         mime: "image/jpeg".to_string(),
+    ///         extra: HashMap::new(),
+    ///         method: ImportFileMetaMethod::None,
+    ///     };
+    ///     let (meta, method) = manager.import_file_meta(author_id, post_id, file_meta)?;
+    ///     
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn import_file_meta(
         &self,
         author: AuthorId,
@@ -54,6 +112,50 @@ where
             file_meta.method,
         ))
     }
+    /// Update an existing file metadata entry while preserving and merging its extra data.
+    ///
+    /// Updates the file metadata with new information and merges any extra data with
+    /// existing values. Returns both the updated metadata and the method for importing
+    /// the actual file.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    ///
+    /// # Panics
+    ///
+    /// * When the file metadata ID does not exist
+    /// * When the author does not exist in the archive
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::importer::{UnsyncFileMeta, ImportFileMetaMethod};
+    /// # use post_archiver::{AuthorId, PostId, FileMetaId};
+    /// # use std::collections::HashMap;
+    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let manager = PostArchiverManager::open_in_memory()?;
+    ///     let author_id = AuthorId(1);
+    ///     let post_id = PostId(1);
+    ///     let file_id = FileMetaId(1);
+    ///     
+    ///     let new_meta = UnsyncFileMeta {
+    ///         filename: "updated.jpg".to_string(),
+    ///         mime: "image/jpeg".to_string(),
+    ///         extra: HashMap::new(),
+    ///         method: ImportFileMetaMethod::None,
+    ///     };
+    ///     let (meta, method) = manager.import_file_meta_by_update(
+    ///         author_id,
+    ///         post_id,
+    ///         file_id,
+    ///         new_meta
+    ///     )?;
+    ///     
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn import_file_meta_by_update(
         &self,
         author: AuthorId,
@@ -95,6 +197,7 @@ where
     }
 }
 
+/// Represents a file metadata that is not yet synced to the database.
 #[derive(Debug, Clone)]
 pub struct UnsyncFileMeta {
     pub filename: String,
@@ -117,12 +220,17 @@ impl Hash for UnsyncFileMeta {
     }
 }
 
+/// Represents a method to import file metadata.
 #[derive(Debug, Clone)]
 pub enum ImportFileMetaMethod {
+    /// The file is imported from a URL.
     Url(String),
+    /// The file is imported from a local file.
     File(PathBuf),
+    /// The file is imported from raw data.
     Data(Vec<u8>),
-    Custom,
+    /// The file is imported as phantom data.
+    None,
 }
 
 impl Display for ImportFileMetaMethod {
@@ -131,7 +239,7 @@ impl Display for ImportFileMetaMethod {
             ImportFileMetaMethod::Url(url) => write!(f, "Url({})", url),
             ImportFileMetaMethod::File(path) => write!(f, "File({})", path.display()),
             ImportFileMetaMethod::Data(data) => write!(f, "Data({} bytes)", data.len()),
-            ImportFileMetaMethod::Custom => write!(f, "Custom"),
+            ImportFileMetaMethod::None => write!(f, "None"),
         }
     }
 }
