@@ -642,8 +642,9 @@ impl PartialSyncPost {
     /// # Examples
     ///
     /// ```
-    /// # use post_archiver::importer::{PartialSyncPost, UnsyncContent, UnsyncFileMeta};
+    /// # use post_archiver::importer::{PartialSyncPost, UnsyncContent, UnsyncFileMeta, ImportFileMetaMethod};
     /// # use post_archiver::{AuthorId, PostId};
+    /// # use std::collections::HashMap;
     /// fn example() {
     ///     let post = PartialSyncPost {
     ///         id: PostId(1),
@@ -651,18 +652,33 @@ impl PartialSyncPost {
     ///         source: None,
     ///         title: "Test".to_string(),
     ///         content: vec![
-    ///             UnsyncContent::File(UnsyncFileMeta::new("image.jpg".to_string())),
+    ///             UnsyncContent::File(UnsyncFileMeta {
+    ///                 filename: "image.jpg".to_string(),
+    ///                 mime: "image/jpeg".to_string(),
+    ///                 extra: HashMap::new(),
+    ///                 method: ImportFileMetaMethod::None,
+    ///             }),
     ///             UnsyncContent::Text("some text".to_string()),
-    ///             UnsyncContent::File(UnsyncFileMeta::new("doc.pdf".to_string())),
+    ///             UnsyncContent::File(UnsyncFileMeta {
+    ///                 filename: "doc.pdf".to_string(),
+    ///                 mime: "application/pdf".to_string(),
+    ///                 extra: HashMap::new(),
+    ///                 method: ImportFileMetaMethod::None,
+    ///             }),
     ///         ],
-    ///         thumb: Some(UnsyncFileMeta::new("thumb.jpg".to_string())),
+    ///         thumb: Some(UnsyncFileMeta {
+    ///             filename: "thumb.jpg".to_string(),
+    ///             mime: "image/jpeg".to_string(),
+    ///             extra: HashMap::new(),
+    ///             method: ImportFileMetaMethod::None,
+    ///         }),
     ///         comments: vec![],
     ///         updated: chrono::Utc::now(),
     ///         published: chrono::Utc::now(),
     ///     };
     ///     
     ///     let files = post.collect_files();
-    ///     assert_eq!(files.len(), 3); // image.jpg, doc.pdf, thumb.jpg
+    ///     assert_eq!(files.len(), 3)
     /// }
     /// ```
     pub fn collect_files(&self) -> Vec<UnsyncFileMeta> {
