@@ -431,7 +431,7 @@ impl UnsyncAuthor {
     /// It will check if the author already exists in the archive by their alias.  
     /// If the author exists, it will update the existing entry. If not, it will create a new entry.
     ///
-    /// # Exampless
+    /// # Examples
     /// ```rust
     /// use post_archiver::manager::PostArchiverManager;
     /// use post_archiver::importer::UnsyncAuthor;
