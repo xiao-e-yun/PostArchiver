@@ -1,9 +1,23 @@
+//! Utility functions and constants for the post archiver system
+//!
+//! # Overview
+//! This module provides common utilities and configuration constants used
+//! throughout the post archiver system. It includes database configuration,
+
 pub mod id;
 
-/// Relative path to the database file
+/// Default relative path to the SQLite database file
+///
+/// # Usage
+/// This constant defines the default location where the post archiver
+/// will create and access its SQLite database. The path is relative
+/// to the current working directory.
 pub const DATABASE_NAME: &str = "post-archiver.db";
 
-/// Current version of the library.
+/// Current version of the post archiver library
 ///
-/// It will be set to the version in `Cargo.toml` at build time.
+/// # Details
+/// - Automatically set from Cargo.toml at build time
+/// - Follows semantic versioning (MAJOR.MINOR.PATCH)
+/// - Used for version checking and compatibility
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

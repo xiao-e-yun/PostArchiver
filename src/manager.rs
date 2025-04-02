@@ -9,9 +9,14 @@ use rusqlite::{Connection, Transaction};
 use crate::utils::{DATABASE_NAME, VERSION};
 use crate::PostTagId;
 
-/// manager for the archive
+/// Core manager type for post archive operations with SQLite backend
 ///
-/// Provides common functions to manage the archive
+/// # Examples
+/// ```no_run
+/// use post_archiver::manager::PostArchiverManager;
+///    
+/// let manager = PostArchiverManager::open_or_create("./data").unwrap();
+/// ```
 #[derive(Debug)]
 pub struct PostArchiverManager<T = Connection> {
     pub path: PathBuf,
@@ -20,6 +25,17 @@ pub struct PostArchiverManager<T = Connection> {
 }
 
 impl PostArchiverManager {
+    /// Creates a new archive at the specified path
+    ///
+    /// # Safety
+    /// The path must not already contain a database file.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use post_archiver::manager::PostArchiverManager;
+    ///
+    /// let manager = PostArchiverManager::create("./new_archive").unwrap();
+    /// ```
     pub fn create<P>(path: P) -> Result<Self, rusqlite::Error>
     where
         P: AsRef<Path>,
@@ -46,6 +62,22 @@ impl PostArchiverManager {
 
         Ok(Self { conn, path, cache })
     }
+
+    /// Opens an existing archive at the specified path
+    ///
+    /// # Returns
+    /// - `Ok(Some(manager))` if archive exists and version is compatible
+    /// - `Ok(None)` if archive doesn't exist
+    /// - `Err(_)` on database errors
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use post_archiver::manager::PostArchiverManager;
+    ///
+    /// if let Some(manager) = PostArchiverManager::open("./archive").unwrap() {
+    ///     println!("Archive opened successfully");
+    /// }
+    /// ```
     pub fn open<P>(path: P) -> Result<Option<Self>, rusqlite::Error>
     where
         P: AsRef<Path>,
@@ -85,6 +117,15 @@ impl PostArchiverManager {
         let cache = Arc::new(PostArchiverManagerCache::new());
         Ok(Some(Self { conn, path, cache }))
     }
+
+    /// Opens an existing archive or creates a new one if it doesn't exist
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use post_archiver::manager::PostArchiverManager;
+    ///
+    /// let manager = PostArchiverManager::open_or_create("./archive").unwrap();
+    /// ```
     pub fn open_or_create<P>(path: P) -> Result<Self, rusqlite::Error>
     where
         P: AsRef<Path>,
@@ -93,6 +134,17 @@ impl PostArchiverManager {
             .transpose()
             .unwrap_or_else(|| Self::create(&path))
     }
+
+    /// Creates an in-memory database
+    ///
+    /// it will generate a temporary path for the archive files
+    ///
+    /// # Examples
+    /// ```
+    /// use post_archiver::manager::PostArchiverManager;
+    ///
+    /// let manager = PostArchiverManager::open_in_memory().unwrap();
+    /// ```
     pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
         let path = std::env::temp_dir();
 
@@ -112,6 +164,17 @@ impl PostArchiverManager {
         Ok(Self { conn, path, cache })
     }
 
+    /// Starts a new transaction
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use post_archiver::manager::PostArchiverManager;
+    ///
+    /// let mut manager = PostArchiverManager::open_in_memory().unwrap();
+    /// let mut tx = manager.transaction().unwrap();
+    /// // ... perform operations
+    /// tx.commit().unwrap();
+    /// ```
     pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction>, rusqlite::Error> {
         Ok(PostArchiverManager {
             path: self.path.clone(),
@@ -122,6 +185,7 @@ impl PostArchiverManager {
 }
 
 impl<'a> PostArchiverManager<Transaction<'a>> {
+    /// Commits the transaction
     pub fn commit(self) -> Result<(), rusqlite::Error> {
         self.conn.commit()
     }
@@ -149,6 +213,7 @@ impl PostArchiverManagerCache {
     }
 }
 
+/// Trait for types that can provide a database connection
 pub trait PostArchiverConnection {
     fn connection(&self) -> &Connection;
 }

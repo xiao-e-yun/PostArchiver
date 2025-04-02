@@ -7,14 +7,12 @@ use ts_rs::TS;
 
 use crate::id::PostTagId;
 
-/// Represents a tag for a post
+/// A categorical label that can be applied to posts
 ///
-/// # Structure
-/// `id` Unique identifier for the tag  
-/// `name` Name of the tag  
-///
-/// # Relationships
-/// [`PostTag`](crate::post::tag::PostTag) - Represents the association between a post and its tags
+/// # Safety
+/// - Tag names must not be empty
+/// - Tag names should be kebab-case
+/// - IDs must be unique across all tags
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone)]

@@ -2,11 +2,20 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
-/// Represents a link to a any url
+/// A named URL reference that can optionally use a proxy service
 ///
-/// # Structure
-/// `name` Name of the link  
-/// `url` URL of the link
+/// # Safety
+/// - Names must not be empty
+/// - URLs must be valid url.
+///
+/// # Examples
+/// ```rust
+/// use post_archiver::Link;
+///
+/// let github = Link::new("GitHub", "https://github.com/user");
+/// assert_eq!(github.name, "GitHub");
+/// assert_eq!(github.url, "https://github.com/user");
+/// ```
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -23,18 +32,19 @@ impl Link {
         }
     }
 
-    /// Create a new link with the given url
+    /// Creates a proxied version of the link, preserving the original URL in the name
     ///
     /// # Examples
     /// ```rust
     /// use post_archiver::Link;
     ///
-    /// let link = Link::new("Name", "https://example.com");
-    /// assert_eq!(link.name, "Name");
+    /// // Create a link to a restricted resource
+    /// let original = Link::new("Resource", "https://internal.example.com");
     ///
-    /// let link = link.proxy("https://proxy.com");
-    /// assert_eq!(link.name, "Name [https://example.com]");
-    /// assert_eq!(link.url, "https://proxy.com");
+    /// // Create a publicly accessible proxied version
+    /// let proxied = original.proxy("https://proxy.public.com/internal");
+    /// assert_eq!(proxied.name, "Resource [https://internal.example.com]");
+    /// assert_eq!(proxied.url, "https://proxy.public.com/internal");
     /// ```
     pub fn proxy(self, url: &str) -> Link {
         let name = format!("{} [{}]", self.name, self.url);

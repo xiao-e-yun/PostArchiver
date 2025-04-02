@@ -4,30 +4,45 @@ use ts_rs::TS;
 
 use crate::id::FileMetaId;
 
-/// Represents the content of a post
+/// A content segment within a post that can be either text or a file reference
 ///
-/// # Variants
-/// - `Text(String)`  
-///    Represents a `markdown` text
+/// - Used within [`Post`](crate::post::Post) content arrays
+/// - References [`FileMeta`](crate::file_meta::FileMeta) through FileMetaId
 ///
-/// - `File(FileMetaId)`  
-///    Represents a file id that is referenced in the post
+/// # Variants:
+/// - Text: Contains markdown-formatted text content
+/// - File: References external file content via FileMetaId
 ///
-/// # Relationships
-/// [`FileMetaId`](crate::id::FileMetaId) - Represents a file that is referenced in the post
+/// # Processing:
+/// - Text content should be rendered as markdown
+/// - File content requires metadata lookup and appropriate handling
+///
+/// # Examples
+/// ```rust
+/// use post_archiver::{Content, FileMetaId};
+///
+/// // Text content with markdown
+/// let text = Content::Text("# Heading\n\nSome **bold** text".to_string());
+///
+/// // File reference
+/// let image = Content::File(FileMetaId::new(1));
+///
+/// // Mixed content post
+/// let contents = vec![
+///     Content::Text("Introduction:".to_string()),
+///     Content::File(FileMetaId::new(1)),
+///     Content::Text("*Caption for the above image*".to_string())
+/// ];
+/// ```
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Content {
-    /// Represents a markdown text
+    /// Markdown-formatted text content
     ///
-    /// # Transform
-    /// It should render the text using `markdown`
+    /// The text content should be processed as markdown when rendering,
     Text(String),
-    /// Represents a file id that is referenced in the post
-    ///
-    /// # Transform
-    /// It should get the file metadata from `file_metas` using the id
+    /// Reference to a file via its metadata ID
     File(FileMetaId),
 }

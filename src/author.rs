@@ -11,18 +11,7 @@ use crate::{
     link::Link,
 };
 
-/// Represents a author
-///
-/// # Structure
-/// `id` Unique identifier for the author  
-/// `name` Name of the author  
-/// `links` Collection of relevant links associated with the author  
-/// `thumb` Optional thumbnail/avatar image reference  
-/// `updated` Timestamp of when the author information was last updated  
-///
-/// # Relationships
-/// [`Alias`](crate::alias::Alias) - Represents an alias mapping for an author  
-/// [`Post`](crate::post::Post) - Represents a post created by the author
+/// A content creator or contributor in the system
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone)]
