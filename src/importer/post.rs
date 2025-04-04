@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
@@ -14,65 +14,10 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
-    /// Look up a post in the archive by its source identifier.
-    ///
-    /// Search for a post with the given source identifier, returning its ID if found
-    /// or `None` if not found.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error querying the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     if let Some(id) = manager.check_post(&"https://example.com/post/123".to_string())? {
-    ///         println!("Post exists with ID: {}", id);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn check_post(&self, source: &String) -> Result<Option<PostId>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
-
-        stmt.query_row(params![source], |row| row.get(0)).optional()
-    }
-    /// Check if a the post exists in the archive by their source and updated date.
-    ///     
-    /// This is useful to check if the post has been updated since the last time it was imported.
-    /// If you want to check if the post exists in the archive, use [`check_post`](Self::check_post) instead.
-    pub fn check_post_with_updated(
-        &self,
-        source: &String,
-        updated: &DateTime<Utc>,
-    ) -> Result<Option<PostId>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id, updated FROM posts WHERE source = ?")?;
-
-        stmt.query_row::<(PostId, DateTime<Utc>), _, _>(params![source], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
-        .optional()
-        .map(|query| {
-            query.and_then(|(id, last_update)| {
-                if &last_update >= updated {
-                    Some(id)
-                } else {
-                    None
-                }
-            })
-        })
-    }
     /// Create or update a post's metadata in the archive.
     ///
-    /// Takes a post's metadata and either creates a new entry or updates an existing one
-    /// if a post with the same source already exists. This only creates/updates metadata -
+    /// Takes a post's metadata and either creates a new entry or updates an existing one  
+    /// if a post with the same source already exists. This only updates metadata  
     /// use [`import_post`](Self::import_post) to import the complete post with content.
     ///
     /// # Errors
@@ -106,11 +51,11 @@ where
         };
 
         let post = match exist {
-            Some(id) => self.import_post_meta_by_sync(id, post)?,
-            None => self.import_post_meta_by_create(post)?,
+            Some(id) => self.import_post_meta_by_update(id, post),
+            None => self.import_post_meta_by_create(post),
         };
 
-        Ok(post)
+        post
     }
     /// Create a new post entry in the archive.
     ///
@@ -187,12 +132,12 @@ where
     ///     let updated_post = UnsyncPost::new(author_id)
     ///         .title("Updated Title".to_string());
     ///         
-    ///     let partial_post = manager.import_post_meta_by_sync(post_id, updated_post)?;
+    ///     let partial_post = manager.import_post_meta_by_update(post_id, updated_post)?;
     ///     
     ///     Ok(())
     /// }
     /// ```
-    pub fn import_post_meta_by_sync(
+    pub fn import_post_meta_by_update(
         &self,
         id: PostId,
         post: UnsyncPost,
@@ -251,7 +196,7 @@ where
         &self,
         post: PartialSyncPost,
         files: &HashMap<String, FileMetaId>,
-    ) -> Result<Post, rusqlite::Error> {
+    ) -> Result<PostId, rusqlite::Error> {
         let content: Vec<Content> = post
             .content
             .into_iter()
@@ -271,17 +216,7 @@ where
 
         self.set_post_thumb(post.id, &thumb)?;
 
-        Ok(Post {
-            id: post.id,
-            author: post.author,
-            source: post.source,
-            title: post.title,
-            content,
-            thumb,
-            comments: post.comments,
-            updated: post.updated,
-            published: post.published,
-        })
+        Ok(post.id)
     }
 
     // Setters
@@ -566,9 +501,12 @@ impl UnsyncPost {
             })
             .collect::<Result<_, rusqlite::Error>>()?;
 
+        let author = post.author;
         let post = manager.import_post(post, &metas)?;
-        manager.set_author_updated_by_latest(post.author)?;
-        manager.set_author_thumb_by_latest(post.author)?;
+        manager.set_author_updated_by_latest(author)?;
+        manager.set_author_thumb_by_latest(author)?;
+
+        let post = manager.get_post(&post)?;
 
         Ok((post, files))
     }

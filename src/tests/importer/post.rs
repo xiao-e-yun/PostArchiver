@@ -10,91 +10,19 @@ use chrono::{TimeZone, Utc};
 use std::collections::HashMap;
 
 #[test]
-fn test_check_post() {
+fn test_import_post() {
     // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
     // Create a author
-    let (author, _) = UnsyncAuthor::new("octocat".to_string())
+    let author = UnsyncAuthor::new("octocat".to_string())
         .sync(&manager)
         .unwrap();
 
     // Create a post
-    let (post, _) = UnsyncPost::new(author.id)
-        .source(Some("https://example.com".to_string()))
-        .sync(&manager)
-        .unwrap();
-
-    // Check if the post exists
-    let post_id = manager.check_post(&post.source.unwrap()).unwrap();
-    assert_eq!(post_id, Some(post.id));
-}
-
-#[test]
-fn test_check_post_with_updated() {
-    // Open a manager
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Create a author
-    let (author, _) = UnsyncAuthor::new("octocat".to_string())
-        .sync(&manager)
-        .unwrap();
-
-    // Create a post
-    let (post, _) = UnsyncPost::new(author.id)
-        .source(Some("https://example.com".to_string()))
-        .sync(&manager)
-        .unwrap();
-
-    // Check if the post exists
-    let post_id = manager
-        .check_post_with_updated(&post.source.unwrap(), &post.updated)
-        .unwrap();
-    assert_eq!(post_id, Some(post.id));
-}
-
-#[test]
-fn test_import_post_meta() {
-    // Open a manager
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Create a author
-    let (author, _) = UnsyncAuthor::new("octocat".to_string())
-        .sync(&manager)
-        .unwrap();
-
-    // Create a post
-    let post = UnsyncPost::new(author.id)
+    let import_post = UnsyncPost::new(author.id)
         .source(Some("https://example.com".to_string()))
         .title("Hello World".to_string())
-        .content(vec![UnsyncContent::Text("Hello World".to_string())]);
-
-    // Import the post meta
-    let post = manager.import_post_meta(post).unwrap();
-    let metas = HashMap::new();
-
-    // Complete the post
-    let post = manager.import_post(post, &metas).unwrap();
-
-    // Update the author
-    manager.set_author_updated_by_latest(post.author).unwrap();
-    manager.set_author_thumb_by_latest(post.author).unwrap();
-}
-
-#[test]
-fn test_sync_post() {
-    // Open a manager
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Create an author
-    let (author, _) = UnsyncAuthor::new("octocat".to_string())
-        .alias(vec!["github:octocat".to_string()])
-        .sync(&manager)
-        .unwrap();
-
-    // Create a post with an image file
-    let post = UnsyncPost::new(author.id)
-        .title("Test Post".to_string())
         .content(vec![
             UnsyncContent::Text("Hello World".to_string()),
             UnsyncContent::File(UnsyncFileMeta {
@@ -105,12 +33,183 @@ fn test_sync_post() {
             }),
         ]);
 
-    // Sync the post
-    let (post, files) = post.sync(&manager).unwrap();
+    // Import the post meta
+    let post = manager.import_post_meta(import_post.clone()).unwrap();
+    let metas = load_files(&manager, &post);
+    let post = manager.import_post(post, &metas).unwrap();
+    manager.set_author_thumb_by_latest(author.id).unwrap();
+    manager.set_author_updated_by_latest(author.id).unwrap();
 
-    assert_eq!(post.title, "Test Post");
-    assert_eq!(files.len(), 1); // Should have one file to save
-    assert!(post.thumb.is_some()); // Should auto-select first image as thumb
+    // Check the imported post
+    let saved_post = manager.get_post(&post).unwrap();
+    assert_eq!(saved_post.title, "Hello World");
+
+    // Update the post meta by source
+    let post = manager.import_post_meta(import_post).unwrap();
+    let metas = load_files(&manager, &post);
+    let post = manager.import_post(post, &metas).unwrap();
+    manager.set_author_thumb_by_latest(author.id).unwrap();
+    manager.set_author_updated_by_latest(author.id).unwrap();
+
+    // Check the imported post
+    let saved_post = manager.get_post(&post).unwrap();
+    assert_eq!(saved_post.title, "Hello World");
+
+    fn load_files(
+        manager: &PostArchiverManager,
+        post: &PartialSyncPost,
+    ) -> HashMap<String, FileMetaId> {
+        let mut files = vec![];
+        let metas: HashMap<String, FileMetaId> = post
+            .collect_files()
+            .into_iter()
+            .map(|raw| {
+                let (file, method) = manager.import_file_meta(post.author, post.id, raw.clone())?;
+
+                files.push((manager.path.join(file.path()), method));
+                Ok((raw.filename, file.id))
+            })
+            .collect::<Result<_, rusqlite::Error>>()
+            .unwrap();
+
+        for (path, method) in files {
+            match method {
+                ImportFileMetaMethod::Data(data) => {
+                    assert_eq!(data, vec![1, 2, 3]);
+                    std::fs::write(path, data).unwrap();
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        metas
+    }
+}
+
+#[test]
+fn test_import_post_by_part() {
+    // Open a manager
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+
+    // Create a author
+    let author = UnsyncAuthor::new("octocat".to_string())
+        .sync(&manager)
+        .unwrap();
+
+    // Create a post
+    let import_post = UnsyncPost::new(author.id)
+        .source(Some("https://example.com".to_string()))
+        .title("Hello World".to_string())
+        .content(vec![
+            UnsyncContent::Text("Hello World".to_string()),
+            UnsyncContent::File(UnsyncFileMeta {
+                filename: "image.png".to_string(),
+                mime: "image/png".to_string(),
+                extra: HashMap::new(),
+                method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
+            }),
+        ]);
+
+    // Import the post meta
+    let post = manager
+        .import_post_meta_by_create(import_post.clone())
+        .unwrap();
+    let metas = load_files(&manager, &post);
+    let post = manager.import_post(post, &metas).unwrap();
+    manager.set_author_thumb_by_latest(author.id).unwrap();
+    manager.set_author_updated_by_latest(author.id).unwrap();
+
+    // Check the imported post
+    let saved_post = manager.get_post(&post).unwrap();
+    assert_eq!(saved_post.title, "Hello World");
+
+    // Update the post meta by source
+    let post = manager
+        .import_post_meta_by_update(post, import_post)
+        .unwrap();
+    let metas = load_files(&manager, &post);
+    let post = manager.import_post(post, &metas).unwrap();
+    manager.set_author_thumb_by_latest(author.id).unwrap();
+    manager.set_author_updated_by_latest(author.id).unwrap();
+
+    // Check the imported post
+    let saved_post = manager.get_post(&post).unwrap();
+    assert_eq!(saved_post.title, "Hello World");
+
+    fn load_files(
+        manager: &PostArchiverManager,
+        post: &PartialSyncPost,
+    ) -> HashMap<String, FileMetaId> {
+        let mut files = vec![];
+        let metas: HashMap<String, FileMetaId> = post
+            .collect_files()
+            .into_iter()
+            .map(|raw| {
+                let (file, method) = manager.import_file_meta(post.author, post.id, raw.clone())?;
+
+                files.push((manager.path.join(file.path()), method));
+                Ok((raw.filename, file.id))
+            })
+            .collect::<Result<_, rusqlite::Error>>()
+            .unwrap();
+
+        for (path, method) in files {
+            match method {
+                ImportFileMetaMethod::Data(data) => {
+                    assert_eq!(data, vec![1, 2, 3]);
+                    std::fs::write(path, data).unwrap();
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        metas
+    }
+}
+
+#[test]
+fn test_sync_post() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+
+    // Create a author
+    let author = UnsyncAuthor::new("octocat".to_string())
+        .sync(&manager)
+        .unwrap();
+
+    let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
+
+    // Create a post
+    let (_, files) = UnsyncPost::new(author.id)
+        .source(Some("https://example.com".to_string()))
+        .title("Hello World".to_string())
+        .published(updated)
+        .updated(updated)
+        .comments(vec![Comment {
+            user: "octocat".to_string(),
+            text: "Hello World".to_string(),
+            replies: vec![],
+        }])
+        .content(vec![
+            UnsyncContent::Text("Hello World".to_string()),
+            UnsyncContent::File(UnsyncFileMeta {
+                filename: "image.png".to_string(),
+                mime: "image/png".to_string(),
+                extra: HashMap::new(),
+                method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
+            }),
+        ])
+        .sync(&manager)
+        .unwrap();
+
+    for (path, method) in files {
+        match method {
+            ImportFileMetaMethod::Data(data) => {
+                assert_eq!(data, vec![1, 2, 3]);
+                std::fs::write(path, data).unwrap();
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[test]
@@ -118,22 +217,43 @@ fn test_post_setters() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
     // Create an author
-    let (author, _) = UnsyncAuthor::new("test_author".to_string())
+    let author = UnsyncAuthor::new("test_author".to_string())
         .sync(&manager)
         .unwrap();
 
     // Create a basic post
+    let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
+
     let (post, _) = UnsyncPost::new(author.id)
-        .title("Original Title".to_string())
+        .source(Some("https://example.com".to_string()))
+        .title("Hello World".to_string())
+        .published(updated)
+        .updated(updated)
+        .comments(vec![Comment {
+            user: "octocat".to_string(),
+            text: "Hello World".to_string(),
+            replies: vec![],
+        }])
+        .content(vec![
+            UnsyncContent::Text("Hello World".to_string()),
+            UnsyncContent::File(UnsyncFileMeta {
+                filename: "image.png".to_string(),
+                mime: "image/png".to_string(),
+                extra: HashMap::new(),
+                method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
+            }),
+        ])
         .sync(&manager)
         .unwrap();
 
     // Test set_post_title
     manager.set_post_title(post.id, "Updated Title").unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().title, "Updated Title");
 
     // Test set_post_source
     let new_source = Some("https://example.com/updated".to_string());
     manager.set_post_source(post.id, &new_source).unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().source, new_source);
 
     // Test set_post_comments
     let comments = vec![Comment {
@@ -142,53 +262,54 @@ fn test_post_setters() {
         replies: vec![],
     }];
     manager.set_post_comments(post.id, &comments).unwrap();
+    assert_eq!(
+        manager.get_post(&post.id).unwrap().comments[0].user,
+        comments[0].user
+    );
 
     // Test set_post_thumb
-    let thumb_id = FileMetaId(1);
-    manager.set_post_thumb(post.id, &Some(thumb_id)).unwrap();
-    manager.set_post_thumb(post.id, &None).unwrap(); // Test removing thumb
+    let thumb = manager.get_post(&post.id).unwrap().thumb;
+    manager.set_post_thumb(post.id, &None).unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().thumb, None);
+
+    manager.set_post_thumb(post.id, &thumb).unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().thumb, thumb);
 
     // Test set_post_content
     let new_content = vec![Content::Text("Updated content".to_string())];
     manager.set_post_content(post.id, &new_content).unwrap();
-}
-
-#[test]
-fn test_post_timestamps() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Create an author and post
-    let (author, _) = UnsyncAuthor::new("test_author".to_string())
-        .sync(&manager)
-        .unwrap();
-    let (post, _) = UnsyncPost::new(author.id)
-        .title("Test Post".to_string())
-        .sync(&manager)
-        .unwrap();
 
     // Test update timestamps
-    let time1 = Utc.timestamp_opt(1000000000, 0).unwrap();
-    let time2 = Utc.timestamp_opt(1000000001, 0).unwrap();
+    let time1 = Utc.with_ymd_and_hms(2016, 1, 1, 0, 0, 0).unwrap();
+    let time2 = Utc.with_ymd_and_hms(2017, 1, 1, 0, 0, 0).unwrap();
 
     // Test set_post_updated
     manager.set_post_updated(post.id, &time1).unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().updated, time1);
 
     // Test set_post_updated_by_latest
     manager.set_post_updated_by_latest(post.id, &time2).unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().updated, time2);
+
     // Try to update with older time - should not update
     manager.set_post_updated_by_latest(post.id, &time1).unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().updated, time2);
 
     // Test set_post_published
     manager.set_post_published(post.id, &time1).unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().published, time1);
 
     // Test set_post_published_by_latest
     manager
         .set_post_published_by_latest(post.id, &time2)
         .unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().published, time2);
+
     // Try to update with older time - should not update
     manager
         .set_post_published_by_latest(post.id, &time1)
         .unwrap();
+    assert_eq!(manager.get_post(&post.id).unwrap().published, time2);
 }
 
 #[test]

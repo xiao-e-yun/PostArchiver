@@ -15,12 +15,6 @@ fn test_import_tag() {
     // Import the new tag
     let tag_id3 = manager.import_tag("example2").unwrap();
     assert_ne!(tag_id, tag_id3);
-}
-
-#[test]
-fn test_import_tags() {
-    // Open a manager
-    let manager = PostArchiverManager::open_in_memory().unwrap();
 
     // Import multiple tags
     let tags = vec!["tag1", "tag2", "tag3"];

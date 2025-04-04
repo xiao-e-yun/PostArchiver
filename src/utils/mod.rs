@@ -4,7 +4,10 @@
 //! This module provides common utilities and configuration constants used
 //! throughout the post archiver system. It includes database configuration,
 
+pub mod author;
+pub mod file_meta;
 pub mod id;
+pub mod post;
 
 /// Default relative path to the SQLite database file
 ///

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, hash::Hash, path::PathBuf};
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
@@ -12,42 +12,51 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
-    /// Look up file metadata by post ID and filename, returning its ID if found.
+    /// Create or update a file metadata entry in the archive.
     ///
-    /// Given a post ID and filename, searches the database for a matching file metadata entry.
-    /// Returns `Some(FileMetaId)` if found, `None` if no matching metadata exists.
+    /// Takes a file metadata object and either creates a new entry or updates an existing one.
+    /// if a file metadata with the same filename (and post id) already exists, it only updates metadata
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error querying the database.
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     ///
     /// # Examples
     ///
     /// ```
     /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::PostId;
+    /// # use post_archiver::importer::{UnsyncFileMeta, ImportFileMetaMethod};
+    /// # use post_archiver::{AuthorId, PostId};
+    /// # use std::collections::HashMap;
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
+    ///     let author_id = AuthorId(1);
     ///     let post_id = PostId(1);
     ///     
-    ///     if let Some(id) = manager.check_file_meta(post_id, "image.jpg")? {
-    ///         println!("File metadata exists with ID: {}", id);
-    ///     }
+    ///     let file_meta = UnsyncFileMeta {
+    ///         filename: "image.jpg".to_string(),
+    ///         mime: "image/jpeg".to_string(),
+    ///         extra: HashMap::new(),
+    ///         method: ImportFileMetaMethod::None,
+    ///     };
+    ///     let (meta, method) = manager.import_file_meta(author_id, post_id, file_meta)?;
     ///     
     ///     Ok(())
     /// }
     /// ```
-    pub fn check_file_meta(
+    pub fn import_file_meta(
         &self,
+        author: AuthorId,
         post: PostId,
-        filename: &str,
-    ) -> Result<Option<FileMetaId>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
+        file_meta: UnsyncFileMeta,
+    ) -> Result<(FileMeta, ImportFileMetaMethod), rusqlite::Error> {
+        let exist = self.check_file_meta(post, &file_meta.filename)?;
+        let post = match exist {
+            Some(id) => self.import_file_meta_by_update(author, post, id, file_meta),
+            None => self.import_file_meta_by_create(author, post, file_meta),
+        };
 
-        stmt.query_row(params![post, filename], |row| row.get(0))
-            .optional()
+        post
     }
     /// Create a new file metadata entry in the archive.
     ///
@@ -82,7 +91,7 @@ where
     ///     Ok(())
     /// }
     /// ```
-    pub fn import_file_meta(
+    pub fn import_file_meta_by_create(
         &self,
         author: AuthorId,
         post: PostId,

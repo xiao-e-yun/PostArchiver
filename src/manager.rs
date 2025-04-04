@@ -4,7 +4,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::{params, Connection, Transaction};
+use serde_json::Value;
 
 use crate::utils::{DATABASE_NAME, VERSION};
 use crate::PostTagId;
@@ -197,6 +198,45 @@ where
 {
     pub fn conn(&self) -> &Connection {
         self.conn.connection()
+    }
+    pub fn get_feature(&self, name: &str) -> i64 {
+        self.conn()
+            .query_row("SELECT value FROM features WHERE name = ?", [name], |row| {
+                row.get(0)
+            })
+            .unwrap_or(0)
+    }
+    pub fn get_feature_with_extra(&self, name: &str) -> (i64, HashMap<String, Value>) {
+        self.conn()
+            .query_row(
+                "SELECT value, extra FROM features WHERE name = ?",
+                [name],
+                |row| {
+                    let value: i64 = row.get(0)?;
+                    let extra: String = row.get(1)?;
+                    let extra: HashMap<String, Value> =
+                        serde_json::from_str(&extra).unwrap_or_default();
+                    Ok((value, extra))
+                },
+            )
+            .unwrap_or((0, HashMap::new()))
+    }
+    pub fn set_feature(&self, name: &str, value: i64) {
+        self.conn()
+            .execute(
+                "INSERT INTO features (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = ?",
+                params![name, value, value],
+            )
+            .unwrap();
+    }
+    pub fn set_feature_with_extra(&self, name: &str, value: i64, extra: HashMap<String, Value>) {
+        let extra = serde_json::to_string(&extra).unwrap();
+        self.conn()
+            .execute(
+                "INSERT OR REPLACE INTO features (name, value, extra) VALUES (?, ?, ?)",
+                params![name, value, extra],
+            )
+            .unwrap();
     }
 }
 

@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, params_from_iter, OptionalExtension, ToSql};
+use rusqlite::{params, ToSql};
 
 use crate::{
-    alias::Alias,
     manager::{PostArchiverConnection, PostArchiverManager},
     Author, AuthorId, FileMetaId, Link,
 };
@@ -13,29 +12,6 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
-    /// Look up an author by their alias list.
-    ///
-    /// Searches the database for an author that matches any of the provided aliases.
-    /// Returns the first matching author's ID, or `None` if no match is found.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error querying the database.
-    pub fn check_author(&self, alias: &[String]) -> Result<Option<AuthorId>, rusqlite::Error> {
-        if alias.is_empty() {
-            return Ok(None);
-        }
-
-        let query_array = "?,".repeat(alias.len() - 1) + "?";
-
-        let mut stmt = self.conn().prepare(&format!(
-            "SELECT target FROM author_alias WHERE source IN ({})",
-            query_array
-        ))?;
-
-        stmt.query_row(params_from_iter(alias), |row| row.get(0))
-            .optional()
-    }
     /// Import or update an author record in the archive.
     ///
     /// Checks if an author with any of the given aliases exists in the archive.
@@ -48,11 +24,11 @@ where
         let exist = self.check_author(&author.alias.as_slice())?;
 
         let id = match exist {
-            Some(id) => self.import_author_by_update(id, author)?,
-            None => self.import_author_by_create(author)?,
+            Some(id) => self.import_author_by_update(id, author),
+            None => self.import_author_by_create(author),
         };
 
-        Ok(id)
+        id
     }
     /// Create a new author entry in the archive.
     ///
@@ -106,87 +82,6 @@ where
         }
 
         Ok(id)
-    }
-
-    /// Retrieve an author's complete information from the archive.
-    ///
-    /// Fetches all information about an author including their name, links, and metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The author ID does not exist
-    /// * There was an error accessing the database
-    /// * The stored data is malformed
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::AuthorId;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
-    ///     
-    ///     let author = manager.get_author(&author_id)?;
-    ///     println!("Author name: {}", author.name);
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn get_author(&self, author: &AuthorId) -> Result<Author, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM authors WHERE id = ?")?;
-        stmt.query_row([author], |row| {
-            let links: String = row.get("links")?;
-            let links: Vec<Link> = serde_json::from_str(&links).unwrap();
-            Ok(Author {
-                links,
-                id: row.get("id")?,
-                name: row.get("name")?,
-                thumb: row.get("thumb")?,
-                updated: row.get("updated")?,
-            })
-        })
-    }
-
-    /// Retrieve all aliases associated with an author.
-    ///
-    /// Fetches all alternate identifiers that map to the given author ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::AuthorId;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
-    ///     
-    ///     let aliases = manager.get_author_alias(&author_id)?;
-    ///     for alias in aliases {
-    ///         println!("Author alias: {} -> {}", alias.source, alias.target);
-    ///     }
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn get_author_alias(&self, author: &AuthorId) -> Result<Vec<Alias>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM author_alias WHERE target = ?")?;
-        let tags = stmt.query_map([author], |row| {
-            Ok(Alias {
-                source: row.get("source")?,
-                target: row.get("target")?,
-            })
-        })?;
-        tags.collect()
     }
 
     /// Merge the author alias by their id.
@@ -443,7 +338,7 @@ impl UnsyncAuthor {
     /// let manager = PostArchiverManager::open_in_memory().unwrap();
     ///
     /// // Create an author
-    /// let (author, _) = UnsyncAuthor::new("octocat".to_string())
+    /// let author = UnsyncAuthor::new("octocat".to_string())
     ///    .alias(vec!["github:octocat".to_string()])
     ///    .links(vec![Link::new("github", "https://octodex.github.com/")])
     ///    .updated(Some(Utc::now()))
@@ -452,16 +347,12 @@ impl UnsyncAuthor {
     ///
     /// let archived_author = manager.get_author(&author.id).unwrap();
     /// assert_eq!(author, archived_author);
-    pub fn sync<T>(
-        self,
-        manager: &PostArchiverManager<T>,
-    ) -> Result<(Author, Vec<Alias>), rusqlite::Error>
+    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<Author, rusqlite::Error>
     where
         T: PostArchiverConnection,
     {
         let id = manager.import_author(&self)?;
         let author = manager.get_author(&id)?;
-        let alias = manager.get_author_alias(&id)?;
-        Ok((author, alias))
+        Ok(author)
     }
 }

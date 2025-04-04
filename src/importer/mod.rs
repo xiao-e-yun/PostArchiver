@@ -20,7 +20,7 @@
 //!     let manager = PostArchiverManager::open_in_memory()?;
 //!     
 //!     // Create and import an author
-//!     let (author, _) = UnsyncAuthor::new("octocat".to_string())
+//!     let author = UnsyncAuthor::new("octocat".to_string())
 //!         .alias(vec!["github:octocat".to_string()])
 //!         .links(vec![Link::new("github", "https://github.com/octocat")])
 //!         .updated(Some(Utc::now()))
