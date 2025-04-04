@@ -20,7 +20,6 @@
 /// let raw: u32 = id.into();
 /// assert_eq!(raw, 1);
 /// ```
-#[macro_export]
 macro_rules! wrraper {
     ($($t:ty: $f:ty),*) => {
         $(
@@ -51,3 +50,5 @@ macro_rules! wrraper {
         )*
     };
 }
+
+pub(crate) use wrraper;

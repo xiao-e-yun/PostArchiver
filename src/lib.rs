@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 //! Post archiving and management system
 //!
 //! # Overview
@@ -54,4 +55,5 @@ pub mod importer;
 #[cfg(test)]
 mod tests;
 
-pub(crate) mod macros;
+#[macro_use]
+mod macros;
