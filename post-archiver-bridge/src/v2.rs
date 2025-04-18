@@ -1,7 +1,6 @@
-
 use rusqlite::Connection;
 
-use crate::{Migration, config::Config};
+use crate::{config::Config, Migration};
 
 #[derive(Debug, Clone, Default)]
 pub struct Bridge;
@@ -20,7 +19,8 @@ impl Migration for Bridge {
         let mut conn = Connection::open(&db_path).expect("Failed to open database");
         let tx = conn.transaction().unwrap();
 
-        tx.execute_batch("
+        tx.execute_batch(
+            "
 CREATE TABLE
     post_archiver_meta (version TEXT NOT NULL PRIMARY KEY);
 
@@ -37,7 +37,11 @@ DROP TRIGGER update_author_on_post_insert;
 DROP TRIGGER update_author_on_post_update;
 
 INSERT INTO post_archiver_meta (version) VALUES ('0.3.0');
-        ").unwrap();
+
+UPDATE file_metas SET extra = '{}' WHERE extra = 'null';
+        ",
+        )
+        .unwrap();
 
         tx.commit().expect("Failed to commit transaction");
     }
