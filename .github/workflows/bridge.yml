@@ -17,7 +17,7 @@ jobs:
         with:
           prefix: bridge-
           # (required) GitHub token for creating GitHub Releases.
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
 
   upload-assets:
@@ -64,4 +64,4 @@ jobs:
           # [possible values: all, unix, windows, none]
           zip: windows
           # (required) GitHub token for uploading assets to GitHub Releases.
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}

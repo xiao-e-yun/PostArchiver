@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: bp3d-actions/audit-check@9c23bd47e5e7b15b824739e0862cb878a52cc211
         with:
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   crates_publish:
     name: Publish (crates.io)
