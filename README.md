@@ -5,7 +5,7 @@ A simple unify post archive.
 
 ### Input
 * [FanboxArchive](https://github.com/xiao-e-yun/FanboxArchive)
-* Planing
+* [PatreonArchive](https://github.com/xiao-e-yun/PatreonArchive)
 
 ### Output
 * [PostArchiverViewer](https://github.com/xiao-e-yun/PostArchiverViewer)
