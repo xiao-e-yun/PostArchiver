@@ -90,19 +90,3 @@ where
         })
     }
 }
-
-/// Trait to get file metadata
-pub trait GetFileMeta {
-    /// Get file id
-    fn post_id(&self) -> &FileMetaId;
-    /// Get file metadata
-    fn file_meta(&self, manager: &PostArchiverManager) -> Result<FileMeta, rusqlite::Error> {
-        manager.get_file_meta(self.post_id())
-    }
-}
-
-impl GetFileMeta for FileMetaId {
-    fn post_id(&self) -> &FileMetaId {
-        self
-    }
-}
