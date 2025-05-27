@@ -17,19 +17,19 @@ where
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error querying the database.
-    pub fn check_author(&self, alias: &[String]) -> Result<Option<AuthorId>, rusqlite::Error> {
-        if alias.is_empty() {
+    pub fn check_author(&self, aliases: &[String]) -> Result<Option<AuthorId>, rusqlite::Error> {
+        if aliases.is_empty() {
             return Ok(None);
         }
 
-        let query_array = "?,".repeat(alias.len() - 1) + "?";
+        let query_array = "?,".repeat(aliases.len() - 1) + "?";
 
         let mut stmt = self.conn().prepare(&format!(
-            "SELECT target FROM author_alias WHERE source IN ({})",
+            "SELECT target FROM author_aliases WHERE source IN ({})",
             query_array
         ))?;
 
-        stmt.query_row(params_from_iter(alias), |row| row.get(0))
+        stmt.query_row(params_from_iter(aliases), |row| row.get(0))
             .optional()
     }
     /// Retrieve an author's complete information from the archive.
@@ -88,18 +88,18 @@ where
     ///     let manager = PostArchiverManager::open_in_memory()?;
     ///     let author_id = AuthorId(1);
     ///     
-    ///     let aliases = manager.get_author_alias(&author_id)?;
+    ///     let aliases = manager.get_author_aliases(&author_id)?;
     ///     for alias in aliases {
-    ///         println!("Author alias: {} -> {}", alias.source, alias.target);
+    ///         println!("Author aliases: {} -> {}", alias.source, alias.target);
     ///     }
     ///     
     ///     Ok(())
     /// }
     /// ```
-    pub fn get_author_alias(&self, author: &AuthorId) -> Result<Vec<Alias>, rusqlite::Error> {
+    pub fn get_author_aliases(&self, author: &AuthorId) -> Result<Vec<Alias>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT * FROM author_alias WHERE target = ?")?;
+            .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")?;
         let tags = stmt.query_map([author], |row| {
             Ok(Alias {
                 source: row.get("source")?,
@@ -118,9 +118,9 @@ pub trait GetAuthor {
     fn author(&self, manager: &PostArchiverManager) -> Result<Author, rusqlite::Error> {
         manager.get_author(self.author_id())
     }
-    /// Get author alias
-    fn author_alias(&self, manager: &PostArchiverManager) -> Result<Vec<Alias>, rusqlite::Error> {
-        manager.get_author_alias(self.author_id())
+    /// Get author aliases
+    fn author_aliases(&self, manager: &PostArchiverManager) -> Result<Vec<Alias>, rusqlite::Error> {
+        manager.get_author_aliases(self.author_id())
     }
 }
 

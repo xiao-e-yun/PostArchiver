@@ -36,7 +36,7 @@ fn test_get_all() {
 
     INSERT INTO authors (name) VALUES ('octocat');
 
-    INSERT INTO author_alias (source, target) VALUES ('github:octocat', 1);
+    INSERT INTO author_aliases (source, target) VALUES ('github:octocat', 1);
 
     INSERT INTO posts (author, title, content, source) VALUES (1, 'Hello World', '[]', 'https://example.com');
 
@@ -84,9 +84,9 @@ fn test_get_all() {
     let author = manager.get_author(&crate::AuthorId(1)).unwrap();
     assert_eq!(author.name, "octocat");
 
-    let author_alias = manager.get_author_alias(&crate::AuthorId(1)).unwrap();
+    let author_aliases = manager.get_author_aliases(&crate::AuthorId(1)).unwrap();
     assert_eq!(
-        author_alias[0],
+        author_aliases[0],
         Alias {
             source: "github:octocat".to_string(),
             target: crate::AuthorId(1)

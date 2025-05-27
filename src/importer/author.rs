@@ -21,14 +21,12 @@ where
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_author(&self, author: &UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
-        let exist = self.check_author(&author.alias.as_slice())?;
+        let exist = self.check_author(author.aliases.as_slice())?;
 
-        let id = match exist {
+        match exist {
             Some(id) => self.import_author_by_update(id, author),
             None => self.import_author_by_create(author),
-        };
-
-        id
+        }
     }
     /// Create a new author entry in the archive.
     ///
@@ -53,7 +51,7 @@ where
             self.set_author_updated(id, &updated)?;
         };
 
-        self.set_author_alias_by_merge(&id, &author.alias)?;
+        self.set_author_aliases_by_merge(&id, &author.aliases)?;
         Ok(id)
     }
     /// Update an existing author entry in the archive.
@@ -75,7 +73,7 @@ where
     ) -> Result<AuthorId, rusqlite::Error> {
         self.set_author_name(&id, &author.name)?;
         self.set_author_links_by_merge(id, &author.links)?;
-        self.set_author_alias_by_merge(&id, &author.alias)?;
+        self.set_author_aliases_by_merge(&id, &author.aliases)?;
 
         if let Some(updated) = author.updated {
             self.set_author_updated(id, &updated)?;
@@ -84,23 +82,23 @@ where
         Ok(id)
     }
 
-    /// Merge the author alias by their id.
+    /// Merge the author aliases by their id.
     ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_author_alias_by_merge<S>(
+    pub fn set_author_aliases_by_merge<S>(
         &self,
         author: &AuthorId,
-        alias: &[S],
+        aliases: &[S],
     ) -> Result<(), rusqlite::Error>
     where
         S: ToSql,
     {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("INSERT OR IGNORE INTO author_alias (source, target) VALUES (?, ?)")?;
-        for alias in alias.iter() {
+        let mut stmt = self.conn().prepare_cached(
+            "INSERT OR IGNORE INTO author_aliases (source, target) VALUES (?, ?)",
+        )?;
+        for alias in aliases.iter() {
             stmt.execute(params![alias, &author])?;
         }
         Ok(())
@@ -294,15 +292,15 @@ where
 pub struct UnsyncAuthor {
     name: String,
     links: Vec<Link>,
-    alias: Vec<String>,
+    aliases: Vec<String>,
     updated: Option<DateTime<Utc>>,
 }
 
 impl UnsyncAuthor {
     pub fn new(name: String) -> Self {
         Self {
-            name: name.into(),
-            alias: Vec::new(),
+            name,
+            aliases: Vec::new(),
             links: Vec::new(),
             updated: None,
         }
@@ -311,8 +309,8 @@ impl UnsyncAuthor {
     pub fn name(self, name: String) -> Self {
         Self { name, ..self }
     }
-    pub fn alias(self, alias: Vec<String>) -> Self {
-        Self { alias, ..self }
+    pub fn aliases(self, aliases: Vec<String>) -> Self {
+        Self { aliases, ..self }
     }
     pub fn links(self, links: Vec<Link>) -> Self {
         Self { links, ..self }
@@ -339,7 +337,7 @@ impl UnsyncAuthor {
     ///
     /// // Create an author
     /// let author = UnsyncAuthor::new("octocat".to_string())
-    ///    .alias(vec!["github:octocat".to_string()])
+    ///    .aliases(vec!["github:octocat".to_string()])
     ///    .links(vec![Link::new("github", "https://octodex.github.com/")])
     ///    .updated(Some(Utc::now()))
     ///    .sync(&manager)

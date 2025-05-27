@@ -24,7 +24,7 @@ CREATE TABLE
 
 -- Alias ---------------------------------------------------
 CREATE TABLE
-    author_alias (
+    author_aliases (
         -- source should be "site:author"
         source TEXT NOT NULL PRIMARY KEY,
         target INTEGER NOT NULL,

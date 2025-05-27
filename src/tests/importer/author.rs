@@ -12,7 +12,8 @@ fn test_import_author() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
     // Create an author
-    let author = UnsyncAuthor::new("octocat".to_string()).alias(vec!["github:octocat".to_string()]);
+    let author =
+        UnsyncAuthor::new("octocat".to_string()).aliases(vec!["github:octocat".to_string()]);
 
     // Import the author
     let id = manager.import_author(&author).unwrap();
@@ -63,7 +64,7 @@ fn test_sync_author() {
     let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
 
     UnsyncAuthor::new("octocat".to_string())
-        .alias(vec!["github:octocat".to_string(), "x:octocat".to_string()])
+        .aliases(vec!["github:octocat".to_string(), "x:octocat".to_string()])
         .links(vec![Link::new("github", "https://octodex.github.com/")])
         .updated(Some(updated))
         .sync(&manager)
@@ -79,22 +80,22 @@ fn test_set_author() {
     let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
 
     let author = UnsyncAuthor::new("octocat".to_string())
-        .alias(vec!["github:octocat".to_string(), "x:octocat".to_string()])
+        .aliases(vec!["github:octocat".to_string(), "x:octocat".to_string()])
         .links(vec![Link::new("github", "https://octodex.github.com/")])
         .updated(Some(updated))
         .sync(&manager)
         .unwrap();
 
-    // new alias
+    // New author
     let name = "octocatdog".to_string();
     manager.set_author_name(&author.id, &name).unwrap();
     assert_eq!(manager.get_author(&author.id).unwrap().name, name);
 
-    let alias = vec!["x:octocat".to_string(), "stackoverflow:octocat".to_string()];
+    let aliases = vec!["x:octocat".to_string(), "stackoverflow:octocat".to_string()];
     manager
-        .set_author_alias_by_merge(&author.id, &alias)
+        .set_author_aliases_by_merge(&author.id, &aliases)
         .unwrap();
-    assert_eq!(manager.get_author_alias(&author.id).unwrap().len(), 3);
+    assert_eq!(manager.get_author_aliases(&author.id).unwrap().len(), 3);
 
     // new links
     let links = vec![

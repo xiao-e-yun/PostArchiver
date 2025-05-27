@@ -13,7 +13,7 @@ fn test_import_file_meta() {
 
     // Create an author
     let author = UnsyncAuthor::new("octocat".to_string())
-        .alias(vec!["github:octocat".to_string()])
+        .aliases(vec!["github:octocat".to_string()])
         .sync(&manager)
         .unwrap();
 
@@ -71,7 +71,7 @@ fn test_import_file_meta_by_parts() {
 
     // Create an author
     let author = UnsyncAuthor::new("octocat".to_string())
-        .alias(vec!["github:octocat".to_string()])
+        .aliases(vec!["github:octocat".to_string()])
         .sync(&manager)
         .unwrap();
 

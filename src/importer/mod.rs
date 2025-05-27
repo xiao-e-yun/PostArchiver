@@ -21,7 +21,7 @@
 //!     
 //!     // Create and import an author
 //!     let author = UnsyncAuthor::new("octocat".to_string())
-//!         .alias(vec!["github:octocat".to_string()])
+//!         .aliases(vec!["github:octocat".to_string()])
 //!         .links(vec![Link::new("github", "https://github.com/octocat")])
 //!         .updated(Some(Utc::now()))
 //!         .sync(&manager)?;
