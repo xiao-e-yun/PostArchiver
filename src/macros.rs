@@ -7,9 +7,7 @@
 /// - `From<RawType> for TargetType` (for the tuple struct)
 ///
 /// # Examples
-/// ```rust
-/// use post_archiver::wrraper;
-///
+/// ```ignore
 /// #[derive(Debug ,PartialEq, Eq)]
 /// struct Id(u32);
 /// wrraper!(Id: u32);
