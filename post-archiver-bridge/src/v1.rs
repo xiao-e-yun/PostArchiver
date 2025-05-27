@@ -1,14 +1,18 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use chrono::{DateTime, Local};
 use log::{info, warn};
-use post_archiver_v0_2::{AuthorId, Comment, Content, FileMetaId, Link, PostId, PostTagId};
 use post_archiver_v0_1::{ArchiveContent, ArchiveFile, ArchiveFrom};
-use rusqlite::{Connection, OptionalExtension, params};
+use post_archiver_v0_2::{AuthorId, Comment, Content, FileMetaId, Link, PostId, PostTagId};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
-use crate::{config::Config, Migration};
+use crate::Migration;
 
 #[derive(Debug, Clone, Default)]
 pub struct Bridge {
@@ -19,30 +23,24 @@ pub struct Bridge {
 impl Migration for Bridge {
     const VERSION: &'static str = "v0.1";
 
-    fn verify(&mut self, config: &Config) -> bool {
-        config.source.join("authors.json").exists()
+    fn verify(&mut self, path: &Path) -> bool {
+        path.join("authors.json").exists() && !path.join("post-archiver.db").exists()
     }
 
-    fn upgrade(&mut self, config: &mut Config) {
+    fn upgrade(&mut self, path: &Path) {
         warn!("Only supports fanbox-archive");
 
-        let db_path = config.target.join("post-archiver.db");
-        let mut conn = if db_path.exists() {
-            info!("Connecting to database: {}", db_path.display());
-            Connection::open(&db_path).expect("Failed to open database")
-        } else {
-            info!("Creating database: {}", db_path.display());
-            if let Some(parent) = db_path.parent() {
-                std::fs::create_dir_all(parent).expect("Failed to create database directory");
-            }
-
+        let db_path = path.join("post-archiver.db");
+        info!("Creating database ({})", db_path.display());
+        let mut conn = {
             let conn = Connection::open(&db_path).expect("Failed to create database");
             conn.execute_batch(post_archiver_v0_2::utils::TEMPLATE_DATABASE_UP_SQL)
                 .expect("Failed to create tables");
             conn
         };
 
-        let authors = config.source.join("authors.json");
+        let authors = path.join("authors.json");
+
         let authors = fs::read(authors).expect("Unable to read authors.json");
         let authors: post_archiver_v0_1::ArchiveAuthorsList =
             serde_json::from_slice(&authors).expect("Unable to parse authors.json");
@@ -51,6 +49,7 @@ impl Migration for Bridge {
             .enable_all()
             .build()
             .expect("Failed to create runtime");
+
         for author in authors.0 {
             let tx = conn.transaction().expect("Failed to start transaction");
             let _guard = rt.enter();
@@ -62,40 +61,27 @@ impl Migration for Bridge {
             )];
 
             let source = format!("fanbox:{}", author.id);
-            let author_id: AuthorId = match
-                tx
-                    .query_row(
-                        "SELECT * FROM authors JOIN author_alias ON authors.id = author_alias.target WHERE author_alias.source = ?;",
-                        [&source],
-                        |row| { row.get(0) }
-                    )
-                    .optional()
-                    .expect("Failed to get author id")
-            {
-                Some(id) => { id }
-                None => {
-                    info!("Inserting author: {}", name);
-                    let id: AuthorId = tx
-                        .query_row(
-                            "INSERT INTO authors (name, links) VALUES (?, ?) RETURNING id",
-                            params![
-                                &name,
-                                &serde_json::to_string(&links).expect("Failed to serialize links")
-                            ],
-                            |row| row.get(0)
-                        )
-                        .expect("Failed to insert author");
 
-                    tx.execute(
-                        "INSERT OR IGNORE INTO author_alias (source, target) VALUES (?, ?)",
-                        params![source, &id]
-                    ).expect("Failed to insert author alias");
+            info!("Inserting author: {}", name);
+            let author_id: AuthorId = tx
+                .query_row(
+                    "INSERT INTO authors (name, links) VALUES (?, ?) RETURNING id",
+                    params![
+                        &name,
+                        &serde_json::to_string(&links).expect("Failed to serialize links")
+                    ],
+                    |row| row.get(0),
+                )
+                .expect("Failed to insert author");
 
-                    id
-                }
-            };
+            tx.execute(
+                "INSERT OR IGNORE INTO author_alias (source, target) VALUES (?, ?)",
+                params![source, &author_id],
+            )
+            .expect("Failed to insert author alias");
 
-            let posts = config.source.join(author.id.clone());
+            let posts = path.join(author.id.clone());
+
             let posts: Vec<PathBuf> = fs::read_dir(posts)
                 .expect("Unable to read posts directory")
                 .filter_map(|entry| {
@@ -199,16 +185,14 @@ impl Migration for Bridge {
                         tag.unwrap()
                     }
                 };
-                tx.execute("INSERT INTO post_tags (post, tag) VALUES (?, ?)", params![
-                    post_id, tag
-                ])
+                tx.execute(
+                    "INSERT INTO post_tags (post, tag) VALUES (?, ?)",
+                    params![post_id, tag],
+                )
                 .expect("Failed to insert post tag");
 
                 if !post.files.is_empty() {
-                    let target = config
-                        .target
-                        .join(author_id.to_string())
-                        .join(post_id.to_string());
+                    let target = path.join(author_id.to_string()).join(post_id.to_string());
                     fs::create_dir_all(target).expect("Failed to create post directory");
                 }
 
@@ -220,7 +204,7 @@ impl Migration for Bridge {
                     )
                     .expect("Failed to prepare statement");
                 for file in post.files {
-                    let file_path = config.source.join(file.path());
+                    let file_path = path.join(file.path());
                     let filename = file.filename().to_string_lossy().to_string();
                     let mime = mime_guess::from_path(&file_path).first_or_octet_stream();
                     let extra = match file {
@@ -239,8 +223,7 @@ impl Migration for Bridge {
 
                     file_map.insert(file.path().to_string_lossy().to_string(), file_id);
 
-                    let target_path = config
-                        .target
+                    let target_path = path
                         .join(author_id.to_string())
                         .join(post_id.to_string())
                         .join(filename);
@@ -257,25 +240,20 @@ impl Migration for Bridge {
                     .iter()
                     .map(|content| match content {
                         ArchiveContent::Text(text) => Content::Text(text.clone()),
-                        ArchiveContent::Image(path) => {
-                            Content::File(*file_map.get(path).unwrap())
-                        }
-                        ArchiveContent::Video(path) => {
-                            Content::File(*file_map.get(path).unwrap())
-                        }
-                        ArchiveContent::File(path) => {
-                            Content::File(*file_map.get(path).unwrap())
-                        }
+                        ArchiveContent::Image(path) => Content::File(*file_map.get(path).unwrap()),
+                        ArchiveContent::Video(path) => Content::File(*file_map.get(path).unwrap()),
+                        ArchiveContent::File(path) => Content::File(*file_map.get(path).unwrap()),
                     })
                     .collect::<Vec<_>>();
 
-				tx.execute(
-					"UPDATE posts SET content = ? WHERE id = ?",
-					params![
-						serde_json::to_string(&content).expect("Failed to serialize content"),
-						post_id
-					]
-				).expect("Failed to update post content");
+                tx.execute(
+                    "UPDATE posts SET content = ? WHERE id = ?",
+                    params![
+                        serde_json::to_string(&content).expect("Failed to serialize content"),
+                        post_id
+                    ],
+                )
+                .expect("Failed to update post content");
 
                 rt.block_on(async {
                     while let Some(task) = tasks.join_next().await {

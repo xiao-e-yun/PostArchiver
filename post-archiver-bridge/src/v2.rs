@@ -1,21 +1,23 @@
+use std::path::Path;
+
 use rusqlite::Connection;
 
-use crate::{config::Config, Migration};
+use crate::Migration;
 
 #[derive(Debug, Clone, Default)]
 pub struct Bridge;
 
 impl Migration for Bridge {
-    const VERSION: &'static str = "v0.2";
+    const VERSION: &'static str = "0.2";
 
-    fn verify(&mut self, config: &Config) -> bool {
-        let db_path = config.target.join("post-archiver.db");
+    fn verify(&mut self, path: &Path) -> bool {
+        let db_path = path.join("post-archiver.db");
         let conn = Connection::open(&db_path).expect("Failed to open database");
         !conn.query_row("SELECT count() FROM sqlite_master WHERE type='table' AND name='post_archiver_meta'",[],|row|row.get::<_,bool>(0)).unwrap()
     }
 
-    fn upgrade(&mut self, config: &mut Config) {
-        let db_path = config.target.join("post-archiver.db");
+    fn upgrade(&mut self, path: &Path) {
+        let db_path = path.join("post-archiver.db");
         let mut conn = Connection::open(&db_path).expect("Failed to open database");
         let tx = conn.transaction().unwrap();
 
