@@ -3,10 +3,7 @@ mod v1;
 mod v2;
 mod v3;
 
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::Path};
 
 use clap::Parser;
 use config::Config;
@@ -132,7 +129,8 @@ pub trait MigrationDatabase: Default {
         if bridge.verify(conn) {
             info!("=================================");
             info!("Migrating from v{}", Self::VERSION);
-            conn.execute_batch(Self::SQL).expect("Failed to execute migration SQL");
+            conn.execute_batch(Self::SQL)
+                .expect("Failed to execute migration SQL");
             config.updated = true;
             info!("=================================");
         }
