@@ -13,7 +13,7 @@ pub struct Config {
 
     #[clap(skip)]
     pub updated: bool,
-    
+
     #[clap(skip)]
     pub overwrite: bool,
 }
