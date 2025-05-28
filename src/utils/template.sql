@@ -58,13 +58,15 @@ CREATE INDEX posts_updated_idx ON posts (updated);
 CREATE TABLE
     tags (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE COLLATE NOCASE
+        category TEXT NOT NULL COLLATE NOCASE,
+        name TEXT NOT NULL COLLATE NOCASE,
+        UNIQUE (category, name)
     );
 
-INSERT INTO
-    tags (id, name)
-VALUES
-    (0, 'unknown');
+CREATE INDEX tags_category_idx ON tags (category);
+CREATE INDEX tags_idx ON tags (category, name);
+
+INSERT INTO tags (id, category, name) VALUES (0, 'platform', 'unknown');
 
 CREATE TABLE
     post_tags (
@@ -74,6 +76,8 @@ CREATE TABLE
         FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE,
         FOREIGN KEY (tag) REFERENCES tags (id) ON DELETE CASCADE
     );
+
+CREATE INDEX post_tags_idx ON post_tags (tag);
 
 ------------------------------------------------------------
 -- File Meta

@@ -4,7 +4,7 @@ use crate::{
         UnsyncPost,
     },
     manager::PostArchiverManager,
-    AuthorId, Comment, Content, FileMetaId, PostId,
+    AuthorId, Comment, Content, FileMetaId, PostId, COLLECTION_CATEGORY,
 };
 use chrono::{TimeZone, Utc};
 use std::collections::HashMap;
@@ -342,7 +342,7 @@ fn test_unsync_post_methods() {
         }])
         .updated(now.clone())
         .published(now.clone())
-        .tags(vec!["test".to_string()]);
+        .tags(vec![(COLLECTION_CATEGORY.to_string(), "test".to_string())]);
 
     assert_eq!(post.author, AuthorId(2));
     assert_eq!(post.source, Some("https://example.com".to_string()));
@@ -352,7 +352,10 @@ fn test_unsync_post_methods() {
     assert_eq!(post.comments.len(), 1);
     assert_eq!(post.updated, now);
     assert_eq!(post.published, now);
-    assert_eq!(post.tags, vec!["test".to_string()]);
+    assert_eq!(
+        post.tags,
+        vec![(COLLECTION_CATEGORY.to_string(), "test".to_string())]
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 
-use crate::{manager::PostArchiverManager, Alias, Tag};
+use crate::{manager::PostArchiverManager, Alias, Tag, COLLECTION_CATEGORY};
 
 #[test]
 fn test_open_manager() {
@@ -40,7 +40,7 @@ fn test_get_all() {
 
     INSERT INTO posts (author, title, content, source) VALUES (1, 'Hello World', '[]', 'https://example.com');
 
-    INSERT INTO tags (name) VALUES ('hello');
+    INSERT INTO tags (category, name) VALUES ('collection', 'hello');
 
     INSERT INTO post_tags (post, tag) VALUES (1, 1);
 
@@ -101,6 +101,7 @@ fn test_get_all() {
         tags[0],
         Tag {
             id: crate::PostTagId(1),
+            category: COLLECTION_CATEGORY.to_string(),
             name: "hello".to_string()
         }
     );

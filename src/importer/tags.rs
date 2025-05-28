@@ -21,44 +21,47 @@ where
     /// # Examples
     ///
     /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::{manager::{PostArchiverManager}, COLLECTION_CATEGORY};
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let tag_id = manager.import_tag("rust")?;
+    ///     let tag_id = manager.import_tag(COLLECTION_CATEGORY,"rust")?;
     ///     println!("Imported tag with ID: {}", tag_id);
     ///     Ok(())
     /// }
     /// ```
-    pub fn import_tag(&self, tag: &str) -> Result<PostTagId, rusqlite::Error> {
+    pub fn import_tag(&self, category: &str, name: &str) -> Result<PostTagId, rusqlite::Error> {
+        let cache_key = format!("{}:{}", category, name);
         // check cache
-        if let Some(id) = self.cache.tags.lock().unwrap().get(tag) {
+        if let Some(id) = self.cache.tags.lock().unwrap().get(&cache_key) {
             return Ok(*id);
         }
 
         // check if tag exists
         let exist = self
             .conn()
-            .query_row("SELECT id FROM tags WHERE name = ?", [&tag], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT id FROM tags WHERE category = ? AND name = ?",
+                [category, name],
+                |row| row.get(0),
+            )
             .optional()?;
 
         let id: PostTagId = match exist {
             // if tag exists, return the id
             Some(id) => {
-                self.cache.tags.lock().unwrap().insert(tag.to_string(), id);
+                self.cache.tags.lock().unwrap().insert(cache_key, id);
                 return Ok(id);
             }
             // if tag does not exist, insert the tag and return the id
             None => self.conn().query_row(
-                "INSERT INTO tags (name) VALUES (?) RETURNING id",
-                [&tag],
+                "INSERT INTO tags (category, name) VALUES (?, ?) RETURNING id",
+                [category, name],
                 |row| row.get(0),
             ),
         }?;
 
         // insert into cache
-        self.cache.tags.lock().unwrap().insert(tag.to_string(), id);
+        self.cache.tags.lock().unwrap().insert(cache_key, id);
 
         Ok(id)
     }
@@ -75,10 +78,14 @@ where
     /// # Examples
     ///
     /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::{manager::PostArchiverManager, COLLECTION_CATEGORY};
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let tags = ["tutorial", "rust", "programming"];
+    ///     let tags = vec![
+    ///         (COLLECTION_CATEGORY, "tag1"),
+    ///         (COLLECTION_CATEGORY, "tag2"),
+    ///         (COLLECTION_CATEGORY, "tag3"),
+    ///     ];
     ///     
     ///     let tag_ids = manager.import_tags(&tags)?;
     ///     println!("Imported {} tags", tag_ids.len());
@@ -86,12 +93,12 @@ where
     ///     Ok(())
     /// }
     /// ```
-    pub fn import_tags<S>(&self, tags: &[S]) -> Result<Vec<PostTagId>, rusqlite::Error>
+    pub fn import_tags<S>(&self, tags: &[(S, S)]) -> Result<Vec<PostTagId>, rusqlite::Error>
     where
         S: AsRef<str>,
     {
         tags.iter()
-            .map(|tag| self.import_tag(tag.as_ref()))
+            .map(|(category, name)| self.import_tag(category.as_ref(), name.as_ref()))
             .collect()
     }
 }

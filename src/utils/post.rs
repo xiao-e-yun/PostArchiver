@@ -118,6 +118,7 @@ where
         let tags = stmt.query_map([id], |row| {
             Ok(Tag {
                 id: row.get("id")?,
+                category: row.get("category")?,
                 name: row.get("name")?,
             })
         })?;

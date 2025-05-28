@@ -82,7 +82,7 @@ fn main() {
 
     let mut conn = Connection::open(config.target.join("post-archiver.db")).unwrap();
     // Database Migration
-    v3::BridgeV0::verify_and_upgrade(&mut conn, &mut config);
+    v3::Bridge::verify_and_upgrade(&mut conn, &mut config);
 
     if config.updated {
         info!("Successfully updated");

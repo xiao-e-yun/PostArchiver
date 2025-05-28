@@ -422,7 +422,7 @@ pub struct UnsyncPost {
     /// When the post was first published
     pub published: DateTime<Utc>,
     /// Tags associated with the post
-    pub tags: Vec<String>,
+    pub tags: Vec<(String, String)>,
 }
 
 impl UnsyncPost {
@@ -464,7 +464,11 @@ impl UnsyncPost {
     pub fn published(self, published: DateTime<Utc>) -> Self {
         Self { published, ..self }
     }
-    pub fn tags(self, tags: Vec<String>) -> Self {
+    pub fn tags(self, tags: Vec<(impl Into<String>, impl Into<String>)>) -> Self {
+        let tags = tags
+            .into_iter()
+            .map(|(cat, name)| (cat.into(), name.into()))
+            .collect();
         Self { tags, ..self }
     }
 

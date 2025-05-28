@@ -4,15 +4,15 @@
 //!
 //! It includes two methods for importing data:
 //!   1. object like (recommended)
-//!     It is high level and easy to use.
+//!      It is high level and easy to use.
 //!   2. function like
-//!     It is low level and more flexible.
+//!      It is low level and more flexible.
 //!
 //! # Examples
 //! ```rust
 //! use post_archiver::manager::PostArchiverManager;
 //! use post_archiver::importer::{UnsyncAuthor, UnsyncPost, UnsyncFileMeta, UnsyncContent, ImportFileMetaMethod};
-//! use post_archiver::Link;
+//! use post_archiver::{Link, COLLECTION_CATEGORY, GENERAL_CATEGORY};
 //! use chrono::Utc;
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,7 +38,10 @@
 //!                 method: ImportFileMetaMethod::File("./avatar.png".into()),
 //!             })
 //!         ])
-//!         .tags(vec!["hello".to_string(), "first-post".to_string()])
+//!         .tags(vec![
+//!             (COLLECTION_CATEGORY.to_string(),"hello".to_string()),
+//!             (GENERAL_CATEGORY.to_string(),"first-post".to_string())
+//!         ])
 //!         .sync(&manager)?;
 //!     
 //!     Ok(())

@@ -59,7 +59,7 @@ impl PostArchiverManager {
             &[VERSION],
         )?;
 
-        let cache = Arc::new(PostArchiverManagerCache::new());
+        let cache = Arc::new(PostArchiverManagerCache::default());
 
         Ok(Self { conn, path, cache })
     }
@@ -115,7 +115,7 @@ impl PostArchiverManager {
             );
         }
 
-        let cache = Arc::new(PostArchiverManagerCache::new());
+        let cache = Arc::new(PostArchiverManagerCache::default());
         Ok(Some(Self { conn, path, cache }))
     }
 
@@ -157,10 +157,10 @@ impl PostArchiverManager {
         // push current version
         conn.execute(
             "INSERT INTO post_archiver_meta (version) VALUES (?)",
-            &[VERSION],
+            [VERSION],
         )?;
 
-        let cache = Arc::new(PostArchiverManagerCache::new());
+        let cache = Arc::new(PostArchiverManagerCache::default());
 
         Ok(Self { conn, path, cache })
     }
@@ -185,7 +185,7 @@ impl PostArchiverManager {
     }
 }
 
-impl<'a> PostArchiverManager<Transaction<'a>> {
+impl PostArchiverManager<Transaction<'_>> {
     /// Commits the transaction
     pub fn commit(self) -> Result<(), rusqlite::Error> {
         self.conn.commit()
@@ -240,17 +240,9 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PostArchiverManagerCache {
     pub tags: Mutex<HashMap<String, PostTagId>>,
-}
-
-impl PostArchiverManagerCache {
-    pub fn new() -> Self {
-        Self {
-            tags: Mutex::new(HashMap::new()),
-        }
-    }
 }
 
 /// Trait for types that can provide a database connection
@@ -264,7 +256,7 @@ impl PostArchiverConnection for Connection {
     }
 }
 
-impl<'a> PostArchiverConnection for Transaction<'a> {
+impl PostArchiverConnection for Transaction<'_> {
     fn connection(&self) -> &Connection {
         self
     }
