@@ -1,11 +1,11 @@
-use std::{collections::HashMap, fmt::Display, hash::Hash, path::PathBuf};
+use std::{collections::HashMap, hash::Hash};
 
 use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    AuthorId, FileMeta, FileMetaId, PostId,
+    FileMeta, FileMetaId, PostId,
 };
 
 impl<T> PostArchiverManager<T>
@@ -30,7 +30,6 @@ where
     /// # use std::collections::HashMap;
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
     ///     let post_id = PostId(1);
     ///     
     ///     let file_meta = UnsyncFileMeta {
@@ -39,24 +38,21 @@ where
     ///         extra: HashMap::new(),
     ///         method: ImportFileMetaMethod::None,
     ///     };
-    ///     let (meta, method) = manager.import_file_meta(author_id, post_id, file_meta)?;
+    ///     let meta = manager.import_file_meta(post_id, file_meta)?;
     ///     
     ///     Ok(())
     /// }
     /// ```
     pub fn import_file_meta(
         &self,
-        author: AuthorId,
         post: PostId,
         file_meta: UnsyncFileMeta,
-    ) -> Result<(FileMeta, ImportFileMetaMethod), rusqlite::Error> {
+    ) -> Result<FileMeta, rusqlite::Error> {
         let exist = self.check_file_meta(post, &file_meta.filename)?;
-        let post = match exist {
-            Some(id) => self.import_file_meta_by_update(author, post, id, file_meta),
-            None => self.import_file_meta_by_create(author, post, file_meta),
-        };
-
-        post
+        match exist {
+            Some(id) => self.import_file_meta_by_update(post, id, file_meta),
+            None => self.import_file_meta_by_create(post, file_meta),
+        }
     }
     /// Create a new file metadata entry in the archive.
     ///
@@ -77,49 +73,40 @@ where
     /// # use std::collections::HashMap;
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
     ///     let post_id = PostId(1);
     ///     
     ///     let file_meta = UnsyncFileMeta {
     ///         filename: "image.jpg".to_string(),
     ///         mime: "image/jpeg".to_string(),
     ///         extra: HashMap::new(),
-    ///         method: ImportFileMetaMethod::None,
     ///     };
-    ///     let (meta, method) = manager.import_file_meta(author_id, post_id, file_meta)?;
+    ///     let meta = manager.import_file_meta(post_id, file_meta)?;
     ///     
     ///     Ok(())
     /// }
     /// ```
     pub fn import_file_meta_by_create(
         &self,
-        author: AuthorId,
         post: PostId,
         file_meta: UnsyncFileMeta,
-    ) -> Result<(FileMeta, ImportFileMetaMethod), rusqlite::Error> {
+    ) -> Result<FileMeta, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
-            "INSERT INTO file_metas (filename, author, post, mime, extra) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO file_metas (filename, post, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
         )?;
 
         let filename = file_meta.filename;
         let mime = file_meta.mime;
         let extra = serde_json::to_string(&file_meta.extra).unwrap_or_default();
-        let id: FileMetaId = stmt
-            .query_row(params![&filename, &author, &post, &mime, &extra], |row| {
-                row.get(0)
-            })?;
+        let id: FileMetaId =
+            stmt.query_row(params![&filename, &post, &mime, &extra], |row| row.get(0))?;
 
-        Ok((
-            FileMeta {
-                id,
-                author,
-                post,
-                filename,
-                mime,
-                extra: file_meta.extra,
-            },
-            file_meta.method,
-        ))
+        Ok(FileMeta {
+            id,
+            post,
+            filename,
+            mime,
+            extra: file_meta.extra,
+        })
     }
     /// Update an existing file metadata entry while preserving and merging its extra data.
     ///
@@ -145,7 +132,6 @@ where
     /// # use std::collections::HashMap;
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
     ///     let post_id = PostId(1);
     ///     let file_id = FileMetaId(1);
     ///     
@@ -153,10 +139,8 @@ where
     ///         filename: "updated.jpg".to_string(),
     ///         mime: "image/jpeg".to_string(),
     ///         extra: HashMap::new(),
-    ///         method: ImportFileMetaMethod::None,
     ///     };
-    ///     let (meta, method) = manager.import_file_meta_by_update(
-    ///         author_id,
+    ///     let meta = manager.import_file_meta_by_update(
     ///         post_id,
     ///         file_id,
     ///         new_meta
@@ -167,42 +151,19 @@ where
     /// ```
     pub fn import_file_meta_by_update(
         &self,
-        author: AuthorId,
         post: PostId,
         id: FileMetaId,
         file_meta: UnsyncFileMeta,
-    ) -> Result<(FileMeta, ImportFileMetaMethod), rusqlite::Error> {
-        // get filename and extra
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT filename, extra FROM file_metas WHERE id = ?")?;
-        let (filename, extra) = stmt.query_row::<(String, String), _, _>(params![&id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?;
+    ) -> Result<FileMeta, rusqlite::Error> {
+        self.set_file_meta_extra(id, &file_meta.extra)?;
 
-        // merge extra
-        let mut extra: HashMap<String, Value> = serde_json::from_str(&extra).unwrap_or_default();
-        extra.extend(file_meta.extra.clone());
-
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE file_metas SET extra = ? WHERE id = ?")?;
-        stmt.execute(params![
-            &serde_json::to_string(&file_meta.extra).unwrap(),
-            &id
-        ])?;
-
-        Ok((
-            FileMeta {
-                id,
-                author,
-                post,
-                filename,
-                mime: file_meta.mime,
-                extra,
-            },
-            file_meta.method,
-        ))
+        Ok(FileMeta {
+            id,
+            post,
+            filename: file_meta.filename,
+            mime: file_meta.mime,
+            extra: file_meta.extra,
+        })
     }
 }
 
@@ -212,7 +173,6 @@ pub struct UnsyncFileMeta {
     pub filename: String,
     pub mime: String,
     pub extra: HashMap<String, Value>,
-    pub method: ImportFileMetaMethod,
 }
 
 impl PartialEq for UnsyncFileMeta {
@@ -221,34 +181,8 @@ impl PartialEq for UnsyncFileMeta {
     }
 }
 
-impl Eq for UnsyncFileMeta {}
-
 impl Hash for UnsyncFileMeta {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.filename.hash(state);
-    }
-}
-
-/// Represents a method to import file metadata.
-#[derive(Debug, Clone)]
-pub enum ImportFileMetaMethod {
-    /// The file is imported from a URL.
-    Url(String),
-    /// The file is imported from a local file.
-    File(PathBuf),
-    /// The file is imported from raw data.
-    Data(Vec<u8>),
-    /// The file is imported as phantom data.
-    None,
-}
-
-impl Display for ImportFileMetaMethod {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ImportFileMetaMethod::Url(url) => write!(f, "Url({})", url),
-            ImportFileMetaMethod::File(path) => write!(f, "File({})", path.display()),
-            ImportFileMetaMethod::Data(data) => write!(f, "Data({} bytes)", data.len()),
-            ImportFileMetaMethod::None => write!(f, "None"),
-        }
     }
 }

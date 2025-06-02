@@ -6,7 +6,7 @@ This module provides SQLite database integration for the system's ID types,
 enabling seamless conversion between Rust types and database values.
 */
 
-use crate::{AuthorId, FileMetaId, PostId, PostTagId};
+use crate::{AuthorId, CollectionId, FileMetaId, PlatformId, PlatformTagId, PostId, TagId};
 use rusqlite::{types::FromSql, ToSql};
 
 /// Implements SQLite serialization for ID types
@@ -70,4 +70,7 @@ macro_rules! sql_id {
 sql_id!(AuthorId);
 sql_id!(PostId);
 sql_id!(FileMetaId);
-sql_id!(PostTagId);
+sql_id!(TagId);
+sql_id!(PlatformTagId);
+sql_id!(PlatformId);
+sql_id!(CollectionId);

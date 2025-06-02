@@ -6,10 +6,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
-use crate::{
-    id::{AuthorId, FileMetaId},
-    link::Link,
-};
+use crate::{AuthorId, FileMetaId};
 
 /// A content creator or contributor in the system
 #[cfg_attr(feature = "typescript", derive(TS))]
@@ -18,7 +15,6 @@ use crate::{
 pub struct Author {
     pub id: AuthorId,
     pub name: String,
-    pub links: Vec<Link>,
     pub thumb: Option<FileMetaId>,
     pub updated: DateTime<Utc>,
 }
@@ -34,7 +30,7 @@ impl PartialEq for Author {
         self.id == other.id
             && self.name == other.name
             && self.thumb == other.thumb
-            && self.links == other.links
+            && self.updated == other.updated
     }
 }
 

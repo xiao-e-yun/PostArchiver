@@ -17,6 +17,7 @@
 //! - [`Post`]: Content entries that can contain text and files
 //! - [`Tag`]: Categorical labels for content organization
 //! - [`FileMeta`]: File metadata and storage management
+//! - [`Platform`]: Information about the platform from which posts are archived
 //! - [`Comment`]: Nested discussion threads
 
 pub mod alias;
@@ -24,6 +25,9 @@ pub use alias::*;
 
 pub mod author;
 pub use author::*;
+
+pub mod collection;
+pub use collection::*;
 
 pub mod comment;
 pub use comment::*;
@@ -34,14 +38,17 @@ pub use file_meta::*;
 pub mod id;
 pub use id::*;
 
-pub mod link;
-pub use link::*;
-
 pub mod post;
 pub use post::*;
 
+pub mod platform;
+pub use platform::*;
+
 pub mod tag;
 pub use tag::*;
+
+pub mod content;
+pub use content::*;
 
 #[cfg(feature = "utils")]
 pub mod utils;
@@ -52,8 +59,8 @@ pub mod manager;
 #[cfg(feature = "importer")]
 pub mod importer;
 
+#[cfg(feature = "editor")]
+pub mod editor;
+
 #[cfg(test)]
 mod tests;
-
-#[macro_use]
-mod macros;

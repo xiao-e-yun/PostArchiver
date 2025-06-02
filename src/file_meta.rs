@@ -4,9 +4,16 @@ use serde_json::Value;
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
-use std::{collections::HashMap, hash::Hash, path::PathBuf};
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    ops::{Div, Rem},
+    path::PathBuf,
+};
 
-use crate::id::{AuthorId, FileMetaId, PostId};
+use crate::id::{FileMetaId, PostId};
+
+pub const POSTS_PRE_CHUNK: u32 = 2048;
 
 /// Metadata for a file in the system with hierarchical path organization
 #[cfg_attr(feature = "typescript", derive(TS))]
@@ -15,7 +22,6 @@ use crate::id::{AuthorId, FileMetaId, PostId};
 pub struct FileMeta {
     pub id: FileMetaId,
     pub filename: String,
-    pub author: AuthorId,
     pub post: PostId,
     pub mime: String,
     #[cfg_attr(feature = "typescript", ts(type = "Record<string, any>"))]
@@ -24,7 +30,10 @@ pub struct FileMeta {
 
 impl FileMeta {
     /// Returns relative path to the file.  
-    /// it will be `<author>/<post>/<filename>`.  
+    /// it will be `<chunk>/<index>/<filename>`.  
+    /// the `<chunk>` is `postId / POSTS_PRE_CHUNK`,
+    /// the `<index>` is `postId % POSTS_PRE_CHUNK`,
+    /// [`POSTS_PRE_CHUNK`] is a constant that defines how many posts are in one chunk. (default is 2048).
     ///
     /// # Examples
     /// ```rust
@@ -35,19 +44,20 @@ impl FileMeta {
     /// // You should never create a FileMeta struct
     /// let file_meta = FileMeta {
     ///     id: FileMetaId::new(6),
-    ///     author: AuthorId::new(1),
-    ///     post: PostId::new(2),
+    ///     post: PostId::new(2049),
     ///     filename: "example.txt".to_string(),
     ///     mime: "text/plain".to_string(),
     ///     extra: HashMap::new(),
     /// };
     ///
     /// let path = file_meta.path();
-    /// assert_eq!(path.to_str(), Some("1/2/example.txt"));
+    /// assert_eq!(path.to_str(), Some("1/1/example.txt"));
     /// ```
     pub fn path(&self) -> PathBuf {
-        PathBuf::from(self.author.to_string())
-            .join(self.post.to_string())
+        let chunk = self.post.div(POSTS_PRE_CHUNK);
+        let index = self.post.rem(POSTS_PRE_CHUNK);
+        PathBuf::from(chunk.to_string())
+            .join(index.to_string())
             .join(&self.filename)
     }
 }
@@ -56,8 +66,6 @@ impl Hash for FileMeta {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
         self.post.hash(state);
-        self.author.hash(state);
-        self.mime.hash(state);
         self.filename.hash(state);
     }
 }
@@ -66,9 +74,7 @@ impl PartialEq for FileMeta {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
             && self.post == other.post
-            && self.author == other.author
             && self.filename == other.filename
-            && self.mime == other.mime
             && self.extra == other.extra
     }
 }

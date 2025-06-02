@@ -1,4 +1,4 @@
-use crate::macros::wrraper;
+use crate::utils::macros::wrraper;
 
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -112,4 +112,28 @@ define_id!(
 /// # Safety
 /// - The wrapped value must be a valid u32
 /// - Must maintain referential integrity when used as a foreign key
-,PostTagId);
+,TagId);
+
+define_id!(
+/// Unique identifier for a post tag that is platform-specific
+///
+/// # Safety
+/// - The wrapped value must be a valid u32
+/// - Must maintain referential integrity when used as a foreign key
+,PlatformTagId);
+
+define_id!(
+/// Unique identifier for a platform in the system
+///
+/// # Safety
+/// - The wrapped value must be a valid u32
+/// - Must maintain referential integrity when used as a foreign key
+,PlatformId);
+
+define_id!(
+/// Unique identifier for a collection in the system
+///
+/// # Safety
+/// - The wrapped value must be a valid u32
+/// - Must maintain referential integrity when used as a foreign key
+,CollectionId);

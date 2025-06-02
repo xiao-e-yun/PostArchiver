@@ -4,11 +4,12 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
-    AuthorId, Comment, Content, FileMetaId, Post, PostId, PostTagId,
+    manager::{platform::PlatformIdOrRaw, PostArchiverConnection, PostArchiverManager},
+    utils::tag::{PlatformTagIdOrRaw, TagIdOrRaw},
+    AuthorId, Comment, Content, FileMetaId, Post, PostId,
 };
 
-use super::file_meta::{ImportFileMetaMethod, UnsyncFileMeta};
+use super::UnsyncFileMeta;
 
 impl<T> PostArchiverManager<T>
 where
@@ -32,7 +33,6 @@ where
     /// # use post_archiver::AuthorId;
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
     ///     
     ///     let post = UnsyncPost::new(author_id)
     ///         .title("My First Post".to_string())
@@ -89,12 +89,11 @@ where
         post: UnsyncPost,
     ) -> Result<PartialSyncPost, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
-            "INSERT INTO posts (author, source, title, content ,thumb, comments, updated, published) VALUES (?, ?, ?, '[]', null, ?, ?, ?) RETURNING id",
+            "INSERT INTO posts (source, title, content ,thumb, comments, updated, published) VALUES (?, ?, '[]', null, ?, ?, ?) RETURNING id",
         )?;
         let comments = serde_json::to_string(&post.comments).unwrap();
         let id = stmt.query_row(
             params![
-                &post.author,
                 &post.source,
                 &post.title,
                 &comments,
@@ -104,10 +103,10 @@ where
             |row| row.get(0),
         )?;
 
-        let tags = self.import_tags(&post.tags)?;
-        self.set_post_tags(id, &tags)?;
+        let tags = self.import_tags(post.tags.clone())?;
+        self.add_post_tags(id, &tags);
 
-        Ok(PartialSyncPost::new(post.author, id, post))
+        Ok(PartialSyncPost::new(id, post))
     }
     /// Update an existing post's metadata in the archive.
     ///
@@ -143,16 +142,16 @@ where
         post: UnsyncPost,
     ) -> Result<PartialSyncPost, rusqlite::Error> {
         // sync tags
-        let tags = self.import_tags(&post.tags)?;
-        self.set_post_tags(id, &tags)?;
+        let tags = self.import_tags(post.tags.clone())?;
+        self.add_post_tags(id, &tags)?;
+        self.add_post_platform_tags(id, &post.platform_tags)?;
 
         // sync other fields
         self.set_post_source(id, &post.source)?;
         self.set_post_title(id, &post.title)?;
         self.set_post_comments(id, &post.comments)?;
         self.set_post_updated_by_latest(id, &post.updated)?;
-        self.set_post_published_by_latest(id, &post.published)?;
-        Ok(PartialSyncPost::new(post.author, id, post))
+        Ok(PartialSyncPost::new(id, post))
     }
 
     /// Complete a post's import by processing its content and files.
@@ -218,195 +217,13 @@ where
 
         Ok(post.id)
     }
-
-    // Setters
-
-    /// Associate one or more tags with a post.
-    ///
-    /// Creates tag associations between a post and the provided tag IDs.
-    /// Duplicate associations are silently ignored.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_tags(&self, post: PostId, tags: &[PostTagId]) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("INSERT OR IGNORE INTO post_tags (post, tag) VALUES (?, ?)")?;
-        for tag in tags {
-            stmt.execute(params![post, tag])?;
-        }
-        Ok(())
-    }
-    /// Set a post's content.
-    ///
-    /// Replaces the entire content of a post with new text and file entries.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_content(
-        &self,
-        post: PostId,
-        content: &Vec<Content>,
-    ) -> Result<(), rusqlite::Error> {
-        let content = serde_json::to_string(content).unwrap();
-
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET content = ? WHERE id = ?")?;
-        stmt.execute(params![content, post])?;
-        Ok(())
-    }
-    /// Set or clear a post's source URL.
-    ///
-    /// Sets the source identifier for a post, or removes it by passing `None`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_source(
-        &self,
-        post: PostId,
-        source: &Option<String>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET source = ? WHERE id = ?")?;
-        stmt.execute(params![source, post])?;
-        Ok(())
-    }
-    /// Update a post's title.
-    ///
-    /// Sets a new title for the specified post.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_title(&self, post: PostId, title: &str) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET title = ? WHERE id = ?")?;
-        stmt.execute(params![title, post])?;
-        Ok(())
-    }
-    /// Set or remove a post's thumbnail image.
-    ///
-    /// Associates a file metadata ID as the post's thumbnail, or removes it by passing `None`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_thumb(
-        &self,
-        post: PostId,
-        thumb: &Option<FileMetaId>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET thumb = ? WHERE id = ?")?;
-        stmt.execute(params![thumb, post])?;
-        Ok(())
-    }
-    /// Replace all comments on a post.
-    ///
-    /// Updates the post with a new set of comments, replacing any existing ones.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_comments(
-        &self,
-        post: PostId,
-        comments: &Vec<Comment>,
-    ) -> Result<(), rusqlite::Error> {
-        let comments = serde_json::to_string(comments).unwrap();
-
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET comments = ? WHERE id = ?")?;
-        stmt.execute(params![comments, post])?;
-        Ok(())
-    }
-    /// Update when a post was last modified.
-    ///
-    /// Sets the timestamp indicating when this post was last changed.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_updated(
-        &self,
-        post: PostId,
-        updated: &DateTime<Utc>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET updated = ? WHERE id = ?")?;
-        stmt.execute(params![updated, post])?;
-        Ok(())
-    }
-    /// Update a post's timestamp if the new one is more recent.
-    ///
-    /// Only updates the last modified time if the new timestamp is more recent than the existing one.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_updated_by_latest(
-        &self,
-        post: PostId,
-        updated: &DateTime<Utc>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET updated = ? WHERE id = ? AND updated < ?")?;
-        stmt.execute(params![updated, post, updated])?;
-        Ok(())
-    }
-    /// Set when a post was originally published.
-    ///
-    /// Updates the timestamp indicating when this post was first published.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_published(
-        &self,
-        post: PostId,
-        published: &DateTime<Utc>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET published = ? WHERE id = ?")?;
-        stmt.execute(params![published, post])?;
-        Ok(())
-    }
-    /// Update a post's publish date if the new one is more recent.
-    ///
-    /// Only updates the publication timestamp if the new one is more recent than the existing one.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_post_published_by_latest(
-        &self,
-        post: PostId,
-        published: &DateTime<Utc>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET published = ? WHERE id = ? AND published < ?")?;
-        stmt.execute(params![published, post, published])?;
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone)]
 /// Represents a post that is not yet synchronized with the archive.
 pub struct UnsyncPost {
     /// The ID of the author who created this post
-    pub author: AuthorId,
+    pub authors: Vec<AuthorId>,
     /// The original URL of this post (e.g., "https://example.com/blog/1")
     pub source: Option<String>,
     /// The title of the post
@@ -421,14 +238,18 @@ pub struct UnsyncPost {
     pub updated: DateTime<Utc>,
     /// When the post was first published
     pub published: DateTime<Utc>,
+    /// Platform associated with the post
+    pub platform: Option<PlatformIdOrRaw>,
     /// Tags associated with the post
-    pub tags: Vec<(String, String)>,
+    pub tags: Vec<TagIdOrRaw>,
+    /// Platform specific tags associated with the post
+    pub platform_tags: Vec<PlatformTagIdOrRaw>,
 }
 
 impl UnsyncPost {
-    pub fn new(author: AuthorId) -> Self {
+    pub fn new() -> Self {
         Self {
-            author,
+            authors: Vec::new(),
             source: None,
             title: String::new(),
             content: Vec::new(),
@@ -437,11 +258,13 @@ impl UnsyncPost {
             updated: Utc::now(),
             published: Utc::now(),
             tags: Vec::new(),
+            platform_tags: Vec::new(),
+            platform: None,
         }
     }
 
-    pub fn author(self, author: AuthorId) -> Self {
-        Self { author, ..self }
+    pub fn authors(self, authors: Vec<AuthorId>) -> Self {
+        Self { authors, ..self }
     }
     pub fn source(self, source: Option<String>) -> Self {
         Self { source, ..self }
@@ -464,18 +287,27 @@ impl UnsyncPost {
     pub fn published(self, published: DateTime<Utc>) -> Self {
         Self { published, ..self }
     }
-    pub fn tags(self, tags: Vec<(impl Into<String>, impl Into<String>)>) -> Self {
-        let tags = tags
-            .into_iter()
-            .map(|(cat, name)| (cat.into(), name.into()))
-            .collect();
+    pub fn platform(self, platform: impl Into<PlatformIdOrRaw>) -> Self {
+        Self {
+            platform: Some(platform.into()),
+            ..self
+        }
+    }
+    pub fn tags(self, tags: Vec<TagIdOrRaw>) -> Self {
         Self { tags, ..self }
     }
+    pub fn platform_tags(self, platform_tags: Vec<PlatformTagIdOrRaw>) -> Self {
+        Self {
+            platform_tags,
+            ..self
+        }
+    }
 
-    pub fn sync(
+    pub fn sync<T>(
         self,
         manager: &PostArchiverManager<impl PostArchiverConnection>,
-    ) -> Result<(Post, Vec<(PathBuf, ImportFileMetaMethod)>), rusqlite::Error> {
+        mut files_data: HashMap<String, T>,
+    ) -> Result<(Post, Vec<(PathBuf, T)>), rusqlite::Error> {
         let mut post = manager.import_post_meta(self)?;
 
         // select first image as thumb if not set
@@ -493,22 +325,28 @@ impl UnsyncPost {
         });
 
         let metas = post.collect_files();
-        let mut files = Vec::with_capacity(metas.capacity());
+        let mut files = Vec::with_capacity(metas.len());
 
         let metas: HashMap<String, FileMetaId> = metas
             .into_iter()
             .map(|raw| {
-                let (file, method) = manager.import_file_meta(post.author, post.id, raw.clone())?;
+                let file_meta = manager.import_file_meta(post.id, raw.clone())?;
 
-                files.push((manager.path.join(file.path()), method));
-                Ok((raw.filename, file.id))
+                let data = files_data
+                    .remove(&raw.filename)
+                    .expect("file data not found for imported file");
+                files.push((manager.path.join(file_meta.path()), data));
+                Ok((raw.filename, file_meta.id))
             })
             .collect::<Result<_, rusqlite::Error>>()?;
 
-        let author = post.author;
+        let authors = post.authors.clone();
         let post = manager.import_post(post, &metas)?;
-        manager.set_author_updated_by_latest(author)?;
-        manager.set_author_thumb_by_latest(author)?;
+
+        for author in authors {
+            manager.set_author_updated_by_latest(author)?;
+            manager.set_author_thumb_by_latest(author)?;
+        }
 
         let post = manager.get_post(&post)?;
 
@@ -536,7 +374,7 @@ pub struct PartialSyncPost {
     /// The post's ID in the archive
     pub id: PostId,
     /// The ID of the author who created this post
-    pub author: AuthorId,
+    pub authors: Vec<AuthorId>,
     /// The original URL of this post (e.g., "https://example.com/blog/1")
     pub source: Option<String>,
     /// The title of the post
@@ -554,10 +392,10 @@ pub struct PartialSyncPost {
 }
 
 impl PartialSyncPost {
-    pub fn new(author: AuthorId, id: PostId, post: UnsyncPost) -> Self {
+    pub fn new(id: PostId, post: UnsyncPost) -> Self {
         Self {
             id,
-            author,
+            authors: post.authors,
             thumb: post.thumb,
             source: post.source,
             title: post.title,
@@ -590,7 +428,7 @@ impl PartialSyncPost {
     /// fn example() {
     ///     let post = PartialSyncPost {
     ///         id: PostId(1),
-    ///         author: AuthorId(1),
+    ///         authors: vec![AuthorId(1)],
     ///         source: None,
     ///         title: "Test".to_string(),
     ///         content: vec![

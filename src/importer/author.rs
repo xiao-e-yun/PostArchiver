@@ -1,11 +1,9 @@
-use std::collections::HashSet;
-
 use chrono::{DateTime, Utc};
 use rusqlite::{params, ToSql};
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
-    Author, AuthorId, FileMetaId, Link,
+    manager::{platform::PlatformIdOrRaw, PostArchiverConnection, PostArchiverManager},
+    Author, AuthorId, FileMetaId,
 };
 
 impl<T> PostArchiverManager<T>
@@ -21,7 +19,13 @@ where
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_author(&self, author: &UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
-        let exist = self.check_author(author.aliases.as_slice())?;
+        let aliases = author
+            .aliases
+            .iter()
+            .map(|(platform, source, _link)| (platform, source.as_str()))
+            .collect::<Vec<_>>();
+
+        let exist = self.check_author(aliases.as_slice())?;
 
         match exist {
             Some(id) => self.import_author_by_update(id, author),
@@ -42,16 +46,15 @@ where
     ) -> Result<AuthorId, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("INSERT INTO authors (name, links) VALUES (?, ?) RETURNING id")?;
+            .prepare_cached("INSERT INTO authors name VALUES ? RETURNING id")?;
 
-        let links = serde_json::to_string(&author.links).unwrap();
-        let id: AuthorId = stmt.query_row(params![&author.name, &links], |row| row.get(0))?;
+        let id: AuthorId = stmt.query_row(params![&author.name], |row| row.get(0))?;
+        self.add_author_aliases(&id, &author.aliases)?;
 
         if let Some(updated) = author.updated {
             self.set_author_updated(id, &updated)?;
         };
 
-        self.set_author_aliases_by_merge(&id, &author.aliases)?;
         Ok(id)
     }
     /// Update an existing author entry in the archive.
@@ -72,8 +75,7 @@ where
         author: &UnsyncAuthor,
     ) -> Result<AuthorId, rusqlite::Error> {
         self.set_author_name(&id, &author.name)?;
-        self.set_author_links_by_merge(id, &author.links)?;
-        self.set_author_aliases_by_merge(&id, &author.aliases)?;
+        self.add_author_aliases(&id, &author.aliases)?;
 
         if let Some(updated) = author.updated {
             self.set_author_updated(id, &updated)?;
@@ -81,239 +83,34 @@ where
 
         Ok(id)
     }
-
-    /// Merge the author aliases by their id.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_author_aliases_by_merge<S>(
-        &self,
-        author: &AuthorId,
-        aliases: &[S],
-    ) -> Result<(), rusqlite::Error>
-    where
-        S: ToSql,
-    {
-        let mut stmt = self.conn().prepare_cached(
-            "INSERT OR IGNORE INTO author_aliases (source, target) VALUES (?, ?)",
-        )?;
-        for alias in aliases.iter() {
-            stmt.execute(params![alias, &author])?;
-        }
-        Ok(())
-    }
-    /// Set the author name by their id.
-    pub fn set_author_name<S>(&self, author: &AuthorId, name: S) -> Result<(), rusqlite::Error>
-    where
-        S: AsRef<str> + ToSql,
-    {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET name = ? WHERE id = ?")?;
-        stmt.execute(params![name, &author])?;
-        Ok(())
-    }
-    /// Set or remove an author's thumbnail image.
-    ///
-    /// Associates a file metadata ID as the author's thumbnail image, or removes it
-    /// by passing `None`. The specified file must already exist in the archive.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::{AuthorId, FileMetaId};
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
-    ///     let thumb_file_id = FileMetaId(1);
-    ///     
-    ///     // Set a thumbnail
-    ///     manager.set_author_thumb(author_id, Some(thumb_file_id))?;
-    ///     
-    ///     // Remove the thumbnail
-    ///     manager.set_author_thumb(author_id, None)?;
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn set_author_thumb(
-        &self,
-        author: AuthorId,
-        thumb: Option<FileMetaId>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET thumb = ? WHERE id = ?")?;
-        stmt.execute(params![thumb, &author])?;
-        Ok(())
-    }
-    /// Set the author's thumbnail to their most recent post's thumbnail.
-    ///
-    /// Find the most recent post by this author that has a thumbnail and use it as
-    /// the author's thumbnail image.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::AuthorId;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
-    ///     
-    ///     // Update author thumbnail from latest post
-    ///     manager.set_author_thumb_by_latest(author_id)?;
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn set_author_thumb_by_latest(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET thumb = (SELECT thumb FROM posts WHERE author = ? AND thumb IS NOT NULL ORDER BY updated DESC LIMIT 1) WHERE id = ?")?;
-        stmt.execute(params![author, author])?;
-        Ok(())
-    }
-    /// Set the author links by their id.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_author_links(
-        &self,
-        author: AuthorId,
-        links: &[Link],
-    ) -> Result<(), rusqlite::Error> {
-        let links = serde_json::to_string(links).unwrap();
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET links = ? WHERE id = ?")?;
-        stmt.execute(params![links, &author])?;
-        Ok(())
-    }
-    /// Merge the author links by their id.
-    pub fn set_author_links_by_merge(
-        &self,
-        author: AuthorId,
-        links: &[Link],
-    ) -> Result<(), rusqlite::Error> {
-        if links.is_empty() {
-            return Ok(());
-        }
-
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT links FROM authors WHERE id = ?")?;
-        let old_links: String = stmt.query_row(&[&author], |row| row.get(0))?;
-        let old_links: HashSet<Link> = serde_json::from_str(&old_links).unwrap();
-        let links = HashSet::from_iter(links.iter().cloned());
-        let links = links.union(&old_links).cloned().collect::<Vec<_>>();
-        self.set_author_links(author, &links)
-    }
-    /// Set an author's last updated timestamp.
-    ///
-    /// Update the timestamp indicating when this author's information was last modified.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::AuthorId;
-    /// # use chrono::Utc;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
-    ///     let now = Utc::now();
-    ///     
-    ///     manager.set_author_updated(author_id, &now)?;
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn set_author_updated(
-        &self,
-        author: AuthorId,
-        updated: &DateTime<Utc>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET updated = ? WHERE id = ?")?;
-        stmt.execute(params![updated, &author])?;
-        Ok(())
-    }
-    /// Set the author's last updated time to match their most recent post.
-    ///
-    /// Find the author's most recently updated post and use its timestamp as the
-    /// author's last updated time.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::AuthorId;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
-    ///     
-    ///     manager.set_author_updated_by_latest(author_id)?;
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn set_author_updated_by_latest(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET updated = (SELECT updated FROM posts WHERE author = ? ORDER BY updated DESC LIMIT 1) WHERE id = ?")?;
-        stmt.execute(params![author, author])?;
-        Ok(())
-    }
 }
 
 /// Represents an author that is not yet synced with the archive.
 #[derive(Debug, Clone)]
 pub struct UnsyncAuthor {
     name: String,
-    links: Vec<Link>,
-    aliases: Vec<String>,
     updated: Option<DateTime<Utc>>,
+    aliases: Vec<(PlatformIdOrRaw, String, Option<String>)>,
 }
 
 impl UnsyncAuthor {
     pub fn new(name: String) -> Self {
         Self {
             name,
-            aliases: Vec::new(),
-            links: Vec::new(),
             updated: None,
+            aliases: Vec::new(),
         }
     }
 
     pub fn name(self, name: String) -> Self {
         Self { name, ..self }
     }
-    pub fn aliases(self, aliases: Vec<String>) -> Self {
+    pub fn aliases(self, aliases: Vec<UnsyncAlias>) -> Self {
+        let aliases = aliases
+            .into_iter()
+            .map(|alias| (alias.platform, alias.source, alias.link))
+            .collect();
         Self { aliases, ..self }
-    }
-    pub fn links(self, links: Vec<Link>) -> Self {
-        Self { links, ..self }
     }
     pub fn updated(self, updated: Option<DateTime<Utc>>) -> Self {
         Self { updated, ..self }
@@ -327,8 +124,8 @@ impl UnsyncAuthor {
     /// # Examples
     /// ```rust
     /// use post_archiver::manager::PostArchiverManager;
-    /// use post_archiver::importer::UnsyncAuthor;
-    /// use post_archiver::{AuthorId, Link};
+    /// use post_archiver::importer::{UnsyncAuthor, UnsyncAlias};
+    /// use post_archiver::{AuthorId};
     ///
     /// use chrono::Utc;
     ///
@@ -337,8 +134,7 @@ impl UnsyncAuthor {
     ///
     /// // Create an author
     /// let author = UnsyncAuthor::new("octocat".to_string())
-    ///    .aliases(vec!["github:octocat".to_string()])
-    ///    .links(vec![Link::new("github", "https://octodex.github.com/")])
+    ///    .aliases(vec![UnsyncAlias::new(UNKNOWN_PLATFORM, "octocat")])
     ///    .updated(Some(Utc::now()))
     ///    .sync(&manager)
     ///    .unwrap();
@@ -352,5 +148,31 @@ impl UnsyncAuthor {
         let id = manager.import_author(&self)?;
         let author = manager.get_author(&id)?;
         Ok(author)
+    }
+}
+
+/// Represents an alias for an author that is not yet synced with the archive.
+///
+/// This is used to track different platforms or identifiers for the same author.
+/// It can include links to their profiles or other relevant information.
+#[derive(Debug, Clone)]
+pub struct UnsyncAlias {
+    link: Option<String>,
+    platform: PlatformIdOrRaw,
+    source: String,
+}
+
+impl UnsyncAlias {
+    pub fn new<S: Into<String>>(platform: &PlatformIdOrRaw, source: S) -> Self {
+        Self {
+            link: None,
+            source: source.into(),
+            platform: platform.clone(),
+        }
+    }
+
+    pub fn link<S: Into<String>>(mut self, link: S) -> Self {
+        self.link = Some(link.into());
+        self
     }
 }

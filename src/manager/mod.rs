@@ -1,14 +1,25 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
-use rusqlite::{params, Connection, Transaction};
+use dashmap::DashMap;
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::Value;
 
-use crate::utils::{DATABASE_NAME, VERSION};
-use crate::PostTagId;
+use crate::TagId;
+use crate::{
+    utils::{DATABASE_NAME, VERSION},
+    CollectionId, PlatformId, PlatformTagId,
+};
+
+pub mod author;
+pub mod post;
+pub mod file_meta;
+pub mod tag;
+pub mod platform;
+pub mod collection;
 
 /// Core manager type for post archive operations with SQLite backend
 ///
@@ -51,7 +62,7 @@ impl PostArchiverManager {
         let conn = Connection::open(&db_path)?;
 
         // run the template sql
-        conn.execute_batch(include_str!("utils/template.sql"))?;
+        conn.execute_batch(include_str!("../utils/template.sql"))?;
 
         // push current version
         conn.execute(
@@ -83,6 +94,57 @@ impl PostArchiverManager {
     where
         P: AsRef<Path>,
     {
+        let manager = Self::open_uncheck(path);
+
+        // check version
+        if let Ok(Some(manager)) = &manager {
+            let version: String = manager
+                .conn()
+                .query_row("SELECT version FROM post_archiver_meta", [], |row| {
+                    row.get(0)
+                })
+                .unwrap_or("unknown".to_string());
+
+            let get_compatible_version =
+                |version: &str| version.splitn(3, ".").collect::<Vec<_>>()[0..2].join(".");
+
+            let match_version = match version.as_str() {
+                "unknown" => "unknown".to_string(),
+                version => get_compatible_version(version),
+            };
+            let expect_version = get_compatible_version(VERSION);
+
+            if match_version != expect_version {
+                panic!(
+                    "Database version mismatch \n + current: {}\n + expected: {}",
+                    version, VERSION
+                )
+            }
+        }
+
+        manager
+    }
+
+    /// Opens an existing archive at the specified path
+    /// Does not check the version of the archive.
+    ///
+    /// # Returns
+    /// - `Ok(Some(manager))` if archive exists and version is compatible
+    /// - `Ok(None)` if archive doesn't exist
+    /// - `Err(_)` on database errors
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use post_archiver::manager::PostArchiverManager;
+    ///
+    /// if let Some(manager) = PostArchiverManager::open_uncheck("./archive").unwrap() {
+    ///     println!("Archive opened successfully");
+    /// }
+    /// ```
+    pub fn open_uncheck<P>(path: P) -> Result<Option<Self>, rusqlite::Error>
+    where
+        P: AsRef<Path>,
+    {
         let path = path.as_ref().to_path_buf();
         let db_path = path.join(DATABASE_NAME);
 
@@ -91,29 +153,6 @@ impl PostArchiverManager {
         }
 
         let conn = Connection::open(db_path)?;
-
-        // check version
-        let version: String = conn
-            .query_row("SELECT version FROM post_archiver_meta", [], |row| {
-                row.get(0)
-            })
-            .unwrap_or("unknown".to_string());
-
-        let get_compatible_version =
-            |version: &str| version.splitn(3, ".").collect::<Vec<_>>()[0..2].join(".");
-
-        let match_version = match version.as_str() {
-            "unknown" => "unknown".to_string(),
-            version => get_compatible_version(version),
-        };
-        let expect_version = get_compatible_version(VERSION);
-
-        if match_version != expect_version {
-            panic!(
-                "Database version mismatch \n + current: {}\n + expected: {}",
-                version, VERSION
-            );
-        }
 
         let cache = Arc::new(PostArchiverManagerCache::default());
         Ok(Some(Self { conn, path, cache }))
@@ -152,7 +191,7 @@ impl PostArchiverManager {
         let conn = Connection::open_in_memory()?;
 
         // run the template sql
-        conn.execute_batch(include_str!("utils/template.sql"))?;
+        conn.execute_batch(include_str!("../utils/template.sql"))?;
 
         // push current version
         conn.execute(
@@ -199,14 +238,14 @@ where
     pub fn conn(&self) -> &Connection {
         self.conn.connection()
     }
-    pub fn get_feature(&self, name: &str) -> i64 {
+    pub fn get_feature(&self, name: &str) -> Result<i64, rusqlite::Error> {
         self.conn()
-            .query_row("SELECT value FROM features WHERE name = ?", [name], |row| {
-                row.get(0)
-            })
-            .unwrap_or(0)
+            .query_row("SELECT value FROM features WHERE name = ?", [name], |row| row.get(0))
+            .optional()
+            .transpose()
+            .unwrap_or(Ok(0))
     }
-    pub fn get_feature_with_extra(&self, name: &str) -> (i64, HashMap<String, Value>) {
+    pub fn get_feature_with_extra(&self, name: &str) -> Result<(i64, HashMap<String, Value>), rusqlite::Error> {
         self.conn()
             .query_row(
                 "SELECT value, extra FROM features WHERE name = ?",
@@ -219,7 +258,9 @@ where
                     Ok((value, extra))
                 },
             )
-            .unwrap_or((0, HashMap::new()))
+            .optional()
+            .transpose()
+            .unwrap_or(Ok((0, HashMap::default())))
     }
     pub fn set_feature(&self, name: &str, value: i64) {
         self.conn()
@@ -242,7 +283,10 @@ where
 
 #[derive(Debug, Default)]
 pub struct PostArchiverManagerCache {
-    pub tags: Mutex<HashMap<String, PostTagId>>,
+    pub tags: DashMap<String, TagId>,
+    pub platform_tags: DashMap<(PlatformId, String), PlatformTagId>,
+    pub collections: DashMap<String, CollectionId>,
+    pub platforms: DashMap<String, PlatformId>,
 }
 
 /// Trait for types that can provide a database connection
