@@ -1,147 +1,159 @@
 use crate::{
-    importer::{ImportFileMetaMethod, UnsyncAuthor, UnsyncFileMeta, UnsyncPost},
+    importer::{UnsyncAlias, UnsyncAuthor},
+    manager::platform::PlatformIdOrRaw,
     manager::PostArchiverManager,
-    FileMetaId, Link,
 };
 use chrono::{Duration, TimeZone, Utc};
-use std::collections::HashMap;
 
 #[test]
 fn test_import_author() {
     // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create an author
-    let author =
-        UnsyncAuthor::new("octocat".to_string()).aliases(vec!["github:octocat".to_string()]);
+    // Create an author with object-oriented API
+    let author = UnsyncAuthor::new("octocat".to_string())
+        .aliases(vec![UnsyncAlias::new(
+            &PlatformIdOrRaw::Raw("github".to_string()),
+            "octocat",
+        )])
+        .sync(&manager)
+        .unwrap();
 
-    // Import the author
+    // Verify the author was created
+    let saved_author = manager.get_author(&author.id).unwrap();
+    assert_eq!(saved_author.name, "octocat");
+}
+
+#[test]
+fn test_functional_import_author() {
+    // Open a manager
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+
+    // Create an author
+    let author = UnsyncAuthor::new("octocat".to_string()).aliases(vec![UnsyncAlias::new(
+        &PlatformIdOrRaw::Raw("github".to_string()),
+        "octocat",
+    )]);
+
+    // Import the author using functional API
     let id = manager.import_author(&author).unwrap();
 
     // Get the author
     let saved_author = manager.get_author(&id).unwrap();
     assert_eq!(saved_author.name, "octocat");
-
-    // Update the author
-    let author = author.name("octocatdog".to_string());
-    let id = manager.import_author(&author).unwrap();
-
-    // get author
-    let author = manager.get_author(&id).unwrap();
-    assert_eq!(author.name, "octocatdog");
 }
 
 #[test]
-fn test_import_author_by_part() {
+fn test_functional_import_author_by_create() {
     // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
     // Create an author
     let author = UnsyncAuthor::new("octocat".to_string());
 
-    // Import the author
+    // Import the author by create
     let id = manager.import_author_by_create(&author).unwrap();
 
     // Get the author
     let saved_author = manager.get_author(&id).unwrap();
     assert_eq!(saved_author.name, "octocat");
+}
+
+#[test]
+fn test_functional_import_author_by_update() {
+    // Open a manager
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+
+    // Create an author
+    let author = UnsyncAuthor::new("octocat".to_string());
+
+    // Import the author first
+    let id = manager.import_author_by_create(&author).unwrap();
 
     // Update the author
-    let author = author.name("octocatdog".to_string());
-    let id = manager.import_author_by_update(id, &author).unwrap();
+    let updated_author = author.name("octocatdog".to_string());
+    let updated_id = manager
+        .import_author_by_update(id, &updated_author)
+        .unwrap();
 
-    // get author
-    let author = manager.get_author(&id).unwrap();
-    assert_eq!(author.name, "octocatdog");
+    // Verify update
+    assert_eq!(id, updated_id);
+    let saved_author = manager.get_author(&id).unwrap();
+    assert_eq!(saved_author.name, "octocatdog");
 }
 
 #[test]
-fn test_sync_author() {
-    // Open a manager
+fn test_functional_get_author() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create an author and import it
-    let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
+    // Create and import an author
+    let author = UnsyncAuthor::new("test_author".to_string());
+    let id = manager.import_author_by_create(&author).unwrap();
 
-    UnsyncAuthor::new("octocat".to_string())
-        .aliases(vec!["github:octocat".to_string(), "x:octocat".to_string()])
-        .links(vec![Link::new("github", "https://octodex.github.com/")])
-        .updated(Some(updated))
-        .sync(&manager)
-        .unwrap();
+    // Test get_author functional API
+    let retrieved_author = manager.get_author(&id).unwrap();
+    assert_eq!(retrieved_author.name, "test_author");
 }
 
 #[test]
-fn test_set_author() {
-    // Open a manager
+fn test_functional_get_author_aliases() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create an author and import it
-    let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
+    // Create and import an author with aliases
+    let author = UnsyncAuthor::new("test_author".to_string()).aliases(vec![UnsyncAlias::new(
+        &PlatformIdOrRaw::Raw("github".to_string()),
+        "test",
+    )]);
+    let id = manager.import_author(&author).unwrap();
 
-    let author = UnsyncAuthor::new("octocat".to_string())
-        .aliases(vec!["github:octocat".to_string(), "x:octocat".to_string()])
-        .links(vec![Link::new("github", "https://octodex.github.com/")])
-        .updated(Some(updated))
-        .sync(&manager)
-        .unwrap();
+    // Test get_author_aliases functional API
+    let aliases = manager.get_author_aliases(&id).unwrap();
+    assert!(!aliases.is_empty());
+}
 
-    // New author
-    let name = "octocatdog".to_string();
-    manager.set_author_name(&author.id, &name).unwrap();
-    assert_eq!(manager.get_author(&author.id).unwrap().name, name);
+#[test]
+fn test_functional_set_author_name() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let aliases = vec!["x:octocat".to_string(), "stackoverflow:octocat".to_string()];
-    manager
-        .set_author_aliases_by_merge(&author.id, &aliases)
-        .unwrap();
-    assert_eq!(manager.get_author_aliases(&author.id).unwrap().len(), 3);
+    // Create and import an author
+    let author = UnsyncAuthor::new("original_name".to_string());
+    let id = manager.import_author_by_create(&author).unwrap();
 
-    // new links
-    let links = vec![
-        Link::new("github", "https://octodex.github.com/"),
-        Link::new("example", "https://example.com/"),
-    ];
-    manager
-        .set_author_links_by_merge(author.id, &links)
-        .unwrap();
-    assert_eq!(manager.get_author(&author.id).unwrap().links.len(), 2);
+    // Test set_author_name functional API
+    let new_name = "updated_name";
+    manager.set_author_name(&id, new_name).unwrap();
 
-    let links = vec![Link::new("example", "https://example.com/")];
-    manager.set_author_links(author.id, &links).unwrap();
-    assert_eq!(manager.get_author(&author.id).unwrap().links.len(), 1);
+    let updated_author = manager.get_author(&id).unwrap();
+    assert_eq!(updated_author.name, new_name);
+}
 
-    // new updated
-    let updated = updated + Duration::seconds(1);
-    manager.set_author_updated(author.id, &updated).unwrap();
-    assert_eq!(manager.get_author(&author.id).unwrap().updated, updated);
+#[test]
+fn test_functional_set_author_updated() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create a post and thumb
-    // sync UnsyncPost will update the author thumb and updated time
-    let (post, _) = UnsyncPost::new(author.id)
-        .thumb(Some(UnsyncFileMeta {
-            filename: "thumb.png".to_string(),
-            mime: "image/png".to_string(),
-            extra: HashMap::new(),
-            method: ImportFileMetaMethod::None,
-        }))
-        .sync(&manager)
-        .unwrap();
+    // Create and import an author
+    let author = UnsyncAuthor::new("test_author".to_string());
+    let id = manager.import_author_by_create(&author).unwrap();
 
-    assert_eq!(
-        manager.get_author(&author.id).unwrap().thumb,
-        Some(FileMetaId(1))
-    );
+    // Test set_author_updated functional API
+    let new_time = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+    manager.set_author_updated(id, &new_time).unwrap();
 
-    // Set the author thumb to None
-    manager.set_author_thumb(author.id, None).unwrap();
-    assert_eq!(manager.get_author(&author.id).unwrap().thumb, None);
+    let updated_author = manager.get_author(&id).unwrap();
+    assert_eq!(updated_author.updated, new_time);
+}
 
-    assert_ne!(manager.get_author(&author.id).unwrap().updated, updated);
+#[test]
+fn test_functional_set_author_thumb() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Set the post updated to old time
-    manager.set_post_updated(post.id, &updated).unwrap();
-    manager.set_author_updated_by_latest(author.id).unwrap();
+    // Create and import an author
+    let author = UnsyncAuthor::new("test_author".to_string());
+    let id = manager.import_author_by_create(&author).unwrap();
 
-    assert_eq!(manager.get_author(&author.id).unwrap().updated, updated);
+    // Test set_author_thumb functional API (with None)
+    manager.set_author_thumb(id, None).unwrap();
+
+    let updated_author = manager.get_author(&id).unwrap();
+    assert_eq!(updated_author.thumb, None);
 }

@@ -1,10 +1,10 @@
 use crate::{
-    importer::{ImportFileMetaMethod, UnsyncAuthor, UnsyncFileMeta, UnsyncPost},
+    importer::{UnsyncAlias, UnsyncAuthor, UnsyncFileMeta, UnsyncPost},
+    manager::platform::PlatformIdOrRaw,
     manager::PostArchiverManager,
 };
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 #[test]
 fn test_import_file_meta() {
@@ -13,171 +13,154 @@ fn test_import_file_meta() {
 
     // Create an author
     let author = UnsyncAuthor::new("octocat".to_string())
-        .aliases(vec!["github:octocat".to_string()])
+        .aliases(vec![UnsyncAlias::new(
+            &PlatformIdOrRaw::Raw("github".to_string()),
+            "octocat",
+        )])
         .sync(&manager)
         .unwrap();
 
     // Create a post
-    let (post, _) = UnsyncPost::new(author.id).sync(&manager).unwrap();
+    let (post, _) = UnsyncPost::new()
+        .authors(vec![author.id])
+        .sync(&manager, HashMap::<String, Vec<u8>>::new())
+        .unwrap();
 
-    let mut thumb = UnsyncFileMeta {
+    let mut file_meta = UnsyncFileMeta {
         filename: "thumb.png".to_string(),
         mime: "image/png".to_string(),
         extra: HashMap::new(),
-        method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
     };
 
-    let (saved_thumb, method) = manager
-        .import_file_meta(author.id, post.id, thumb.clone())
+    // Test object-oriented API
+    let saved_file = manager
+        .import_file_meta(post.id, file_meta.clone())
         .unwrap();
+
     manager
-        .set_post_thumb(post.id, &Some(saved_thumb.id))
+        .set_post_thumb(post.id, &Some(saved_file.id))
         .unwrap();
-    assert_eq!(saved_thumb.filename, thumb.filename);
+    assert_eq!(saved_file.filename, file_meta.filename);
 
-    match method {
-        ImportFileMetaMethod::Data(data) => {
-            // Create the directory if it doesn't exist
-            std::fs::create_dir_all(manager.path.join(format!("{}/{}", author.id, post.id)))
-                .unwrap();
-            // Save the file to the archive
-            assert_eq!(data, vec![1, 2, 3]);
-            std::fs::write(
-                manager.path.join(format!(
-                    "{}/{}/{}",
-                    author.id, post.id, saved_thumb.filename
-                )),
-                data,
-            )
-            .unwrap();
-        }
-        _ => unreachable!(),
-    };
-
-    thumb.extra.insert("width".to_string(), json!(800));
-    manager
-        .import_file_meta(author.id, post.id, thumb.clone())
+    // Test updating with extra data
+    file_meta.extra.insert("width".to_string(), json!(800));
+    let updated_file = manager
+        .import_file_meta(post.id, file_meta.clone())
         .unwrap();
     assert_eq!(
-        manager.get_file_meta(&saved_thumb.id).unwrap().extra,
-        thumb.extra
+        manager.get_file_meta(&updated_file.id).unwrap().extra,
+        file_meta.extra
     );
 }
 
 #[test]
-fn test_import_file_meta_by_parts() {
+fn test_functional_import_file_meta_by_create() {
     // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
     // Create an author
     let author = UnsyncAuthor::new("octocat".to_string())
-        .aliases(vec!["github:octocat".to_string()])
         .sync(&manager)
         .unwrap();
 
     // Create a post
-    let (post, _) = UnsyncPost::new(author.id).sync(&manager).unwrap();
+    let (post, _) = UnsyncPost::new()
+        .authors(vec![author.id])
+        .sync(&manager, HashMap::<String, Vec<u8>>::new())
+        .unwrap();
 
-    let mut thumb = UnsyncFileMeta {
+    let file_meta = UnsyncFileMeta {
         filename: "thumb.png".to_string(),
         mime: "image/png".to_string(),
         extra: HashMap::new(),
-        method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
     };
 
-    let (saved_thumb, method) = manager
-        .import_file_meta_by_create(author.id, post.id, thumb.clone())
+    // Test functional API - create
+    let saved_file = manager
+        .import_file_meta_by_create(post.id, file_meta.clone())
         .unwrap();
-    manager
-        .set_post_thumb(post.id, &Some(saved_thumb.id))
-        .unwrap();
-    assert_eq!(saved_thumb.filename, thumb.filename);
 
-    match method {
-        ImportFileMetaMethod::Data(data) => {
-            // Create the directory if it doesn't exist
-            std::fs::create_dir_all(manager.path.join(format!("{}/{}", author.id, post.id)))
-                .unwrap();
-            // Save the file to the archive
-            assert_eq!(data, vec![1, 2, 3]);
-            std::fs::write(
-                manager.path.join(format!(
-                    "{}/{}/{}",
-                    author.id, post.id, saved_thumb.filename
-                )),
-                data,
-            )
-            .unwrap();
-        }
-        _ => unreachable!(),
+    manager
+        .set_post_thumb(post.id, &Some(saved_file.id))
+        .unwrap();
+    assert_eq!(saved_file.filename, file_meta.filename);
+}
+
+#[test]
+fn test_functional_import_file_meta_by_update() {
+    // Open a manager
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+
+    // Create an author
+    let author = UnsyncAuthor::new("octocat".to_string())
+        .sync(&manager)
+        .unwrap();
+
+    // Create a post
+    let (post, _) = UnsyncPost::new()
+        .authors(vec![author.id])
+        .sync(&manager, HashMap::<String, Vec<u8>>::new())
+        .unwrap();
+
+    let mut file_meta = UnsyncFileMeta {
+        filename: "thumb.png".to_string(),
+        mime: "image/png".to_string(),
+        extra: HashMap::new(),
     };
 
-    thumb.extra.insert("width".to_string(), json!(800));
-    manager
-        .import_file_meta_by_update(author.id, post.id, saved_thumb.id, thumb.clone())
+    // Create initial file
+    let saved_file = manager
+        .import_file_meta_by_create(post.id, file_meta.clone())
+        .unwrap();
+
+    // Update with new extra data
+    file_meta.extra.insert("width".to_string(), json!(800));
+    let updated_file = manager
+        .import_file_meta_by_update(post.id, saved_file.id, file_meta.clone())
         .unwrap();
     assert_eq!(
-        manager.get_file_meta(&saved_thumb.id).unwrap().extra,
-        thumb.extra
+        manager.get_file_meta(&updated_file.id).unwrap().extra,
+        file_meta.extra
     );
 }
 
 #[test]
-fn test_import_file_meta_methods() {
+fn test_functional_check_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let author = UnsyncAuthor::new("octocat".to_string())
-        .sync(&manager)
-        .unwrap();
-    let (post, _) = UnsyncPost::new(author.id).sync(&manager).unwrap();
 
-    // Test URL method
-    let url_meta = UnsyncFileMeta {
-        filename: "remote.jpg".to_string(),
-        mime: "image/jpeg".to_string(),
-        extra: HashMap::new(),
-        method: ImportFileMetaMethod::Url("https://example.com/image.jpg".to_string()),
-    };
-    let (_meta, method) = manager
-        .import_file_meta(author.id, post.id, url_meta)
+    // Test check_file_meta when file doesn't exist
+    let result = manager
+        .check_file_meta(crate::PostId(1), "test.jpg")
         .unwrap();
-    assert!(matches!(method, ImportFileMetaMethod::Url(_)));
-
-    // Test File method
-    let file_meta = UnsyncFileMeta {
-        filename: "local.jpg".to_string(),
-        mime: "image/jpeg".to_string(),
-        extra: HashMap::new(),
-        method: ImportFileMetaMethod::File(PathBuf::from("test.jpg")),
-    };
-    let (_meta, method) = manager
-        .import_file_meta(author.id, post.id, file_meta)
-        .unwrap();
-    assert!(matches!(method, ImportFileMetaMethod::File(_)));
-
-    // Test None method
-    let none_meta = UnsyncFileMeta {
-        filename: "phantom.jpg".to_string(),
-        mime: "image/jpeg".to_string(),
-        extra: HashMap::new(),
-        method: ImportFileMetaMethod::None,
-    };
-    let (_meta, method) = manager
-        .import_file_meta(author.id, post.id, none_meta)
-        .unwrap();
-    assert!(matches!(method, ImportFileMetaMethod::None));
+    assert!(result.is_none());
 }
 
 #[test]
-fn test_import_file_meta_display() {
-    let url_method = ImportFileMetaMethod::Url("https://example.com/image.jpg".to_string());
-    assert_eq!(url_method.to_string(), "Url(https://example.com/image.jpg)");
+fn test_functional_get_file_meta() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let file_method = ImportFileMetaMethod::File(PathBuf::from("test.jpg"));
-    assert_eq!(file_method.to_string(), "File(test.jpg)");
+    // Create an author and post
+    let author = UnsyncAuthor::new("test".to_string())
+        .sync(&manager)
+        .unwrap();
+    let (post, _) = UnsyncPost::new()
+        .authors(vec![author.id])
+        .sync(&manager, HashMap::<String, Vec<u8>>::new())
+        .unwrap();
 
-    let data_method = ImportFileMetaMethod::Data(vec![1, 2, 3]);
-    assert_eq!(data_method.to_string(), "Data(3 bytes)");
+    // Create file meta
+    let file_meta = UnsyncFileMeta {
+        filename: "test.jpg".to_string(),
+        mime: "image/jpeg".to_string(),
+        extra: HashMap::new(),
+    };
 
-    let none_method = ImportFileMetaMethod::None;
-    assert_eq!(none_method.to_string(), "None");
+    let saved_file = manager
+        .import_file_meta_by_create(post.id, file_meta)
+        .unwrap();
+
+    // Test get_file_meta functional API
+    let retrieved_file = manager.get_file_meta(&saved_file.id).unwrap();
+    assert_eq!(retrieved_file.filename, "test.jpg");
+    assert_eq!(retrieved_file.mime, "image/jpeg");
 }

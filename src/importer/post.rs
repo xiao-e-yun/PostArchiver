@@ -34,7 +34,9 @@ where
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
     ///     
-    ///     let post = UnsyncPost::new(author_id)
+    ///     let author_id = AuthorId(1);
+    ///     let post = UnsyncPost::new()
+    ///         .authors(vec![author_id])
     ///         .title("My First Post".to_string())
     ///         .source(Some("https://blog.example.com/post/1".to_string()));
     ///         
@@ -76,7 +78,8 @@ where
     ///     let manager = PostArchiverManager::open_in_memory()?;
     ///     let author_id = AuthorId(1);
     ///     
-    ///     let post = UnsyncPost::new(author_id)
+    ///     let post = UnsyncPost::new()
+    ///         .authors(vec![author_id])
     ///         .title("My First Post".to_string());
     ///         
     ///     let partial_post = manager.import_post_meta_by_create(post)?;
@@ -106,6 +109,11 @@ where
         let tags = self.import_tags(post.tags.clone())?;
         self.add_post_tags(id, &tags);
 
+        // Link the post to its authors
+        for author_id in &post.authors {
+            self.add_author_posts(author_id, &[id])?;
+        }
+
         Ok(PartialSyncPost::new(id, post))
     }
     /// Update an existing post's metadata in the archive.
@@ -128,7 +136,8 @@ where
     ///     let author_id = AuthorId(1);
     ///     let post_id = PostId(1);
     ///     
-    ///     let updated_post = UnsyncPost::new(author_id)
+    ///     let updated_post = UnsyncPost::new()
+    ///         .authors(vec![author_id])
     ///         .title("Updated Title".to_string());
     ///         
     ///     let partial_post = manager.import_post_meta_by_update(post_id, updated_post)?;
@@ -179,7 +188,9 @@ where
     /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let manager = PostArchiverManager::open_in_memory()?;
     ///     
-    ///     let post = UnsyncPost::new(AuthorId(1))
+    ///     let author_id = AuthorId(1);
+    ///     let post = UnsyncPost::new()
+    ///         .authors(vec![author_id])
     ///         .title("My Post".to_string());
     ///     let partial_post = manager.import_post_meta_by_create(post)?;
     ///     
@@ -422,7 +433,7 @@ impl PartialSyncPost {
     /// # Examples
     ///
     /// ```
-    /// # use post_archiver::importer::{PartialSyncPost, UnsyncContent, UnsyncFileMeta, ImportFileMetaMethod};
+    /// # use post_archiver::importer::{PartialSyncPost, UnsyncContent, UnsyncFileMeta};
     /// # use post_archiver::{AuthorId, PostId};
     /// # use std::collections::HashMap;
     /// fn example() {
@@ -436,21 +447,18 @@ impl PartialSyncPost {
     ///                 filename: "image.jpg".to_string(),
     ///                 mime: "image/jpeg".to_string(),
     ///                 extra: HashMap::new(),
-    ///                 method: ImportFileMetaMethod::None,
     ///             }),
     ///             UnsyncContent::Text("some text".to_string()),
     ///             UnsyncContent::File(UnsyncFileMeta {
     ///                 filename: "doc.pdf".to_string(),
     ///                 mime: "application/pdf".to_string(),
     ///                 extra: HashMap::new(),
-    ///                 method: ImportFileMetaMethod::None,
     ///             }),
     ///         ],
     ///         thumb: Some(UnsyncFileMeta {
     ///             filename: "thumb.jpg".to_string(),
     ///             mime: "image/jpeg".to_string(),
     ///             extra: HashMap::new(),
-    ///             method: ImportFileMetaMethod::None,
     ///         }),
     ///         comments: vec![],
     ///         updated: chrono::Utc::now(),

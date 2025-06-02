@@ -126,7 +126,7 @@ where
     pub fn get_post_authors(&self, post: &Post) -> Result<Vec<Author>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT authors.* FROM authors INNER JOIN post_authors ON post_authors.author = authors.id WHERE post_authors.post = ?")?;
+            .prepare_cached("SELECT authors.* FROM authors INNER JOIN author_posts ON author_posts.author = authors.id WHERE author_posts.post = ?")?;
         let authors = stmt.query_map([post.id], |row| Author::from_row(row))?;
         authors.collect()
     }

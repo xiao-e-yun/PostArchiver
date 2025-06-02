@@ -1,5 +1,8 @@
 use crate::{
-    manager::{platform::{PlatformIdOrRaw, PlatformLike}, PostArchiverConnection, PostArchiverManager},
+    manager::{
+        platform::{PlatformIdOrRaw, PlatformLike},
+        PostArchiverConnection, PostArchiverManager,
+    },
     PlatformId,
 };
 use rusqlite::OptionalExtension;
@@ -36,7 +39,7 @@ where
             Some(id) => return Ok(id),
             None => platform.raw().unwrap(),
         };
-            // check cache
+        // check cache
         if let Some(id) = self.cache.platforms.get(name) {
             return Ok(*id);
         }
@@ -92,7 +95,13 @@ where
     ///     Ok(())
     /// }
     /// ```
-    pub fn import_platforms(&self, platforms: Vec<impl PlatformLike>) -> Result<Vec<PlatformId>, rusqlite::Error> {
-        platforms.into_iter().map(|name| self.import_platform(name)).collect()
+    pub fn import_platforms(
+        &self,
+        platforms: Vec<impl PlatformLike>,
+    ) -> Result<Vec<PlatformId>, rusqlite::Error> {
+        platforms
+            .into_iter()
+            .map(|name| self.import_platform(name))
+            .collect()
     }
 }

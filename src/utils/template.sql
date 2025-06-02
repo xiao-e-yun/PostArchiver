@@ -28,7 +28,7 @@ CREATE TABLE
         platform INTEGER NOT NULL DEFAULT 0,
         link TEXT,
         target INTEGER NOT NULL,
-        FOREIGN KEY (target) REFERENCES authors (id) ON DELETE CASCADE
+        FOREIGN KEY (target) REFERENCES authors (id) ON DELETE CASCADE,
         PRIMARY KEY (platform, source)
     );
 
@@ -58,11 +58,8 @@ CREATE TABLE
         updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         published DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         platform INTEGER,
-        FOREIGN KEY (author) REFERENCES authors (id) ON DELETE CASCADE,
         FOREIGN KEY (platform) REFERENCES platforms (id) ON DELETE SET DEFAULT
     );
-
-CREATE INDEX posts_author_idx ON posts (author);
 
 CREATE INDEX posts_source_idx ON posts (source);
 
@@ -74,7 +71,7 @@ CREATE INDEX posts_platform_idx ON posts (platform);
 CREATE TABLE
     platforms (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE
     );
 
 CREATE INDEX platforms_name_idx ON platforms (name);
@@ -87,7 +84,7 @@ CREATE TABLE
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE COLLATE NOCASE,
         description TEXT DEFAULT '',
-        thumb INTEGER REFERENCES file_metas (id) ON DELETE SET NULL,
+        thumb INTEGER REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
 CREATE INDEX collections_name_idx ON collections (name);
@@ -107,7 +104,7 @@ CREATE INDEX collection_posts_post_idx ON collection_posts (post);
 CREATE TABLE
     tags (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE
     );
 
 CREATE INDEX tags_name_idx ON tags (name);
@@ -119,7 +116,7 @@ CREATE TABLE
         platform INTEGER NOT NULL REFERENCES platforms (id) ON DELETE CASCADE
     );
 
-CREATE UNIQUE INDEX tags_idx ON tags (platform, name);
+CREATE UNIQUE INDEX platform_tags_idx ON platform_tags (platform, name);
 
 CREATE TABLE
     post_tags (
@@ -141,7 +138,7 @@ CREATE TABLE
         FOREIGN KEY (tag) REFERENCES platform_tags (id) ON DELETE CASCADE
     );
 
-CREATE INDEX platform_post_tags_idx ON platform_post_tags (tag);
+CREATE INDEX post_platform_tags_idx ON post_platform_tags (tag);
 
 ------------------------------------------------------------
 -- File Meta

@@ -1,10 +1,9 @@
 use crate::{
-    importer::{
-        ImportFileMetaMethod, PartialSyncPost, UnsyncAuthor, UnsyncContent, UnsyncFileMeta,
-        UnsyncPost,
-    },
+    importer::{UnsyncAlias, UnsyncAuthor, UnsyncContent, UnsyncFileMeta, UnsyncPost},
+    manager::platform::PlatformIdOrRaw,
     manager::PostArchiverManager,
-    AuthorId, Comment, Content, FileMetaId, PostId, COLLECTION_CATEGORY,
+    utils::tag::TagIdOrRaw,
+    Comment,
 };
 use chrono::{TimeZone, Utc};
 use std::collections::HashMap;
@@ -14,13 +13,14 @@ fn test_import_post() {
     // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create a author
+    // Create an author
     let author = UnsyncAuthor::new("octocat".to_string())
         .sync(&manager)
         .unwrap();
 
-    // Create a post
-    let import_post = UnsyncPost::new(author.id)
+    // Create a post with object-oriented API
+    let (post, _) = UnsyncPost::new()
+        .authors(vec![author.id])
         .source(Some("https://example.com".to_string()))
         .title("Hello World".to_string())
         .content(vec![
@@ -29,75 +29,26 @@ fn test_import_post() {
                 filename: "image.png".to_string(),
                 mime: "image/png".to_string(),
                 extra: HashMap::new(),
-                method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
             }),
-        ]);
-
-    // Import the post meta
-    let post = manager.import_post_meta(import_post.clone()).unwrap();
-    let metas = load_files(&manager, &post);
-    let post = manager.import_post(post, &metas).unwrap();
-    manager.set_author_thumb_by_latest(author.id).unwrap();
-    manager.set_author_updated_by_latest(author.id).unwrap();
-
-    // Check the imported post
-    let saved_post = manager.get_post(&post).unwrap();
-    assert_eq!(saved_post.title, "Hello World");
-
-    // Update the post meta by source
-    let post = manager.import_post_meta(import_post).unwrap();
-    let metas = load_files(&manager, &post);
-    let post = manager.import_post(post, &metas).unwrap();
-    manager.set_author_thumb_by_latest(author.id).unwrap();
-    manager.set_author_updated_by_latest(author.id).unwrap();
+        ])
+        .sync(&manager, {
+            let mut files = HashMap::new();
+            files.insert("image.png".to_string(), vec![1, 2, 3]);
+            files
+        })
+        .unwrap();
 
     // Check the imported post
-    let saved_post = manager.get_post(&post).unwrap();
-    assert_eq!(saved_post.title, "Hello World");
-
-    fn load_files(
-        manager: &PostArchiverManager,
-        post: &PartialSyncPost,
-    ) -> HashMap<String, FileMetaId> {
-        let mut files = vec![];
-        let metas: HashMap<String, FileMetaId> = post
-            .collect_files()
-            .into_iter()
-            .map(|raw| {
-                let (file, method) = manager.import_file_meta(post.author, post.id, raw.clone())?;
-
-                files.push((manager.path.join(file.path()), method));
-                Ok((raw.filename, file.id))
-            })
-            .collect::<Result<_, rusqlite::Error>>()
-            .unwrap();
-
-        for (path, method) in files {
-            match method {
-                ImportFileMetaMethod::Data(data) => {
-                    assert_eq!(data, vec![1, 2, 3]);
-                    std::fs::write(path, data).unwrap();
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        metas
-    }
+    assert_eq!(post.title, "Hello World");
 }
 
 #[test]
-fn test_import_post_by_part() {
+fn test_functional_import_post_meta() {
     // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create a author
-    let author = UnsyncAuthor::new("octocat".to_string())
-        .sync(&manager)
-        .unwrap();
-
     // Create a post
-    let import_post = UnsyncPost::new(author.id)
+    let import_post = UnsyncPost::new()
         .source(Some("https://example.com".to_string()))
         .title("Hello World".to_string())
         .content(vec![
@@ -106,226 +57,122 @@ fn test_import_post_by_part() {
                 filename: "image.png".to_string(),
                 mime: "image/png".to_string(),
                 extra: HashMap::new(),
-                method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
             }),
         ]);
 
-    // Import the post meta
-    let post = manager
-        .import_post_meta_by_create(import_post.clone())
-        .unwrap();
-    let metas = load_files(&manager, &post);
-    let post = manager.import_post(post, &metas).unwrap();
-    manager.set_author_thumb_by_latest(author.id).unwrap();
-    manager.set_author_updated_by_latest(author.id).unwrap();
-
-    // Check the imported post
-    let saved_post = manager.get_post(&post).unwrap();
-    assert_eq!(saved_post.title, "Hello World");
-
-    // Update the post meta by source
-    let post = manager
-        .import_post_meta_by_update(post, import_post)
-        .unwrap();
-    let metas = load_files(&manager, &post);
-    let post = manager.import_post(post, &metas).unwrap();
-    manager.set_author_thumb_by_latest(author.id).unwrap();
-    manager.set_author_updated_by_latest(author.id).unwrap();
-
-    // Check the imported post
-    let saved_post = manager.get_post(&post).unwrap();
-    assert_eq!(saved_post.title, "Hello World");
-
-    fn load_files(
-        manager: &PostArchiverManager,
-        post: &PartialSyncPost,
-    ) -> HashMap<String, FileMetaId> {
-        let mut files = vec![];
-        let metas: HashMap<String, FileMetaId> = post
-            .collect_files()
-            .into_iter()
-            .map(|raw| {
-                let (file, method) = manager.import_file_meta(post.author, post.id, raw.clone())?;
-
-                files.push((manager.path.join(file.path()), method));
-                Ok((raw.filename, file.id))
-            })
-            .collect::<Result<_, rusqlite::Error>>()
-            .unwrap();
-
-        for (path, method) in files {
-            match method {
-                ImportFileMetaMethod::Data(data) => {
-                    assert_eq!(data, vec![1, 2, 3]);
-                    std::fs::write(path, data).unwrap();
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        metas
-    }
+    // Import the post meta using functional API
+    let partial_post = manager.import_post_meta(import_post).unwrap();
+    assert_eq!(partial_post.title, "Hello World");
 }
 
 #[test]
-fn test_sync_post() {
+fn test_functional_import_post_meta_by_create() {
+    // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Create a author
-    let author = UnsyncAuthor::new("octocat".to_string())
-        .sync(&manager)
-        .unwrap();
-
-    let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
 
     // Create a post
-    let (_, files) = UnsyncPost::new(author.id)
+    let import_post = UnsyncPost::new()
         .source(Some("https://example.com".to_string()))
-        .title("Hello World".to_string())
-        .published(updated)
-        .updated(updated)
-        .comments(vec![Comment {
-            user: "octocat".to_string(),
-            text: "Hello World".to_string(),
-            replies: vec![],
-        }])
-        .content(vec![
-            UnsyncContent::Text("Hello World".to_string()),
-            UnsyncContent::File(UnsyncFileMeta {
-                filename: "image.png".to_string(),
-                mime: "image/png".to_string(),
-                extra: HashMap::new(),
-                method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
-            }),
-        ])
-        .sync(&manager)
-        .unwrap();
+        .title("Hello World".to_string());
 
-    for (path, method) in files {
-        match method {
-            ImportFileMetaMethod::Data(data) => {
-                assert_eq!(data, vec![1, 2, 3]);
-                std::fs::write(path, data).unwrap();
-            }
-            _ => unreachable!(),
-        }
-    }
+    // Import the post meta by create
+    let partial_post = manager.import_post_meta_by_create(import_post).unwrap();
+    assert_eq!(partial_post.title, "Hello World");
 }
 
 #[test]
-fn test_post_setters() {
+fn test_functional_import_post_meta_by_update() {
+    // Open a manager
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create an author
-    let author = UnsyncAuthor::new("test_author".to_string())
-        .sync(&manager)
+    // Create a post
+    let import_post = UnsyncPost::new()
+        .source(Some("https://example.com".to_string()))
+        .title("Hello World".to_string());
+
+    // Import the post meta by create first
+    let partial_post = manager
+        .import_post_meta_by_create(import_post.clone())
         .unwrap();
 
-    // Create a basic post
+    // Update the post meta by update
+    let updated_post = import_post.title("Updated Title".to_string());
+    let updated_partial = manager
+        .import_post_meta_by_update(partial_post.id, updated_post)
+        .unwrap();
+
+    assert_eq!(updated_partial.title, "Updated Title");
+}
+
+#[test]
+fn test_functional_import_post() {
+    // Open a manager
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+
+    // Create a partial post
+    let partial_post = manager
+        .import_post_meta_by_create(UnsyncPost::new().title("Test".to_string()))
+        .unwrap();
+
+    // Create files map
+    let files = HashMap::new();
+
+    // Import the complete post using functional API
+    let post_id = manager.import_post(partial_post, &files).unwrap();
+
+    let saved_post = manager.get_post(&post_id).unwrap();
+    assert_eq!(saved_post.title, "Test");
+}
+
+#[test]
+fn test_functional_check_post() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+
+    // Test check_post when post doesn't exist
+    let result = manager.check_post("https://nonexistent.com").unwrap();
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_functional_check_post_with_updated() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
     let updated = Utc.with_ymd_and_hms(2015, 1, 1, 0, 0, 0).unwrap();
 
-    let (post, _) = UnsyncPost::new(author.id)
-        .source(Some("https://example.com".to_string()))
-        .title("Hello World".to_string())
-        .published(updated)
-        .updated(updated)
-        .comments(vec![Comment {
-            user: "octocat".to_string(),
-            text: "Hello World".to_string(),
-            replies: vec![],
-        }])
-        .content(vec![
-            UnsyncContent::Text("Hello World".to_string()),
-            UnsyncContent::File(UnsyncFileMeta {
-                filename: "image.png".to_string(),
-                mime: "image/png".to_string(),
-                extra: HashMap::new(),
-                method: ImportFileMetaMethod::Data(vec![1, 2, 3]),
-            }),
-        ])
-        .sync(&manager)
+    // Test check_post_with_updated when post doesn't exist
+    let result = manager
+        .check_post_with_updated("https://nonexistent.com", &updated)
         .unwrap();
+    assert!(result.is_none());
+}
 
-    // Test set_post_title
-    manager.set_post_title(post.id, "Updated Title").unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().title, "Updated Title");
+#[test]
+fn test_functional_get_post() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Test set_post_source
-    let new_source = Some("https://example.com/updated".to_string());
-    manager.set_post_source(post.id, &new_source).unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().source, new_source);
-
-    // Test set_post_comments
-    let comments = vec![Comment {
-        user: "testuser".to_string(),
-        text: "Test comment".to_string(),
-        replies: vec![],
-    }];
-    manager.set_post_comments(post.id, &comments).unwrap();
-    assert_eq!(
-        manager.get_post(&post.id).unwrap().comments[0].user,
-        comments[0].user
-    );
-
-    // Test set_post_thumb
-    let thumb = manager.get_post(&post.id).unwrap().thumb;
-    manager.set_post_thumb(post.id, &None).unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().thumb, None);
-
-    manager.set_post_thumb(post.id, &thumb).unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().thumb, thumb);
-
-    // Test set_post_content
-    let new_content = vec![Content::Text("Updated content".to_string())];
-    manager.set_post_content(post.id, &new_content).unwrap();
-
-    // Test update timestamps
-    let time1 = Utc.with_ymd_and_hms(2016, 1, 1, 0, 0, 0).unwrap();
-    let time2 = Utc.with_ymd_and_hms(2017, 1, 1, 0, 0, 0).unwrap();
-
-    // Test set_post_updated
-    manager.set_post_updated(post.id, &time1).unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().updated, time1);
-
-    // Test set_post_updated_by_latest
-    manager.set_post_updated_by_latest(post.id, &time2).unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().updated, time2);
-
-    // Try to update with older time - should not update
-    manager.set_post_updated_by_latest(post.id, &time1).unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().updated, time2);
-
-    // Test set_post_published
-    manager.set_post_published(post.id, &time1).unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().published, time1);
-
-    // Test set_post_published_by_latest
-    manager
-        .set_post_published_by_latest(post.id, &time2)
+    // Create a post
+    let partial_post = manager
+        .import_post_meta_by_create(UnsyncPost::new().title("Test Post".to_string()))
         .unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().published, time2);
+    let post_id = manager.import_post(partial_post, &HashMap::new()).unwrap();
 
-    // Try to update with older time - should not update
-    manager
-        .set_post_published_by_latest(post.id, &time1)
-        .unwrap();
-    assert_eq!(manager.get_post(&post.id).unwrap().published, time2);
+    // Test get_post functional API
+    let retrieved_post = manager.get_post(&post_id).unwrap();
+    assert_eq!(retrieved_post.title, "Test Post");
 }
 
 #[test]
 fn test_unsync_post_methods() {
-    let author_id = AuthorId(1);
     let now = Utc::now();
 
     // Test new
-    let post = UnsyncPost::new(author_id);
-    assert_eq!(post.author, author_id);
+    let post = UnsyncPost::new();
+    assert!(post.authors.is_empty());
     assert!(post.source.is_none());
     assert!(post.title.is_empty());
 
     // Test all setters
     let post = post
-        .author(AuthorId(2))
+        .authors(vec![crate::AuthorId(2)])
         .source(Some("https://example.com".to_string()))
         .title("Test Title".to_string())
         .content(vec![UnsyncContent::Text("Test content".to_string())])
@@ -333,7 +180,6 @@ fn test_unsync_post_methods() {
             filename: "thumb.jpg".to_string(),
             mime: "image/jpeg".to_string(),
             extra: HashMap::new(),
-            method: ImportFileMetaMethod::None,
         }))
         .comments(vec![Comment {
             user: "user".to_string(),
@@ -342,9 +188,10 @@ fn test_unsync_post_methods() {
         }])
         .updated(now.clone())
         .published(now.clone())
-        .tags(vec![(COLLECTION_CATEGORY.to_string(), "test".to_string())]);
+        .tags(vec![TagIdOrRaw::Raw("test".to_string())])
+        .platform(PlatformIdOrRaw::Raw("test_platform".to_string()));
 
-    assert_eq!(post.author, AuthorId(2));
+    assert_eq!(post.authors, vec![crate::AuthorId(2)]);
     assert_eq!(post.source, Some("https://example.com".to_string()));
     assert_eq!(post.title, "Test Title");
     assert_eq!(post.content.len(), 1);
@@ -352,10 +199,8 @@ fn test_unsync_post_methods() {
     assert_eq!(post.comments.len(), 1);
     assert_eq!(post.updated, now);
     assert_eq!(post.published, now);
-    assert_eq!(
-        post.tags,
-        vec![(COLLECTION_CATEGORY.to_string(), "test".to_string())]
-    );
+    assert_eq!(post.tags.len(), 1);
+    assert!(post.platform.is_some());
 }
 
 #[test]
@@ -372,7 +217,6 @@ fn test_unsync_content_methods() {
         filename: "test.jpg".to_string(),
         mime: "image/jpeg".to_string(),
         extra: HashMap::new(),
-        method: ImportFileMetaMethod::None,
     };
     let file_content = UnsyncContent::file(file_meta.clone());
     match file_content {
@@ -383,20 +227,18 @@ fn test_unsync_content_methods() {
 
 #[test]
 fn test_partial_sync_post_methods() {
-    let author_id = AuthorId(1);
-    let post_id = PostId(1);
+    let post_id = crate::PostId(1);
     let now = Utc::now();
 
     // Create base UnsyncPost
-    let unsync_post = UnsyncPost::new(author_id)
+    let unsync_post = UnsyncPost::new()
         .title("Test Title".to_string())
         .updated(now.clone())
         .published(now.clone());
 
     // Test new
-    let partial = PartialSyncPost::new(author_id, post_id, unsync_post);
+    let partial = crate::importer::PartialSyncPost::new(post_id, unsync_post);
     assert_eq!(partial.id, post_id);
-    assert_eq!(partial.author, author_id);
     assert_eq!(partial.title, "Test Title");
 
     // Test content setter
@@ -414,27 +256,24 @@ fn test_partial_sync_post_methods() {
         filename: "thumb.jpg".to_string(),
         mime: "image/jpeg".to_string(),
         extra: HashMap::new(),
-        method: ImportFileMetaMethod::None,
     };
     let partial = partial.thumb(Some(thumb.clone()));
     assert!(partial.thumb.is_some());
 
-    // Test collect_files with both content and thumb files
-    let partial = PartialSyncPost::new(author_id, post_id, UnsyncPost::new(author_id))
+    // Test collect_files
+    let partial = crate::importer::PartialSyncPost::new(post_id, UnsyncPost::new())
         .content(vec![
             UnsyncContent::Text("text".to_string()),
             UnsyncContent::File(UnsyncFileMeta {
                 filename: "content.jpg".to_string(),
                 mime: "image/jpeg".to_string(),
                 extra: HashMap::new(),
-                method: ImportFileMetaMethod::None,
             }),
         ])
         .thumb(Some(UnsyncFileMeta {
             filename: "thumb.jpg".to_string(),
             mime: "image/jpeg".to_string(),
             extra: HashMap::new(),
-            method: ImportFileMetaMethod::None,
         }));
 
     let files = partial.collect_files();

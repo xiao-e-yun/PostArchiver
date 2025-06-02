@@ -20,7 +20,7 @@ where
     ) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE file_meta SET extra = ? WHERE id = ?")?;
+            .prepare_cached("UPDATE file_metas SET extra = ? WHERE id = ?")?;
         stmt.execute(params![serde_json::to_string(extra).unwrap(), &file_meta])?;
         Ok(())
     }
@@ -31,7 +31,7 @@ where
         extra: &HashMap<String, Value>,
     ) -> Result<(), rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
-            "UPDATE file_meta SET extra = json_patch(file_meta.extra, ?) WHERE id = ?",
+            "UPDATE file_metas SET extra = json_patch(file_metas.extra, ?) WHERE id = ?",
         )?;
         stmt.execute(params![serde_json::to_string(extra).unwrap(), &file_meta])?;
         Ok(())
@@ -43,7 +43,7 @@ where
     ) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE file_meta SET mime = ? WHERE id = ?")?;
+            .prepare_cached("UPDATE file_metas SET mime = ? WHERE id = ?")?;
         stmt.execute(params![mime, &file_meta])?;
         Ok(())
     }

@@ -15,11 +15,11 @@ use crate::{
 };
 
 pub mod author;
-pub mod post;
-pub mod file_meta;
-pub mod tag;
-pub mod platform;
 pub mod collection;
+pub mod file_meta;
+pub mod platform;
+pub mod post;
+pub mod tag;
 
 /// Core manager type for post archive operations with SQLite backend
 ///
@@ -240,12 +240,17 @@ where
     }
     pub fn get_feature(&self, name: &str) -> Result<i64, rusqlite::Error> {
         self.conn()
-            .query_row("SELECT value FROM features WHERE name = ?", [name], |row| row.get(0))
+            .query_row("SELECT value FROM features WHERE name = ?", [name], |row| {
+                row.get(0)
+            })
             .optional()
             .transpose()
             .unwrap_or(Ok(0))
     }
-    pub fn get_feature_with_extra(&self, name: &str) -> Result<(i64, HashMap<String, Value>), rusqlite::Error> {
+    pub fn get_feature_with_extra(
+        &self,
+        name: &str,
+    ) -> Result<(i64, HashMap<String, Value>), rusqlite::Error> {
         self.conn()
             .query_row(
                 "SELECT value, extra FROM features WHERE name = ?",

@@ -82,7 +82,7 @@ where
     pub fn set_author_updated_by_latest(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE authors SET updated = (SELECT updated FROM posts WHERE author = ? ORDER BY updated DESC LIMIT 1) WHERE id = ?")?;
+            .prepare_cached("UPDATE authors SET updated = (SELECT posts.updated FROM author_posts JOIN posts ON author_posts.post = posts.id WHERE author_posts.author = ? ORDER BY posts.updated DESC LIMIT 1) WHERE id = ?")?;
         stmt.execute(params![author, author])?;
         Ok(())
     }
@@ -152,7 +152,7 @@ where
     pub fn set_author_thumb_by_latest(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE authors SET thumb = (SELECT posts.thumb FROM author_posts JOIN posts ON author_posts.post = posts.id WHERE author_posts.author = ? AND posts.thumb IS NOT NULL ORDER BY updated DESC LIMIT 1) WHERE id = ?")?;
+            .prepare_cached("UPDATE authors SET thumb = (SELECT posts.thumb FROM author_posts JOIN posts ON author_posts.post = posts.id WHERE author_posts.author = ? AND posts.thumb IS NOT NULL ORDER BY posts.updated DESC LIMIT 1) WHERE id = ?")?;
         stmt.execute(params![author, author])?;
         Ok(())
     }
@@ -170,14 +170,18 @@ where
             "INSERT OR REPLACE INTO author_aliases (target, platform, source, link) VALUES (?, ?, ?, ?)",
         )?;
         for (platform, source, link) in aliases.iter() {
-            match platform {
-                PlatformIdOrRaw::Id(platform) => {
-                    stmt.execute(params![author, platform, source, link])?;
-                }
+            let platform_id = match platform {
+                PlatformIdOrRaw::Id(platform) => *platform,
                 PlatformIdOrRaw::Raw(platform) => {
-                    stmt.execute(params![author, platform.as_str(), source, link])?;
+                    // Try to find existing platform first, create if not found
+                    if let Some(existing) = self.get_platform(&platform.as_str())? {
+                        existing.id
+                    } else {
+                        self.import_platform(platform.as_str())?
+                    }
                 }
-            }
+            };
+            stmt.execute(params![author, platform_id, source, link])?;
         }
         Ok(())
     }
@@ -195,17 +199,21 @@ where
         S: AsRef<str>,
     {
         let mut stmt = self.conn().prepare_cached(
-            "DELETE FROM author_aliases WHERE platform = ? AND source = ? AND author = ?",
+            "DELETE FROM author_aliases WHERE platform = ? AND source = ? AND target = ?",
         )?;
         for (platform, source) in aliases.iter() {
-            match platform {
-                PlatformIdOrRaw::Id(platform) => {
-                    stmt.execute(params![platform, source.as_ref(), author])?;
-                }
+            let platform_id = match platform {
+                PlatformIdOrRaw::Id(platform) => *platform,
                 PlatformIdOrRaw::Raw(platform) => {
-                    stmt.execute(params![platform.as_str(), source.as_ref(), author])?;
+                    // Try to find existing platform, skip if not found
+                    if let Some(existing) = self.get_platform(&platform.as_str())? {
+                        existing.id
+                    } else {
+                        continue; // Skip if platform doesn't exist
+                    }
                 }
-            }
+            };
+            stmt.execute(params![platform_id, source.as_ref(), author])?;
         }
         Ok(())
     }

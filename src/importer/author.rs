@@ -44,16 +44,13 @@ where
         &self,
         author: &UnsyncAuthor,
     ) -> Result<AuthorId, rusqlite::Error> {
+        let updated = author.updated.unwrap_or_else(|| Utc::now());
         let mut stmt = self
             .conn()
-            .prepare_cached("INSERT INTO authors name VALUES ? RETURNING id")?;
+            .prepare_cached("INSERT INTO authors (name, updated) VALUES (?, ?) RETURNING id")?;
 
-        let id: AuthorId = stmt.query_row(params![&author.name], |row| row.get(0))?;
+        let id: AuthorId = stmt.query_row(params![&author.name, &updated], |row| row.get(0))?;
         self.add_author_aliases(&id, &author.aliases)?;
-
-        if let Some(updated) = author.updated {
-            self.set_author_updated(id, &updated)?;
-        };
 
         Ok(id)
     }
