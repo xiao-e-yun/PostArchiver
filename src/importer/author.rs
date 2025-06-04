@@ -30,7 +30,7 @@ where
 
         match id {
             Some(id) => {
-                self.set_author_name(id, author.name);
+                self.set_author_name(id, author.name)?;
 
                 if let Some(updated) = author.updated {
                     self.set_author_updated(id, updated)?;

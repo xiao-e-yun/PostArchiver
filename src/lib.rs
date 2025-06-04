@@ -59,5 +59,5 @@ pub mod manager;
 #[cfg(feature = "importer")]
 pub mod importer;
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;

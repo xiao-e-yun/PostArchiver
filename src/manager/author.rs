@@ -146,7 +146,7 @@ where
     ) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("INSERT INTO author_aliases (target, source, platform, link) VALUES (?, ?, ?, ?) ON CONFLICT REPLACE")?;
+            .prepare_cached("INSERT OR REPLACE INTO author_aliases (target, source, platform, link) VALUES (?, ?, ?, ?)")?;
 
         for (source, platform, target) in aliases {
             stmt.execute(params![author, source, platform, target])?;

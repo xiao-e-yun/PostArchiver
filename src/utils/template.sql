@@ -18,14 +18,14 @@ CREATE TABLE
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         thumb INTEGER,
-        updated DATETIME NOT NULL DEFAULT "1970-01-01 00:00:00"
+        updated DATETIME NOT NULL DEFAULT "1970-01-01 00:00:00",
         FOREIGN KEY (thumb) REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
 -- Alias ---------------------------------------------------
 CREATE TABLE
     author_aliases (
-        source UNIQUE TEXT NOT NULL,
+        source TEXT UNIQUE NOT NULL,
         platform INTEGER NOT NULL DEFAULT 0,
         link TEXT,
         target INTEGER NOT NULL,
@@ -51,7 +51,7 @@ CREATE INDEX author_posts_post_idx ON author_posts (post);
 CREATE TABLE
     posts (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        source UNIQUE TEXT,
+        source TEXT UNIQUE,
         platform INTEGER,
         title TEXT NOT NULL,
         thumb INTEGER,
@@ -109,7 +109,7 @@ CREATE TABLE
         platform INTEGER REFERENCES platforms (id) ON DELETE CASCADE
     );
 
-CREATE UNIQUE INDEX tags_idx ON platform_tags (platform, name);
+CREATE UNIQUE INDEX tags_idx ON tags (platform, name);
 
 CREATE TABLE
     post_tags (

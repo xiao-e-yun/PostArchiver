@@ -52,7 +52,7 @@ where
     pub fn add_platform(&self, platform: String) -> Result<PlatformId, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("INSERT INTO platforms name VALUES ? RETURNING id")?;
+            .prepare_cached("INSERT INTO platforms (name) VALUES (?) RETURNING id")?;
         let id = stmt.query_row([&platform], |row| row.get(0));
 
         if let Ok(id) = id {
