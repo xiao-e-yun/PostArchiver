@@ -5,7 +5,7 @@ use ts_rs::TS;
 /// A user comment that can be attached to a post with support for nested replies
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
+#[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Comment {
     pub user: String,
     pub text: String,

@@ -1,5 +1,3 @@
-use crate::utils::macros::wrraper;
-
 use core::fmt;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
@@ -33,18 +31,33 @@ macro_rules! define_id {
     ($(#[$meta:meta])*,$name:ident) => {
         #[cfg_attr(feature = "typescript", derive(TS))]
         #[cfg_attr(feature = "typescript", ts(export))]
-        #[derive(
-            Deserialize,
-            Serialize,
-            Debug,
-            Clone,
-            Copy,
-            Hash,
-            PartialEq,
-            Eq,
-        )]
+        #[derive(Deserialize, Serialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
         pub struct $name(pub u32);
-        wrraper!($name: u32);
+
+        impl core::ops::Deref for $name {
+            type Target = u32;
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl core::ops::DerefMut for $name {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
+            }
+        }
+
+        impl From<u32> for $name {
+            fn from(f: u32) -> Self {
+                Self(f)
+            }
+        }
+
+        impl From<$name> for u32 {
+            fn from(t: $name) -> Self {
+                t.0
+            }
+        }
 
         impl $name {
             pub fn new(id: u32) -> Self {
@@ -77,6 +90,24 @@ macro_rules! define_id {
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}", self.0)
+            }
+        }
+
+        #[cfg(feature = "utils")]
+        impl rusqlite::types::FromSql for $name {
+            fn column_result(
+                value: rusqlite::types::ValueRef<'_>,
+            ) -> rusqlite::types::FromSqlResult<Self> {
+                Ok(Self(value.as_i64()? as u32))
+            }
+        }
+
+        #[cfg(feature = "utils")]
+        impl rusqlite::types::ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+                Ok(rusqlite::types::ToSqlOutput::Owned(
+                    rusqlite::types::Value::Integer(self.0 as i64),
+                ))
             }
         }
     };

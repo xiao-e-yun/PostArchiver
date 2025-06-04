@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::TagId;
 use crate::{
     utils::{DATABASE_NAME, VERSION},
-    CollectionId, PlatformId, PlatformTagId,
+    CollectionId, PlatformId,
 };
 
 pub mod author;
@@ -288,8 +288,7 @@ where
 
 #[derive(Debug, Default)]
 pub struct PostArchiverManagerCache {
-    pub tags: DashMap<String, TagId>,
-    pub platform_tags: DashMap<(PlatformId, String), PlatformTagId>,
+    pub tags: DashMap<(String, Option<PlatformId>), TagId>,
     pub collections: DashMap<String, CollectionId>,
     pub platforms: DashMap<String, PlatformId>,
 }

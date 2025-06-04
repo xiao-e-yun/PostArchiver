@@ -1,10 +1,16 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, OptionalExtension};
+use serde_json::Value;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     FileMeta, FileMetaId, PostId,
 };
 
+//=============================================================
+// Querying
+//=============================================================
 impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
@@ -34,7 +40,7 @@ where
     ///     Ok(())
     /// }
     /// ```
-    pub fn check_file_meta(
+    pub fn find_file_meta(
         &self,
         post: PostId,
         filename: &str,
@@ -75,4 +81,59 @@ where
             .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
         stmt.query_row([id], |row| FileMeta::from_row(row))
     }
+}
+
+//=============================================================
+// Modifying
+//=============================================================
+impl<T> PostArchiverManager<T>
+where
+    T: PostArchiverConnection,
+{
+    pub fn add_file_meta(
+        &self,
+        post: PostId,
+        filename: String,
+        mime: String,
+        extra: HashMap<String, Value>,
+    ) -> Result<FileMetaId, rusqlite::Error> {
+        let mut stmt = self.conn().prepare_cached(
+            "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
+        )?;
+        stmt.query_row(
+            params![post, filename, mime, serde_json::to_string(&extra).unwrap()],
+            |row| row.get(0),
+        )
+    }
+    pub fn remove_file_meta(&self, id: FileMetaId) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT filename FROM file_metas WHERE id = ?")?;
+        stmt.execute([id])?;
+        Ok(())
+    }
+
+    pub fn set_file_meta_mime(&self, id: FileMetaId, mime: String) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE file_metas SET mime = ? WHERE id = ?")?;
+        stmt.execute(params![mime, id])?;
+        Ok(())
+    }
+
+    pub fn set_file_meta_extra(
+        &self,
+        id: FileMetaId,
+        extra: HashMap<String, Value>,
+    ) -> Result<(), rusqlite::Error> {
+        let extra_json = serde_json::to_string(&extra).unwrap();
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE file_metas SET extra = ? WHERE id = ?")?;
+        stmt.execute(params![extra_json, id])?;
+        Ok(())
+    }
+
+    // TODO: implement a method to update the filename or post of a file_meta (because these need
+    // fs renames and moves)
 }

@@ -60,5 +60,6 @@ pub use file_meta::*;
 pub mod post;
 pub use post::*;
 
+pub mod collection;
 pub mod platform;
 pub mod tag;

@@ -3,9 +3,12 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    Author, Post, PostId, Tag,
+    AuthorId, CollectionId, Comment, Content, FileMetaId, PlatformId, Post, PostId, TagId,
 };
 
+//=============================================================
+// Querying
+//=============================================================
 impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
@@ -38,7 +41,7 @@ where
     ///     Ok(())
     /// }
     /// ```
-    pub fn check_post(&self, source: &str) -> Result<Option<PostId>, rusqlite::Error> {
+    pub fn find_post(&self, source: &str) -> Result<Option<PostId>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
@@ -49,7 +52,7 @@ where
     ///     
     /// This is useful to check if the post has been updated since the last time it was imported.
     /// If you want to check if the post exists in the archive, use [`check_post`](Self::check_post) instead.
-    pub fn check_post_with_updated(
+    pub fn find_post_with_updated(
         &self,
         source: &str,
         updated: &DateTime<Utc>,
@@ -59,7 +62,7 @@ where
             .prepare_cached("SELECT id, updated FROM posts WHERE source = ?")?;
 
         stmt.query_row::<(PostId, DateTime<Utc>), _, _>(params![source], |row| {
-            Ok((row.get(0)?, row.get(1)?))
+            Ok((row.get_unwrap(0), row.get_unwrap(1)))
         })
         .optional()
         .map(|query| {
@@ -99,35 +102,307 @@ where
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM posts WHERE id = ?")?;
+
         stmt.query_row([id], |row| Post::from_row(row))
     }
-    /// Retrieve all authors associated with a post.
+}
+
+//=============================================================
+// Modifying
+//=============================================================
+impl<T> PostArchiverManager<T>
+where
+    T: PostArchiverConnection,
+{
+    pub fn add_post(
+        &self,
+        title: String,
+        source: Option<String>,
+        platform: Option<PlatformId>,
+        published: Option<DateTime<Utc>>,
+        updated: Option<DateTime<Utc>>,
+    ) -> Result<PostId, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached(
+                "INSERT INTO posts (title, source, platform, published, updated) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            )?;
+
+        stmt.query_row(
+            params![title, source, platform, published, updated],
+            |row| row.get(0),
+        )
+    }
+    pub fn remove_post(&self, post: PostId) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("DELETE FROM posts WHERE id = ?")?;
+        stmt.execute([post])?;
+        Ok(())
+    }
+    /// Associate one or more authors with a post.
     ///
-    /// Fetches all authors that have contributed to the given post ID.
+    /// Creates author associations between a post and the provided author IDs.
+    /// Duplicate associations are silently ignored.
     ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::PostId;
-    /// fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), Box<dyn
-    /// std::error::Error>> {
-    ///     let authors = manager.get_post_authors(&post_id)?;
-    ///     for author in authors {
-    ///         println!("Post author: {}", author.name);
-    ///     };
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn get_post_authors(&self, post: &Post) -> Result<Vec<Author>, rusqlite::Error> {
+    pub fn add_post_authors(
+        &self,
+        post: PostId,
+        authors: &[AuthorId],
+    ) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT authors.* FROM authors INNER JOIN author_posts ON author_posts.author = authors.id WHERE author_posts.post = ?")?;
-        let authors = stmt.query_map([post.id], |row| Author::from_row(row))?;
-        authors.collect()
+            .prepare_cached("INSERT OR IGNORE INTO author_posts (author, post) VALUES (?, ?)")?;
+        for author in authors {
+            stmt.execute(params![post, author])?;
+        }
+        Ok(())
+    }
+    /// Remove one or more authors from a post.
+    pub fn remove_post_authors(
+        &self,
+        post: PostId,
+        authors: &[AuthorId],
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("DELETE FROM author_posts WHERE post = ? AND author = ?")?;
+        for author in authors {
+            stmt.execute(params![post, author])?;
+        }
+        Ok(())
+    }
+
+    /// Associate one or more tags with a post.
+    ///
+    /// Creates tag associations between a post and the provided tag IDs.
+    /// Duplicate associations are silently ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn add_post_tags(&self, post: PostId, tags: &[TagId]) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("INSERT OR IGNORE INTO post_tags (post, tag) VALUES (?, ?)")?;
+
+        for tag in tags {
+            stmt.execute(params![post, tag])?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_post_tags(&self, post: PostId, tags: &[TagId]) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("DELETE FROM post_tags WHERE post = ? AND tag = ?")?;
+        for tag in tags {
+            stmt.execute(params![post, tag])?;
+        }
+        Ok(())
+    }
+    /// Associate one or more tags with a post.
+    ///
+    /// Creates tag associations between a post and the provided tag IDs.
+    /// Duplicate associations are silently ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn add_post_collections(
+        &self,
+        post: PostId,
+        collections: &[CollectionId],
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self.conn().prepare_cached(
+            "INSERT OR IGNORE INTO collection_posts (collection, post) VALUES (?, ?)",
+        )?;
+
+        for collection in collections {
+            stmt.execute(params![collection, post])?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_post_collections(
+        &self,
+        post: PostId,
+        collections: &[CollectionId],
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("DELETE FROM collection_posts WHERE collection = ? AND post = ?")?;
+        for collection in collections {
+            stmt.execute(params![collection, post])?;
+        }
+        Ok(())
+    }
+    /// Set or clear a post's source URL.
+    ///
+    /// Sets the source identifier for a post, or removes it by passing `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_source(
+        &self,
+        post: PostId,
+        source: Option<String>,
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET source = ? WHERE id = ?")?;
+        stmt.execute(params![source, post])?;
+        Ok(())
+    }
+    /// Set or remove a post's platform.
+    ///
+    /// Associates a file metadata ID as the post's thumbnail, or removes it by passing `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_platform(
+        &self,
+        post: PostId,
+        platform: Option<PlatformId>,
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET platform = ? WHERE id = ?")?;
+        stmt.execute(params![platform, post])?;
+        Ok(())
+    }
+    /// Update a post's title.
+    ///
+    /// Sets a new title for the specified post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_title(&self, post: PostId, title: String) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET title = ? WHERE id = ?")?;
+        stmt.execute(params![title, post])?;
+        Ok(())
+    }
+
+    /// Set or remove a post's thumbnail image.
+    ///
+    /// Associates a file metadata ID as the post's thumbnail, or removes it by passing `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_thumb(
+        &self,
+        post: PostId,
+        thumb: Option<FileMetaId>,
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET thumb = ? WHERE id = ?")?;
+        stmt.execute(params![thumb, post])?;
+        Ok(())
+    }
+
+    /// Set a post's content.
+    ///
+    /// Replaces the entire content of a post with new text and file entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_content(
+        &self,
+        post: PostId,
+        content: Vec<Content>,
+    ) -> Result<(), rusqlite::Error> {
+        let content = serde_json::to_string(&content).unwrap();
+
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET content = ? WHERE id = ?")?;
+
+        stmt.execute(params![content, post])?;
+        Ok(())
+    }
+    /// Replace all comments on a post.
+    ///
+    /// Updates the post with a new set of comments, replacing any existing ones.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_comments(
+        &self,
+        post: PostId,
+        comments: Vec<Comment>,
+    ) -> Result<(), rusqlite::Error> {
+        let comments = serde_json::to_string(&comments).unwrap();
+
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET comments = ? WHERE id = ?")?;
+        stmt.execute(params![comments, post])?;
+        Ok(())
+    }
+    /// Set when a post was originally published.
+    ///
+    /// Updates the timestamp indicating when this post was first published.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_published(
+        &self,
+        post: PostId,
+        published: DateTime<Utc>,
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET published = ? WHERE id = ?")?;
+        stmt.execute(params![published, post])?;
+        Ok(())
+    }
+    /// Update when a post was last modified.
+    ///
+    /// Sets the timestamp indicating when this post was last changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_updated(
+        &self,
+        post: PostId,
+        updated: DateTime<Utc>,
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET updated = ? WHERE id = ?")?;
+        stmt.execute(params![updated, post])?;
+        Ok(())
+    }
+    /// Update a post's timestamp if the new one is more recent.
+    ///
+    /// Only updates the last modified time if the new timestamp is more recent than the existing one.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn set_post_updated_by_latest(
+        &self,
+        post: PostId,
+        updated: DateTime<Utc>,
+    ) -> Result<(), rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("UPDATE posts SET updated = ? WHERE id = ? AND updated < ?")?;
+        stmt.execute(params![updated, post, updated])?;
+        Ok(())
     }
 }

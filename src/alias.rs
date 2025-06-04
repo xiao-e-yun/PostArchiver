@@ -12,7 +12,7 @@ use crate::{AuthorId, PlatformId};
 /// - Referenced in post management for author lookups
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Alias {
     /// The alias name
     ///
@@ -31,4 +31,22 @@ pub struct Alias {
     pub target: AuthorId,
     /// A link to the author's profile on the platform
     pub link: Option<String>,
+}
+
+impl Hash for Alias {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+        self.platform.hash(state);
+        self.target.hash(state);
+    }
+}
+
+#[cfg(feature = "utils")]
+crate::utils::macros::as_table! {
+    Alias {
+        source: "source",
+        platform: "platform",
+        target: "target",
+        link: "link",
+    }
 }

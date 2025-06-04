@@ -16,15 +16,16 @@ CREATE TABLE
 CREATE TABLE
     authors (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL COLLATE NOCASE,
-        thumb INTEGER REFERENCES file_metas (id) ON DELETE SET NULL,
+        name TEXT NOT NULL,
+        thumb INTEGER,
         updated DATETIME NOT NULL DEFAULT "1970-01-01 00:00:00"
+        FOREIGN KEY (thumb) REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
 -- Alias ---------------------------------------------------
 CREATE TABLE
     author_aliases (
-        source TEXT NOT NULL,
+        source UNIQUE TEXT NOT NULL,
         platform INTEGER NOT NULL DEFAULT 0,
         link TEXT,
         target INTEGER NOT NULL,
@@ -50,21 +51,20 @@ CREATE INDEX author_posts_post_idx ON author_posts (post);
 CREATE TABLE
     posts (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        source TEXT,
-        title TEXT NOT NULL,
-        content JSON NOT NULL,
-        thumb INTEGER REFERENCES file_metas (id) ON DELETE SET NULL,
-        comments JSON NOT NULL DEFAULT '[]',
-        updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        published DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        source UNIQUE TEXT,
         platform INTEGER,
+        title TEXT NOT NULL,
+        thumb INTEGER,
+        content JSON NOT NULL DEFAULT '[]',
+        comments JSON NOT NULL DEFAULT '[]',
+        published DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (platform) REFERENCES platforms (id) ON DELETE SET DEFAULT
+        FOREIGN KEY (thumb) REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
 CREATE INDEX posts_source_idx ON posts (source);
-
 CREATE INDEX posts_updated_idx ON posts (updated);
-
 CREATE INDEX posts_platform_idx ON posts (platform);
 
 -- platform -----------------------------------------------
@@ -82,12 +82,13 @@ INSERT INTO platforms (id, name) VALUES (0, 'unknown');
 CREATE TABLE
     collections (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        description TEXT DEFAULT '',
+        name TEXT NOT NULL,
+        source TEXT UNIQUE ,
         thumb INTEGER REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
 CREATE INDEX collections_name_idx ON collections (name);
+CREATE INDEX collections_source_idx ON collections (source);
 
 CREATE TABLE
     collection_posts (
@@ -104,19 +105,11 @@ CREATE INDEX collection_posts_post_idx ON collection_posts (post);
 CREATE TABLE
     tags (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE COLLATE NOCASE
+        name TEXT NOT NULL UNIQUE ,
+        platform INTEGER REFERENCES platforms (id) ON DELETE CASCADE
     );
 
-CREATE INDEX tags_name_idx ON tags (name);
-
-CREATE TABLE
-    platform_tags (
-        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL COLLATE NOCASE,
-        platform INTEGER NOT NULL REFERENCES platforms (id) ON DELETE CASCADE
-    );
-
-CREATE UNIQUE INDEX platform_tags_idx ON platform_tags (platform, name);
+CREATE UNIQUE INDEX tags_idx ON platform_tags (platform, name);
 
 CREATE TABLE
     post_tags (

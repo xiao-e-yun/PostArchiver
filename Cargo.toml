@@ -11,8 +11,7 @@ repository = "https://github.com/xiao-e-yun/PostArchiver"
 [features]
 typescript = ["dep:ts-rs"]
 utils = ["dep:rusqlite"]
-importer = ["editor"]
-editor = ["utils"]
+importer = ["utils"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive", "std"] }

@@ -4,13 +4,6 @@
 //! This module provides common utilities and configuration constants used
 //! throughout the post archiver system. It includes database configuration,
 
-pub mod author;
-pub mod collection;
-pub mod file_meta;
-pub mod id;
-pub mod post;
-pub mod tag;
-
 #[macro_use]
 pub(crate) mod macros;
 

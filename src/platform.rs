@@ -20,7 +20,7 @@ pub const UNKNOWN_PLATFORM: PlatformId = PlatformId(0);
 /// - Name can be chained (e.g. "x:y:z")
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Platform {
     pub id: PlatformId,
     pub name: String,
@@ -38,8 +38,10 @@ impl Hash for Platform {
     }
 }
 
-impl PartialEq for Platform {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.name == other.name
+#[cfg(feature = "utils")]
+crate::utils::macros::as_table! {
+    Platform {
+        id: "id",
+        name: "name",
     }
 }

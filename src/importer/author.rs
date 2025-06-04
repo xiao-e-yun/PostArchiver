@@ -1,9 +1,10 @@
+use std::hash::Hash;
+
 use chrono::{DateTime, Utc};
-use rusqlite::{params, ToSql};
 
 use crate::{
-    manager::{platform::PlatformIdOrRaw, PostArchiverConnection, PostArchiverManager},
-    Author, AuthorId, FileMetaId,
+    manager::{PostArchiverConnection, PostArchiverManager},
+    AuthorId, PlatformId,
 };
 
 impl<T> PostArchiverManager<T>
@@ -18,76 +19,42 @@ where
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_author(&self, author: &UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
+    pub fn import_author(&self, author: UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
+        let id = self.find_author(author.aliases.as_slice())?;
+
         let aliases = author
             .aliases
-            .iter()
-            .map(|(platform, source, _link)| (platform, source.as_str()))
+            .into_iter()
+            .map(|alias| (alias.source, alias.platform, alias.link))
             .collect::<Vec<_>>();
 
-        let exist = self.check_author(aliases.as_slice())?;
+        match id {
+            Some(id) => {
+                self.set_author_name(id, author.name);
 
-        match exist {
-            Some(id) => self.import_author_by_update(id, author),
-            None => self.import_author_by_create(author),
+                if let Some(updated) = author.updated {
+                    self.set_author_updated(id, updated)?;
+                }
+
+                self.add_author_aliases(id, aliases)?;
+
+                Ok(id)
+            }
+            None => {
+                let id = self.add_author(author.name, author.updated)?;
+
+                Ok(id)
+            }
         }
-    }
-    /// Create a new author entry in the archive.
-    ///
-    /// Creates a new entry regardless of whether the author already exists. To check for
-    /// existing authors first, use [`import_author`](Self::import_author).
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_author_by_create(
-        &self,
-        author: &UnsyncAuthor,
-    ) -> Result<AuthorId, rusqlite::Error> {
-        let updated = author.updated.unwrap_or_else(|| Utc::now());
-        let mut stmt = self
-            .conn()
-            .prepare_cached("INSERT INTO authors (name, updated) VALUES (?, ?) RETURNING id")?;
-
-        let id: AuthorId = stmt.query_row(params![&author.name, &updated], |row| row.get(0))?;
-        self.add_author_aliases(&id, &author.aliases)?;
-
-        Ok(id)
-    }
-    /// Update an existing author entry in the archive.
-    ///
-    /// Updates the author's information including name, links, aliases and timestamps.
-    /// To check for existing authors first, use [`import_author`](Self::import_author).
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the specified author does not exist in the archive.
-    pub fn import_author_by_update(
-        &self,
-        id: AuthorId,
-        author: &UnsyncAuthor,
-    ) -> Result<AuthorId, rusqlite::Error> {
-        self.set_author_name(&id, &author.name)?;
-        self.add_author_aliases(&id, &author.aliases)?;
-
-        if let Some(updated) = author.updated {
-            self.set_author_updated(id, &updated)?;
-        }
-
-        Ok(id)
     }
 }
 
 /// Represents an author that is not yet synced with the archive.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsyncAuthor {
     name: String,
     updated: Option<DateTime<Utc>>,
-    aliases: Vec<(PlatformIdOrRaw, String, Option<String>)>,
+    aliases: Vec<UnsyncAlias>,
 }
 
 impl UnsyncAuthor {
@@ -103,48 +70,23 @@ impl UnsyncAuthor {
         Self { name, ..self }
     }
     pub fn aliases(self, aliases: Vec<UnsyncAlias>) -> Self {
-        let aliases = aliases
-            .into_iter()
-            .map(|alias| (alias.platform, alias.source, alias.link))
-            .collect();
         Self { aliases, ..self }
     }
     pub fn updated(self, updated: Option<DateTime<Utc>>) -> Self {
         Self { updated, ..self }
     }
 
-    /// Sync the author with the archive.
-    ///
-    /// It will check if the author already exists in the archive by their alias.  
-    /// If the author exists, it will update the existing entry. If not, it will create a new entry.
-    ///
-    /// # Examples
-    /// ```rust
-    /// use post_archiver::manager::PostArchiverManager;
-    /// use post_archiver::importer::{UnsyncAuthor, UnsyncAlias};
-    /// use post_archiver::{AuthorId};
-    ///
-    /// use chrono::Utc;
-    ///
-    /// // Open a manager
-    /// let manager = PostArchiverManager::open_in_memory().unwrap();
-    ///
-    /// // Create an author
-    /// let author = UnsyncAuthor::new("octocat".to_string())
-    ///    .aliases(vec![UnsyncAlias::new(UNKNOWN_PLATFORM, "octocat")])
-    ///    .updated(Some(Utc::now()))
-    ///    .sync(&manager)
-    ///    .unwrap();
-    ///
-    /// let archived_author = manager.get_author(&author.id).unwrap();
-    /// assert_eq!(author, archived_author);
-    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<Author, rusqlite::Error>
+    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<AuthorId, rusqlite::Error>
     where
         T: PostArchiverConnection,
     {
-        let id = manager.import_author(&self)?;
-        let author = manager.get_author(&id)?;
-        Ok(author)
+        manager.import_author(self)
+    }
+}
+
+impl Hash for UnsyncAuthor {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.aliases.hash(state);
     }
 }
 
@@ -152,15 +94,15 @@ impl UnsyncAuthor {
 ///
 /// This is used to track different platforms or identifiers for the same author.
 /// It can include links to their profiles or other relevant information.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsyncAlias {
-    link: Option<String>,
-    platform: PlatformIdOrRaw,
-    source: String,
+    pub source: String,
+    pub platform: PlatformId,
+    pub link: Option<String>,
 }
 
 impl UnsyncAlias {
-    pub fn new<S: Into<String>>(platform: &PlatformIdOrRaw, source: S) -> Self {
+    pub fn new(platform: PlatformId, source: String) -> Self {
         Self {
             link: None,
             source: source.into(),
@@ -168,8 +110,25 @@ impl UnsyncAlias {
         }
     }
 
+    pub fn source<S: Into<String>>(mut self, source: S) -> Self {
+        self.source = source.into();
+        self
+    }
+
+    pub fn platform(mut self, platform: PlatformId) -> Self {
+        self.platform = platform;
+        self
+    }
+
     pub fn link<S: Into<String>>(mut self, link: S) -> Self {
         self.link = Some(link.into());
         self
+    }
+}
+
+impl Hash for UnsyncAlias {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+        self.platform.hash(state);
     }
 }

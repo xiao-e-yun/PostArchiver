@@ -36,7 +36,7 @@ use crate::id::FileMetaId;
 /// ```
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum Content {
     /// Markdown-formatted text content

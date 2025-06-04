@@ -4,12 +4,7 @@ use serde_json::Value;
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
-use std::{
-    collections::HashMap,
-    hash::Hash,
-    ops::{Div, Rem},
-    path::PathBuf,
-};
+use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
 use crate::id::{FileMetaId, PostId};
 
@@ -18,7 +13,7 @@ pub const POSTS_PRE_CHUNK: u32 = 2048;
 /// Metadata for a file in the system with hierarchical path organization
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct FileMeta {
     pub id: FileMetaId,
     pub filename: String,
@@ -54,8 +49,9 @@ impl FileMeta {
     /// assert_eq!(path.to_str(), Some("1/1/example.txt"));
     /// ```
     pub fn path(&self) -> PathBuf {
-        let chunk = self.post.div(POSTS_PRE_CHUNK);
-        let index = self.post.rem(POSTS_PRE_CHUNK);
+        let id = self.post.raw();
+        let chunk = id / POSTS_PRE_CHUNK;
+        let index = id % POSTS_PRE_CHUNK;
         PathBuf::from(chunk.to_string())
             .join(index.to_string())
             .join(&self.filename)
@@ -65,18 +61,16 @@ impl FileMeta {
 impl Hash for FileMeta {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
-        self.post.hash(state);
-        self.filename.hash(state);
     }
 }
 
-impl PartialEq for FileMeta {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-            && self.post == other.post
-            && self.filename == other.filename
-            && self.extra == other.extra
+#[cfg(feature = "utils")]
+crate::utils::macros::as_table!(
+    FileMeta {
+        id: "id",
+        post: "post",
+        filename: "filename",
+        mime: "mime",
+        extra: "extra" => json,
     }
-}
-
-impl Eq for FileMeta {}
+);
