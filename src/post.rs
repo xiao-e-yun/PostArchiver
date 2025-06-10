@@ -1,4 +1,4 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -8,13 +8,13 @@ use ts_rs::TS;
 use crate::{
     comment::Comment,
     id::{FileMetaId, PostId},
-    Content, PlatformId, TagId,
+    Content, PlatformId,
 };
 
-/// A content entry created by an author in the system
+/// A content entry
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Post {
     pub id: PostId,
     pub source: Option<String>,
@@ -25,21 +25,6 @@ pub struct Post {
     pub updated: DateTime<Utc>,
     pub published: DateTime<Utc>,
     pub platform: Option<PlatformId>,
-}
-
-impl Hash for Post {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
-/// Association type that creates a many-to-many relationship between posts and tags
-#[cfg_attr(feature = "typescript", derive(TS))]
-#[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PostTag {
-    pub post: PostId,
-    pub tag: TagId,
 }
 
 #[cfg(feature = "utils")]
@@ -54,10 +39,5 @@ crate::utils::macros::as_table! {
         updated: "updated",
         published: "published",
         platform: "platform",
-    }
-
-    PostTag {
-        post: "post",
-        tag: "tag",
     }
 }

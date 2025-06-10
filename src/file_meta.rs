@@ -8,6 +8,7 @@ use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
 use crate::id::{FileMetaId, PostId};
 
+/// The number of posts in one chunk.
 pub const POSTS_PRE_CHUNK: u32 = 2048;
 
 /// Metadata for a file in the system with hierarchical path organization
@@ -61,6 +62,10 @@ impl FileMeta {
 impl Hash for FileMeta {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
+        self.post.hash(state);
+        self.filename.hash(state);
+        self.mime.hash(state);
+        // We don't hash `extra` because it can be large.
     }
 }
 

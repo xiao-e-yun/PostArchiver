@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    hash::{Hash, Hasher},
-};
+use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,17 +15,20 @@ use crate::{id::TagId, PlatformId, PostId};
 /// - Name can be chained (e.g. "x:y:z")
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Tag {
     pub id: TagId,
     pub name: String,
     pub platform: Option<PlatformId>,
 }
 
-impl Hash for Tag {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
+/// Association type that creates a many-to-many relationship between posts and tags
+#[cfg_attr(feature = "typescript", derive(TS))]
+#[cfg_attr(feature = "typescript", ts(export))]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PostTag {
+    pub post: PostId,
+    pub tag: TagId,
 }
 
 #[cfg(feature = "utils")]
@@ -37,5 +37,10 @@ crate::utils::macros::as_table! {
         id: "id",
         name: "name",
         platform: "platform",
+    }
+
+    PostTag {
+        post: "post",
+        tag: "tag",
     }
 }

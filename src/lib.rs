@@ -14,8 +14,10 @@
 //! # Core Types
 //! The system is built around several core types:
 //! - [`Author`]: Content creators with optional aliases
+//! - [`Alias`]: Alternative names for authors
 //! - [`Post`]: Content entries that can contain text and files
 //! - [`Tag`]: Categorical labels for content organization
+//! - [`Collection`]: Grouping of posts, authors, and tags
 //! - [`FileMeta`]: File metadata and storage management
 //! - [`Platform`]: Information about the platform from which posts are archived
 //! - [`Comment`]: Nested discussion threads

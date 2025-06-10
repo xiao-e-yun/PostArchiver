@@ -11,18 +11,12 @@ use crate::{AuthorId, FileMetaId, PostId};
 /// A content creator or contributor in the system
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Author {
     pub id: AuthorId,
     pub name: String,
     pub thumb: Option<FileMetaId>,
     pub updated: DateTime<Utc>,
-}
-
-impl Hash for Author {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
 }
 
 /// Association type that creates a many-to-many relationship between posts and tags

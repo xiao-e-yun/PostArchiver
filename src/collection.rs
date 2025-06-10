@@ -10,7 +10,7 @@ use crate::{CollectionId, FileMetaId, PostId};
 /// A content creator or contributor in the system
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Collection {
     pub id: CollectionId,
     pub name: String,
@@ -18,18 +18,7 @@ pub struct Collection {
     pub thumb: Option<FileMetaId>,
 }
 
-impl Hash for Collection {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
-/// A label that can be applied to posts
-///
-/// # Safety
-/// - Name must not be empty
-/// - Name should be kebab-case
-/// - Name can be chained (e.g. "x:y:z")
+/// Association type that creates a many-to-many relationship between collections and posts
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
