@@ -15,31 +15,11 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
-    /// Look up file metadata by post ID and filename, returning its ID if found.
-    ///
-    /// Given a post ID and filename, searches the database for a matching file metadata entry.
-    /// Returns `Some(FileMetaId)` if found, `None` if no matching metadata exists.
+    /// Find a file's metadata by its post ID and filename.
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error querying the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::PostId;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let post_id = PostId(1);
-    ///     
-    ///     if let Some(id) = manager.check_file_meta(post_id, "image.jpg")? {
-    ///         println!("File metadata exists with ID: {}", id);
-    ///     }
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn find_file_meta(
         &self,
         post: PostId,
@@ -52,34 +32,20 @@ where
         stmt.query_row(params![post, filename], |row| row.get(0))
             .optional()
     }
-    /// Retrieve an file's complete information from the archive.
+    /// Retrieve a file's metadata by its ID.
     ///
-    /// Fetches all information about a post including its content, comments, and metadata.
+    /// Fetches all information about the file including its post ID, filename, MIME type, and extra metadata.
     ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if:
-    /// * The fileMeta ID does not exist
+    /// * The file ID does not exist
     /// * There was an error accessing the database
-    /// * The stored data is malformed
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::FileMetaId;
-    /// fn example(manager: &PostArchiverManager, id: FileMetaId) -> Result<(), Box<dyn std::error::Error>> {
-    ///     let file_meta = manager.get_file_meta(&id)?;
-    ///     println!("file name: {}", file_meta.filename);
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn get_file_meta(&self, id: &FileMetaId) -> Result<FileMeta, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
-        stmt.query_row([id], |row| FileMeta::from_row(row))
+        stmt.query_row([id], FileMeta::from_row)
     }
 }
 
@@ -90,6 +56,17 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Add a new file metadata to the archive.
+    ///
+    /// Inserts a new file metadata with the given post ID, filename, MIME type, and extra metadata.
+    /// It will check if a file with the same post and filename already exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if:
+    /// * The post ID does not exist
+    /// * Duplicate filename for the same post
+    /// * There was an error accessing the database
     pub fn add_file_meta(
         &self,
         post: PostId,
@@ -105,6 +82,14 @@ where
             |row| row.get(0),
         )
     }
+    /// Remove a file metadata from the archive.
+    ///
+    /// This operation will also remove all associated thumb references.
+    /// But it will not delete post.content related to this file.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_file_meta(&self, id: FileMetaId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -113,6 +98,11 @@ where
         Ok(())
     }
 
+    /// Set the filename of a file metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_file_meta_mime(&self, id: FileMetaId, mime: String) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -121,6 +111,11 @@ where
         Ok(())
     }
 
+    /// Set the extra metadata of a file metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_file_meta_extra(
         &self,
         id: FileMetaId,

@@ -67,7 +67,7 @@ impl PostArchiverManager {
         // push current version
         conn.execute(
             "INSERT INTO post_archiver_meta (version) VALUES (?)",
-            &[VERSION],
+            [VERSION],
         )?;
 
         let cache = Arc::new(PostArchiverManagerCache::default());
@@ -238,6 +238,20 @@ where
     pub fn conn(&self) -> &Connection {
         self.conn.connection()
     }
+    /// Returns this archive's feature value by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database or if the feature does not exist.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use post_archiver::manager::PostArchiverManager;
+    ///
+    /// let manager = PostArchiverManager::open_in_memory().unwrap();
+    /// let feature_value = manager.get_feature("example_feature").unwrap();
+    /// println!("Feature value: {}", feature_value);
+    /// ```
     pub fn get_feature(&self, name: &str) -> Result<i64, rusqlite::Error> {
         self.conn()
             .query_row("SELECT value FROM features WHERE name = ?", [name], |row| {
@@ -247,6 +261,20 @@ where
             .transpose()
             .unwrap_or(Ok(0))
     }
+    /// Returns this archive's feature value and extra data by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database or if the feature does not exist.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use post_archiver::manager::PostArchiverManager;
+    /// let manager = PostArchiverManager::open_in_memory().unwrap();
+    /// let (value, extra) = manager.get_feature_with_extra("example_feature").unwrap();
+    /// println!("Feature value: {}, Extra: {:?}", value, extra);
+    /// ```
     pub fn get_feature_with_extra(
         &self,
         name: &str,
@@ -267,6 +295,13 @@ where
             .transpose()
             .unwrap_or(Ok((0, HashMap::default())))
     }
+    /// Set feature value by name.
+    ///
+    /// if it exists, its value will be updated.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_feature(&self, name: &str, value: i64) {
         self.conn()
             .execute(
@@ -275,6 +310,13 @@ where
             )
             .unwrap();
     }
+    /// Set feature value and extra data by name.
+    ///
+    /// if it exists, its value and extra data will be updated.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_feature_with_extra(&self, name: &str, value: i64, extra: HashMap<String, Value>) {
         let extra = serde_json::to_string(&extra).unwrap();
         self.conn()

@@ -13,34 +13,22 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
-    /// List all posts in the archive.
-    pub fn list_posts(&self) -> Result<Vec<Post>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached("SELECT * FROM posts")?;
-        let posts = stmt.query_map([], |row| Post::from_row(row))?;
-        posts.collect()
-    }
-
-    /// Look up a post in the archive by its source identifier.
-    ///
-    /// Search for a post with the given source identifier, returning its ID if found
-    /// or `None` if not found.
+    /// Retrieve all posts in the archive.
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error querying the database.
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn list_posts(&self) -> Result<Vec<Post>, rusqlite::Error> {
+        let mut stmt = self.conn().prepare_cached("SELECT * FROM posts")?;
+        let posts = stmt.query_map([], Post::from_row)?;
+        posts.collect()
+    }
+
+    /// Find a post by its source.
     ///
-    /// # Examples
+    /// # errors
     ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     if let Some(id) = manager.check_post(&"https://example.com/post/123".to_string())? {
-    ///         println!("Post exists with ID: {}", id);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
+    /// Returns `rusqlite::error` if there was an error accessing the database.
     pub fn find_post(&self, source: &str) -> Result<Option<PostId>, rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -48,10 +36,15 @@ where
 
         stmt.query_row(params![source], |row| row.get(0)).optional()
     }
-    /// Check if a the post exists in the archive by their source and updated date.
+
+    /// Find a post by its source.
     ///     
-    /// This is useful to check if the post has been updated since the last time it was imported.
-    /// If you want to check if the post exists in the archive, use [`check_post`](Self::check_post) instead.
+    /// If you want to check if the post exists in the archive, use [`find_post`](Self::find_post) instead.
+    ///
+    /// # errors
+    ///
+    /// Returns `rusqlite::error` if there was an error accessing the database.
+    /// Check if a the post exists in the archive by their source and updated date.
     pub fn find_post_with_updated(
         &self,
         source: &str,
@@ -75,35 +68,19 @@ where
             })
         })
     }
-    /// Retrieve an post's complete information from the archive.
-    ///
-    /// Fetches all information about a post including its source, author, and metadata.
+    /// Retrieve a post by its ID.
     ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if:
     /// * The post ID does not exist
     /// * There was an error accessing the database
-    /// * The stored data is malformed
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::PostId;
-    /// fn example(manager: &PostArchiverManager, id: PostId) -> Result<(), Box<dyn std::error::Error>> {
-    ///     let post = manager.get_post(&id)?;
-    ///     println!("Post title: {}", post.title);
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn get_post(&self, id: &PostId) -> Result<Post, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM posts WHERE id = ?")?;
 
-        stmt.query_row([id], |row| Post::from_row(row))
+        stmt.query_row([id], Post::from_row)
     }
 }
 
@@ -114,6 +91,13 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Add a new post to the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if:
+    /// * The post already exists with the same source
+    /// * There was an error accessing the database
     pub fn add_post(
         &self,
         title: String,
@@ -133,6 +117,13 @@ where
             |row| row.get(0),
         )
     }
+    /// Remove a post from the archive.
+    ///
+    /// This operation will also remove all file metadata, author associations, tag associations, and collection associations for the post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_post(&self, post: PostId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -162,6 +153,10 @@ where
         Ok(())
     }
     /// Remove one or more authors from a post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_post_authors(
         &self,
         post: PostId,
@@ -195,6 +190,11 @@ where
         Ok(())
     }
 
+    /// Remove one or more tags from a post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_post_tags(&self, post: PostId, tags: &[TagId]) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -227,6 +227,11 @@ where
         Ok(())
     }
 
+    /// Remove one or more collections from a post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_post_collections(
         &self,
         post: PostId,
@@ -240,7 +245,7 @@ where
         }
         Ok(())
     }
-    /// Set or clear a post's source URL.
+    /// Set a post's source URL.
     ///
     /// Sets the source identifier for a post, or removes it by passing `None`.
     ///
@@ -258,7 +263,7 @@ where
         stmt.execute(params![source, post])?;
         Ok(())
     }
-    /// Set or remove a post's platform.
+    /// Set a post's platform.
     ///
     /// Associates a file metadata ID as the post's thumbnail, or removes it by passing `None`.
     ///
@@ -276,7 +281,7 @@ where
         stmt.execute(params![platform, post])?;
         Ok(())
     }
-    /// Update a post's title.
+    /// Set a post's title.
     ///
     /// Sets a new title for the specified post.
     ///
@@ -291,7 +296,7 @@ where
         Ok(())
     }
 
-    /// Set or remove a post's thumbnail image.
+    /// Set a post's thumbnail.
     ///
     /// Associates a file metadata ID as the post's thumbnail, or removes it by passing `None`.
     ///
@@ -331,9 +336,7 @@ where
         stmt.execute(params![content, post])?;
         Ok(())
     }
-    /// Replace all comments on a post.
-    ///
-    /// Updates the post with a new set of comments, replacing any existing ones.
+    /// Set a post's comments.
     ///
     /// # Errors
     ///
@@ -351,9 +354,7 @@ where
         stmt.execute(params![comments, post])?;
         Ok(())
     }
-    /// Set when a post was originally published.
-    ///
-    /// Updates the timestamp indicating when this post was first published.
+    /// Set a post's published timestamp.
     ///
     /// # Errors
     ///
@@ -369,9 +370,7 @@ where
         stmt.execute(params![published, post])?;
         Ok(())
     }
-    /// Update when a post was last modified.
-    ///
-    /// Sets the timestamp indicating when this post was last changed.
+    ///Set a post's updated timestamp.
     ///
     /// # Errors
     ///
@@ -387,9 +386,7 @@ where
         stmt.execute(params![updated, post])?;
         Ok(())
     }
-    /// Update a post's timestamp if the new one is more recent.
-    ///
-    /// Only updates the last modified time if the new timestamp is more recent than the existing one.
+    /// Set a post's updated timestamp if current timestamp is more recent.
     ///
     /// # Errors
     ///

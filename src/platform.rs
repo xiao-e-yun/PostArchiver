@@ -7,8 +7,6 @@ use ts_rs::TS;
 
 use crate::PlatformId;
 
-pub const UNKNOWN_PLATFORM: PlatformId = PlatformId(0);
-
 /// A platform that can be used to categorize posts
 ///
 /// # Safety
@@ -20,6 +18,10 @@ pub const UNKNOWN_PLATFORM: PlatformId = PlatformId(0);
 pub struct Platform {
     pub id: PlatformId,
     pub name: String,
+}
+
+impl Platform {
+    pub const UNKNOWN: PlatformId = PlatformId(0);
 }
 
 #[cfg(feature = "utils")]

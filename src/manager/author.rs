@@ -13,19 +13,41 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Retrieve all authors in the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn list_authors(&self) -> Result<Vec<Author>, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached("SELECT * FROM authors")?;
-        let authors = stmt.query_map([], |row| Author::from_row(row))?;
+        let authors = stmt.query_map([], Author::from_row)?;
         authors.collect()
     }
-    /// Look up an author by their alias list.
+    /// Find an author by their aliases.
     ///
-    /// Searches the database for an author that matches any of the provided aliases.
-    /// Returns the first matching author's ID, or `None` if no match is found.
+    /// Checks if any of the provided aliases match an existing author in the archive.
     ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error querying the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::{AuthorId, PlatformId};
+    /// # fn example(manager: &PostArchiverManager) -> Result<(), Box<dyn std::error::Error>> {
+    /// let platform = todo!("Define your platform ID here");
+    ///
+    /// let author = manager.find_author(&[("octocat", platform)])?;
+    ///
+    /// match author {
+    ///     Some(id) => println!("Found author with ID: {}", id),
+    ///     None => println!("No author found for the given aliases"),
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn find_author(
         &self,
         aliases: &[impl FindAlias],
@@ -47,9 +69,9 @@ where
             }
         }
 
-        return Ok(None);
+        Ok(None)
     }
-    /// Retrieve an author's complete information from the archive.
+    /// Retrieve an author by their ID.
     ///
     /// Fetches all information about an author including their name, links, and metadata.
     ///
@@ -58,20 +80,6 @@ where
     /// Returns `rusqlite::Error` if:
     /// * The author ID does not exist
     /// * There was an error accessing the database
-    /// * The stored data is malformed
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::AuthorId;
-    /// fn example(manager: &PostArchiverManager, id: AuthorId) -> Result<(), Box<dyn std::error::Error>> {
-    ///     let author = manager.get_author(&id)?;
-    ///     println!("Author name: {}", author.name);
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn get_author(&self, author: AuthorId) -> Result<Author, rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -94,7 +102,7 @@ pub trait FindAlias {
 
 impl FindAlias for (&str, PlatformId) {
     fn source(&self) -> &str {
-        &self.0
+        self.0
     }
     fn platform(&self) -> PlatformId {
         self.1
@@ -118,6 +126,18 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Add a new author to the archive.
+    ///
+    /// Inserts a new author with the given name and optional updated timestamp.
+    /// It does not check for duplicates, so ensure the author does not already exist.
+    ///
+    /// # Parameters
+    /// - updated: Optional timestamp for when the author was last updated. Defaults to the current time if not provided.
+    ///
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn add_author(
         &self,
         name: String,
@@ -127,18 +147,54 @@ where
             .conn()
             .prepare_cached("INSERT INTO authors (name, updated) VALUES (?, ?) RETURNING id")?;
 
-        let id: AuthorId = stmt.query_row(params![name, updated], |row| row.get(0))?;
+        let id: AuthorId = stmt
+            .query_row(params![name, updated.unwrap_or_else(Utc::now)], |row| {
+                row.get(0)
+            })?;
         Ok(id)
     }
+    /// Remove an author from the archive.
+    ///
+    /// This operation will also remove all associated aliases.
+    /// And Author-Post relationships will be removed as well.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_author(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
         self.conn()
             .execute("DELETE FROM authors WHERE id = ?", [author])?;
         Ok(())
     }
-    /// List of aliases to add for the author.
-    /// 1. `source`: The alias name.
-    /// 2. `platform`: The platform ID for the alias.
-    /// 3. `link`: Optional link associated with the alias.
+    /// Add or update aliases for an author.
+    ///
+    /// Inserts multiple aliases for the specified author.
+    /// If alias.source and alias.platform already exist for the author, it will be replaced.
+    ///
+    /// # Parameters
+    ///
+    /// - aliases[..]: (Source, Platform, Link)
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::{AuthorId, PlatformId};
+    /// # fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), Box<dyn
+    /// std::error::Error>> {
+    /// let aliases = vec![
+    ///     ("octocat", PlatformId(1), Some("https://example.com/octocat".to_string())),
+    ///     ("octocat2", PlatformId(2), None),
+    /// ];
+    ///
+    /// manager.add_author_aliases(author_id, aliases)?
+    /// # }
+    /// ```
+    ///
     pub fn add_author_aliases(
         &self,
         author: AuthorId,
@@ -154,6 +210,18 @@ where
         Ok(())
     }
 
+    /// Remove aliases for an author.
+    ///
+    /// Deletes the specified aliases for the given author.
+    /// If an alias does not exist, it will be ignored.
+    ///
+    /// # Parameters
+    ///
+    /// - `aliases[..]`: (Source, Platform)
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_author_aliases(
         &self,
         author: AuthorId,
@@ -169,6 +237,15 @@ where
         Ok(())
     }
 
+    /// Set an name of author's alias.
+    ///
+    /// # Parameters
+    ///
+    /// - `alias`: (Source, Platform)
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_author_alias_name(
         &self,
         author: AuthorId,
@@ -183,6 +260,16 @@ where
         Ok(())
     }
 
+    /// Set an platform of author's alias.
+    ///
+    /// # Parameters
+    ///
+    /// - `alias`: (Source, Platform)
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    ///
     pub fn set_author_alias_platform(
         &self,
         author: AuthorId,
@@ -197,6 +284,15 @@ where
         Ok(())
     }
 
+    /// Set a link of author's alias.
+    ///
+    /// # Parameters
+    ///
+    /// - `alias`: (Source, Platform)
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_author_alias_link(
         &self,
         author: AuthorId,
@@ -211,6 +307,11 @@ where
         Ok(())
     }
 
+    /// Set an name of author.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_author_name(&self, author: AuthorId, name: String) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -219,6 +320,11 @@ where
         Ok(())
     }
 
+    /// Set a thumb of author.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_author_thumb(
         &self,
         author: AuthorId,
@@ -231,6 +337,11 @@ where
         Ok(())
     }
 
+    /// Set the author's thumb to the latest post's thumb  that has a non-null thumb.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_author_thumb_by_latest(&self, author: AuthorId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -239,6 +350,11 @@ where
         Ok(())
     }
 
+    /// Set the updated timestamp of an author.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_author_updated(
         &self,
         author: AuthorId,
@@ -269,92 +385,38 @@ where
 {
     /// Retrieve all aliases associated with an author.
     ///
-    /// Fetches all alternate identifiers that map to the given author ID.
-    ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::AuthorId;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let author_id = AuthorId(1);
-    ///     
-    ///     let aliases = manager.get_author_aliases(&author_id)?;
-    ///     for alias in aliases {
-    ///         println!("Author aliases: {} -> {}", alias.source, alias.target);
-    ///     }
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn list_author_aliases(&self, author: AuthorId) -> Result<Vec<Alias>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")?;
-        let tags = stmt.query_map([author], |row| Alias::from_row(row))?;
+        let tags = stmt.query_map([author], Alias::from_row)?;
         tags.collect()
     }
     /// Retrieve all posts associated with an author.
     ///
-    /// Fetches all posts that have been authored by the given author ID.
-    ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::{AuthorId, Post};
-    /// fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), Box<dyn
-    /// std::error::Error>> {
-    ///     let posts = manager.get_author_posts(&author_id)?;
-    ///     for post in posts {
-    ///         println!("Author post: {}", post.title);
-    ///     };
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn list_author_posts(&self, author: AuthorId) -> Result<Vec<Post>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT posts.* FROM posts INNER JOIN author_posts ON author_posts.post = posts.id WHERE author_posts.author = ?")?;
-        let posts = stmt.query_map([author], |row| Post::from_row(row))?;
+        let posts = stmt.query_map([author], Post::from_row)?;
         posts.collect()
     }
     /// Retrieve all authors associated with a post.
     ///
-    /// Fetches all authors that have contributed to the given post ID.
-    ///
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::PostId;
-    /// fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), Box<dyn
-    /// std::error::Error>> {
-    ///     let authors = manager.get_post_authors(&post_id)?;
-    ///     for author in authors {
-    ///         println!("Post author: {}", author.name);
-    ///     };
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn list_post_authors(&self, post: &Post) -> Result<Vec<Author>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT authors.* FROM authors INNER JOIN author_posts ON author_posts.author = authors.id WHERE author_posts.post = ?")?;
-        let authors = stmt.query_map([post.id], |row| Author::from_row(row))?;
+        let authors = stmt.query_map([post.id], Author::from_row)?;
         authors.collect()
     }
 }

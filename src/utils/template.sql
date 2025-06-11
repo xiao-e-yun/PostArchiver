@@ -29,6 +29,7 @@ CREATE TABLE
         platform INTEGER NOT NULL DEFAULT 0,
         link TEXT,
         target INTEGER NOT NULL,
+        FOREIGN KEY (platform) REFERENCES platforms (id) ON DELETE SET DEFAULT,
         FOREIGN KEY (target) REFERENCES authors (id) ON DELETE CASCADE,
         PRIMARY KEY (platform, source)
     );
@@ -59,7 +60,7 @@ CREATE TABLE
         comments JSON NOT NULL DEFAULT '[]',
         published DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (platform) REFERENCES platforms (id) ON DELETE SET DEFAULT
+        FOREIGN KEY (platform) REFERENCES platforms (id) ON DELETE SET 0,
         FOREIGN KEY (thumb) REFERENCES file_metas (id) ON DELETE SET NULL
     );
 

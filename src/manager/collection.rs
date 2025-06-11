@@ -11,12 +11,22 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Retrieve all collections in the archive.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn list_collections(&self) -> Result<Vec<crate::Collection>, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached("SELECT * FROM collections")?;
-        let collections = stmt.query_map([], |row| crate::Collection::from_row(row))?;
+        let collections = stmt.query_map([], Collection::from_row)?;
         collections.collect()
     }
 
+    /// Find a collection by its source.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn find_collection(&self, source: &str) -> Result<Option<CollectionId>, rusqlite::Error> {
         if let Some(id) = self.cache.collections.get(source) {
             return Ok(Some(*id));
@@ -33,14 +43,21 @@ where
 
         id
     }
-    /// Get a collection tag by its id or name.
+    /// Retrieve a collection by their ID.
+    ///
+    /// Fetches all information about a collection including its name, source, and thumb.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if:
+    /// * The collection ID does not exist
+    /// * There was an error accessing the database
     pub fn get_collection(&self, id: &CollectionId) -> Result<Option<Collection>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM collections WHERE id = ?")?;
 
-        stmt.query_row([id], |row| crate::Collection::from_row(row))
-            .optional()
+        stmt.query_row([id], crate::Collection::from_row).optional()
     }
 }
 
@@ -51,6 +68,15 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Add a new collection to the archive.
+    ///
+    /// inserts a new collection with the given name, an optional source, and an optional thumb.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if:
+    /// * If the source is already in use by another collection
+    /// * There was an error accessing the database
     pub fn add_collection(
         &self,
         name: String,
@@ -68,6 +94,13 @@ where
         Ok(id)
     }
 
+    /// Remove a collection from the archive.
+    ///
+    /// The operation will also remove Author-Post relationships associated with the collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn remove_collection(&self, id: CollectionId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
@@ -76,6 +109,11 @@ where
         Ok(())
     }
 
+    /// Set an name of a collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn set_collection_name(
         &self,
         id: CollectionId,
@@ -88,6 +126,13 @@ where
         Ok(())
     }
 
+    /// Set the source of a collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if:
+    /// * The source is already in use by another collection.
+    /// * There was an error accessing the database.
     pub fn set_collection_source(
         &self,
         id: CollectionId,
@@ -103,6 +148,13 @@ where
         Ok(())
     }
 
+    /// Set the thumb of a collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if:
+    /// * The thumb ID does not exist.
+    /// * There was an error accessing the database.
     pub fn set_collection_thumb(
         &self,
         id: CollectionId,
@@ -115,6 +167,12 @@ where
         Ok(())
     }
 
+    /// Set the collection's thumb to the latest post's thumb  that has a non-null thumb.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    ///
     pub fn set_collection_thumb_by_latest(&self, id: CollectionId) -> Result<(), rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
             "UPDATE collections SET thumb = (SELECT id FROM file_metas WHERE post = (SELECT id FROM posts WHERE collection = ? ORDER BY updated DESC LIMIT 1)) WHERE id = ?",
@@ -131,14 +189,24 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Retrieve all collections associated with a post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn list_post_collections(&self, post: &PostId) -> Result<Vec<Collection>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT collections.* FROM collections INNER JOIN collection_posts ON post_collections.collection = collections.id WHERE post_collections.post = ?")?;
-        let collections = stmt.query_map([post], |row| crate::Collection::from_row(row))?;
+        let collections = stmt.query_map([post], crate::Collection::from_row)?;
         collections.collect()
     }
 
+    /// Retrieve all posts associated with a collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn list_collection_posts(
         &self,
         collection: &CollectionId,
@@ -146,12 +214,17 @@ where
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT posts.* FROM posts INNER JOIN collection_posts ON collection_posts.post = posts.id WHERE collection_posts.collection = ?")?;
-        let posts = stmt.query_map([collection], |row| Post::from_row(row))?;
+        let posts = stmt.query_map([collection], Post::from_row)?;
         posts.collect()
     }
 }
 
 impl Post {
+    /// Retrieve all collections associated with this post.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn collections(
         &self,
         manager: &PostArchiverManager,
@@ -161,6 +234,11 @@ impl Post {
 }
 
 impl Collection {
+    /// Retrieve all posts associated with this collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn posts(&self, manager: &PostArchiverManager) -> Result<Vec<Post>, rusqlite::Error> {
         manager.list_collection_posts(&self.id)
     }
