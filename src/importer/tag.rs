@@ -9,6 +9,13 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Import a tag into the archive.
+    ///
+    /// If the tag already exists, it returns the existing ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_tag(&self, tag: UnsyncTag) -> Result<TagId, rusqlite::Error> {
         let find_tag = (tag.name.as_str(), tag.platform);
         match self.find_tag(&find_tag)? {
@@ -17,6 +24,13 @@ where
         }
     }
 
+    /// Import multiple tags into the archive.
+    ///
+    /// If a tag already exists, it returns the existing ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_tags(
         &self,
         tags: impl IntoIterator<Item = UnsyncTag>,

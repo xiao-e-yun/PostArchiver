@@ -5,12 +5,10 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rusqlite::params;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    AuthorId, CollectionId, Comment, Content, FileMetaId, PlatformId, Post, PostId,
-    POSTS_PRE_CHUNK,
+    AuthorId, CollectionId, Comment, Content, PlatformId, PostId, POSTS_PRE_CHUNK,
 };
 
 use super::{collection::UnsyncCollection, tag::UnsyncTag, UnsyncFileMeta};
@@ -19,11 +17,13 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
-    /// Create or update a post's metadata in the archive.
+    /// Import a post into the archive.
     ///
-    /// Takes a post's metadata and either creates a new entry or updates an existing one  
-    /// if a post with the same source already exists. This only updates metadata  
-    /// use [`import_post`](Self::import_post) to import the complete post with content.
+    /// If the post already exists (by source), it updates its title, platform, published date,
+    ///
+    /// # Parameters
+    ///
+    /// - `update_relation`: update the relations of authors and collections after importing.
     ///
     /// # Errors
     ///
@@ -35,16 +35,16 @@ where
     /// # use post_archiver::manager::PostArchiverManager;
     /// # use post_archiver::importer::UnsyncPost;
     /// # use post_archiver::AuthorId;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     
-    ///     let author_id = AuthorId(1);
+    /// fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), rusqlite::Error> {
     ///     let post = UnsyncPost::new()
     ///         .authors(vec![author_id])
     ///         .title("My First Post".to_string())
     ///         .source(Some("https://blog.example.com/post/1".to_string()));
+    ///         .content(vec![
+    ///
+    ///     let files_data = HashMap::new(); // You can provide file data if needed
     ///         
-    ///     let partial_post = manager.import_post_meta(post)?;
+    ///     let post = manager.import_post(post, Default::default(), true)?;
     ///     
     ///     Ok(())
     /// }
@@ -53,6 +53,7 @@ where
         &self,
         post: UnsyncPost,
         files_data: HashMap<String, U>,
+        update_relation: bool,
     ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>, Vec<(PathBuf, U)>), rusqlite::Error>
     {
         macro_rules! import_many {
@@ -129,6 +130,17 @@ where
             .map(|(filename, data)| (path.join(&filename), data))
             .collect::<Vec<_>>();
 
+        if update_relation {
+            post.authors.iter().try_for_each(|&author| {
+                self.set_author_thumb_by_latest(author)?;
+                self.set_author_updated_by_latest(author)
+            })?;
+
+            collections
+                .iter()
+                .try_for_each(|&collection| self.set_collection_thumb_by_latest(collection))?;
+        }
+
         Ok((
             id,
             post.authors.into_iter().collect(),
@@ -137,17 +149,55 @@ where
         ))
     }
 
+    /// Import multiple posts into the archive.
+    ///
+    /// This function processes each post, importing its authors, collections, and files.
+    ///
+    /// # Parameters
+    ///
+    /// - `update_relation`: update the relations of authors and collections after importing.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::importer::UnsyncPost;
+    /// # use post_archiver::AuthorId;
+    /// fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), rusqlite::Error> {
+    ///     let posts = vec![
+    ///         (UnsyncPost::new()
+    ///             .authors(vec![author_id])
+    ///             .title("My First Post".to_string())
+    ///             .source(Some("https://blog.example.com/post/1".to_string()))
+    ///         , HashMap::new()),
+    ///         (UnsyncPost::new()
+    ///             .authors(vec![author_id])
+    ///             .title("My First Post".to_string())
+    ///             .source(Some("https://blog.example.com/post/2".to_string())),
+    ///         HashMap::new()),
+    ///     ];
+    ///
+    ///     let post = manager.import_post(posts, true)?;
+    ///     
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn import_posts<U>(
         &self,
-        posts: impl IntoIterator<Item = UnsyncPost>,
+        posts: impl IntoIterator<Item = (UnsyncPost, HashMap<String, U>)>,
+        update_relation: bool,
     ) -> Result<(Vec<PostId>, Vec<(PathBuf, U)>), rusqlite::Error> {
         let mut total_author = HashSet::new();
         let mut total_collections = HashSet::new();
         let mut total_files = Vec::new();
         let mut results = Vec::new();
 
-        for post in posts {
-            let (id, authors, collections, files_data) = self.import_post(post, HashMap::new())?;
+        for (post, files) in posts {
+            let (id, authors, collections, files_data) = self.import_post(post, files, false)?;
 
             results.push(id);
             total_files.extend(files_data);
@@ -155,14 +205,16 @@ where
             total_collections.extend(collections);
         }
 
-        total_author.into_iter().try_for_each(|author| {
-            self.set_author_thumb_by_latest(author)?;
-            self.set_author_updated_by_latest(author)
-        })?;
+        if update_relation {
+            total_author.into_iter().try_for_each(|author| {
+                self.set_author_thumb_by_latest(author)?;
+                self.set_author_updated_by_latest(author)
+            })?;
 
-        total_collections
-            .into_iter()
-            .try_for_each(|collection| self.set_collection_thumb_by_latest(collection))?;
+            total_collections
+                .into_iter()
+                .try_for_each(|collection| self.set_collection_thumb_by_latest(collection))?;
+        }
 
         Ok((results, total_files))
     }
@@ -270,14 +322,22 @@ impl UnsyncPost {
         }
     }
 
+    /// import this post into the archive, synchronizing it with the database.
+    ///
+    /// This is abbreviation for [import_post](crate::PostArchiverManager::import_post)
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn sync<T, U>(
         self,
         manager: &PostArchiverManager<T>,
+        files_data: HashMap<String, U>,
     ) -> Result<(PostId, Vec<(PathBuf, U)>), rusqlite::Error>
     where
         T: PostArchiverConnection,
     {
-        let (id, authors, collections, files_data) = manager.import_post(self, HashMap::new())?;
+        let (id, authors, collections, files_data) = manager.import_post(self, files_data, true)?;
 
         authors.into_iter().try_for_each(|author| {
             manager.set_author_thumb_by_latest(author)?;

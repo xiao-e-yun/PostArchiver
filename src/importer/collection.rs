@@ -9,6 +9,13 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
+    /// Import a collection into the archive.
+    ///
+    /// If the collection already exists (by source), it updates its name and returns the existing ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_collection(
         &self,
         collection: UnsyncCollection,
@@ -26,6 +33,13 @@ where
         }
     }
 
+    /// Import multiple collections into the archive.
+    ///
+    /// This method takes an iterator of `UnsyncCollection` and imports each one.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_collections(
         &self,
         collections: impl IntoIterator<Item = UnsyncCollection>,
@@ -38,14 +52,22 @@ where
 }
 
 /// Represents a file metadata that is not yet synced to the database.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsyncCollection {
     pub name: String,
     pub source: String,
 }
 
-impl Hash for UnsyncCollection {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.source.hash(state);
+impl UnsyncCollection {
+    pub fn new(name: String, source: String) -> Self {
+        Self { name, source }
+    }
+    pub fn name(mut self, name: String) -> Self {
+        self.name = name;
+        self
+    }
+    pub fn source(mut self, source: String) -> Self {
+        self.source = source;
+        self
     }
 }

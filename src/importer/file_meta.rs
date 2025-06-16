@@ -27,10 +27,7 @@ where
     /// # use post_archiver::importer::UnsyncFileMeta;
     /// # use post_archiver::PostId;
     /// # use std::collections::HashMap;
-    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let manager = PostArchiverManager::open_in_memory()?;
-    ///     let post_id = PostId(1);
-    ///     
+    /// fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), rusqlite::Error> {
     ///     let file_meta = UnsyncFileMeta {
     ///         filename: "image.jpg".to_string(),
     ///         mime: "image/jpeg".to_string(),
@@ -68,5 +65,21 @@ pub struct UnsyncFileMeta {
 impl Hash for UnsyncFileMeta {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.filename.hash(state);
+        self.mime.hash(state);
+    }
+}
+
+impl UnsyncFileMeta {
+    pub fn new(filename: String, mime: String) -> Self {
+        Self {
+            filename,
+            mime,
+            extra: HashMap::new(),
+        }
+    }
+
+    pub fn extra(mut self, extra: HashMap<String, Value>) -> Self {
+        self.extra = extra;
+        self
     }
 }

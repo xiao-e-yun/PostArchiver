@@ -1,5 +1,3 @@
-use std::hash::Hash;
-
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -11,10 +9,9 @@ impl<T> PostArchiverManager<T>
 where
     T: PostArchiverConnection,
 {
-    /// Import or update an author record in the archive.
+    /// Import an author into the archive.
     ///
-    /// Checks if an author with any of the given aliases exists in the archive.
-    /// Updates the existing record if found, otherwise creates a new entry.
+    /// If the author already exists (by aliases), it updates their name, aliases, and updated date.
     ///
     /// # Errors
     ///
@@ -50,7 +47,7 @@ where
 }
 
 /// Represents an author that is not yet synced with the archive.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsyncAuthor {
     name: String,
     updated: Option<DateTime<Utc>>,
@@ -75,7 +72,13 @@ impl UnsyncAuthor {
     pub fn updated(self, updated: Option<DateTime<Utc>>) -> Self {
         Self { updated, ..self }
     }
-
+    /// Import it into the archive.
+    ///
+    /// If the author already exists (by aliases), it updates their name, aliases, and updated date.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<AuthorId, rusqlite::Error>
     where
         T: PostArchiverConnection,
@@ -84,17 +87,11 @@ impl UnsyncAuthor {
     }
 }
 
-impl Hash for UnsyncAuthor {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.aliases.hash(state);
-    }
-}
-
 /// Represents an alias for an author that is not yet synced with the archive.
 ///
 /// This is used to track different platforms or identifiers for the same author.
 /// It can include links to their profiles or other relevant information.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsyncAlias {
     pub source: String,
     pub platform: PlatformId,
@@ -105,8 +102,8 @@ impl UnsyncAlias {
     pub fn new(platform: PlatformId, source: String) -> Self {
         Self {
             link: None,
-            source: source.into(),
-            platform: platform.clone(),
+            source,
+            platform,
         }
     }
 
@@ -123,12 +120,5 @@ impl UnsyncAlias {
     pub fn link<S: Into<String>>(mut self, link: S) -> Self {
         self.link = Some(link.into());
         self
-    }
-}
-
-impl Hash for UnsyncAlias {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.source.hash(state);
-        self.platform.hash(state);
     }
 }
