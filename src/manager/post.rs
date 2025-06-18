@@ -148,7 +148,7 @@ where
             .conn()
             .prepare_cached("INSERT OR IGNORE INTO author_posts (author, post) VALUES (?, ?)")?;
         for author in authors {
-            stmt.execute(params![post, author])?;
+            stmt.execute(params![author, post])?;
         }
         Ok(())
     }

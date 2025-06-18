@@ -60,7 +60,7 @@ CREATE TABLE
         comments JSON NOT NULL DEFAULT '[]',
         published DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (platform) REFERENCES platforms (id) ON DELETE SET 0,
+        FOREIGN KEY (platform) REFERENCES platforms (id) ON DELETE SET NULL,
         FOREIGN KEY (thumb) REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
@@ -84,7 +84,7 @@ CREATE TABLE
     collections (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        source TEXT UNIQUE ,
+        source TEXT UNIQUE,
         thumb INTEGER REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
