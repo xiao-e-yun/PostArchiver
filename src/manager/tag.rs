@@ -34,13 +34,13 @@ where
     /// # use post_archiver::manager::PostArchiverManager;
     /// # use post_archiver::PlatformId;
     /// fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    ///     let first_tag = manager.find_tag("tag1")?;
-    ///     let second_tag = manager.find_tag(("tag2", PlatformId(2)))?;
-    ///     let third_tag = manager.find_tag(("tag3", Some(PlatformId(3)))?;
+    ///     let first_tag = manager.find_tag(&"tag1")?;
+    ///     let second_tag = manager.find_tag(&("tag2", PlatformId(2)))?;
+    ///     let third_tag = manager.find_tag(&("tag3", Some(PlatformId(3))))?;
     ///     Ok(())
     /// }
     /// ```
-    pub fn find_tag(&self, tag: &impl FindTag) -> Result<Option<TagId>, rusqlite::Error> {
+    pub fn find_tag<U: FindTag>(&self, tag: &U) -> Result<Option<TagId>, rusqlite::Error> {
         let name = tag.name().to_string();
         let platform = tag.platform();
 
@@ -87,7 +87,7 @@ pub trait FindTag {
     }
 }
 
-impl FindTag for str {
+impl FindTag for &str {
     fn name(&self) -> &str {
         self
     }

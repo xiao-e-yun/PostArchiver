@@ -93,7 +93,7 @@ where
     pub fn remove_file_meta(&self, id: FileMetaId) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT filename FROM file_metas WHERE id = ?")?;
+            .prepare_cached("DELETE FROM file_metas WHERE id = ?")?;
         stmt.execute([id])?;
         Ok(())
     }

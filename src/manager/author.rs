@@ -184,14 +184,13 @@ where
     /// ```rust
     /// # use post_archiver::manager::PostArchiverManager;
     /// # use post_archiver::{AuthorId, PlatformId};
-    /// # fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), Box<dyn
-    /// std::error::Error>> {
+    /// # fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), rusqlite::Error> {
     /// let aliases = vec![
-    ///     ("octocat", PlatformId(1), Some("https://example.com/octocat".to_string())),
-    ///     ("octocat2", PlatformId(2), None),
+    ///     ("octocat".to_string(), PlatformId(1), Some("https://example.com/octocat".to_string())),
+    ///     ("octocat2".to_string(), PlatformId(2), None),
     /// ];
     ///
-    /// manager.add_author_aliases(author_id, aliases)?
+    /// manager.add_author_aliases(author_id, aliases)
     /// # }
     /// ```
     ///
