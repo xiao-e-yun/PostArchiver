@@ -123,17 +123,6 @@ CREATE TABLE
 
 CREATE INDEX post_tags_idx ON post_tags (tag);
 
-CREATE TABLE 
-    post_platform_tags (
-        post INTEGER NOT NULL,
-        tag INTEGER NOT NULL,
-        PRIMARY KEY (post, tag),
-        FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE,
-        FOREIGN KEY (tag) REFERENCES platform_tags (id) ON DELETE CASCADE
-    );
-
-CREATE INDEX post_platform_tags_idx ON post_platform_tags (tag);
-
 ------------------------------------------------------------
 -- File Meta
 ------------------------------------------------------------
