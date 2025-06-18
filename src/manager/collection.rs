@@ -197,7 +197,7 @@ where
     pub fn list_post_collections(&self, post: &PostId) -> Result<Vec<Collection>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT collections.* FROM collections INNER JOIN collection_posts ON post_collections.collection = collections.id WHERE post_collections.post = ?")?;
+            .prepare_cached("SELECT collections.* FROM collections INNER JOIN collection_posts ON collection_posts.collection = collections.id WHERE collection_posts.post = ?")?;
         let collections = stmt.query_map([post], crate::Collection::from_row)?;
         collections.collect()
     }

@@ -214,7 +214,7 @@ where
     pub fn list_post_tags(&self, post: &PostId) -> Result<Vec<Tag>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT tags.* FROM tags INNER JOIN tag_posts ON post_tags.tag = tags.id WHERE post_tags.post = ?")?;
+            .prepare_cached("SELECT tags.* FROM tags INNER JOIN post_tags ON post_tags.tag = tags.id WHERE post_tags.post = ?")?;
         let tags = stmt.query_map([post], Tag::from_row)?;
         tags.collect()
     }
@@ -227,7 +227,7 @@ where
     pub fn list_tag_posts(&self, tag: &TagId) -> Result<Vec<Post>, rusqlite::Error> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT posts.* FROM posts INNER JOIN tag_posts ON tag_posts.post = posts.id WHERE tag_posts.tag = ?")?;
+            .prepare_cached("SELECT posts.* FROM posts INNER JOIN post_tags ON post_tags.post = posts.id WHERE post_tags.tag = ?")?;
         let posts = stmt.query_map([tag], Post::from_row)?;
         posts.collect()
     }
