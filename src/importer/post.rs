@@ -34,20 +34,17 @@ where
     /// ```
     /// # use post_archiver::manager::PostArchiverManager;
     /// # use post_archiver::importer::UnsyncPost;
-    /// # use post_archiver::AuthorId;
-    /// fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), rusqlite::Error> {
-    ///     let post = UnsyncPost::new()
-    ///         .authors(vec![author_id])
-    ///         .title("My First Post".to_string())
-    ///         .source(Some("https://blog.example.com/post/1".to_string()));
-    ///         .content(vec![
+    /// # use post_archiver::PlatformId;
+    /// # use std::collections::HashMap;
+    /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
+    /// let post = UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]);
     ///
-    ///     let files_data = HashMap::new(); // You can provide file data if needed
-    ///         
-    ///     let post = manager.import_post(post, Default::default(), true)?;
+    /// let files_data = HashMap::<String,()>::new(); // You can provide file data if needed
     ///     
-    ///     Ok(())
-    /// }
+    /// let post = manager.import_post(post, files_data, true)?;
+    ///
+    /// Ok(())
+    /// # }
     /// ```
     pub fn import_post<U>(
         &self,
@@ -166,25 +163,24 @@ where
     /// ```
     /// # use post_archiver::manager::PostArchiverManager;
     /// # use post_archiver::importer::UnsyncPost;
-    /// # use post_archiver::AuthorId;
-    /// fn example(manager: &PostArchiverManager, author_id: AuthorId) -> Result<(), rusqlite::Error> {
-    ///     let posts = vec![
-    ///         (UnsyncPost::new()
-    ///             .authors(vec![author_id])
-    ///             .title("My First Post".to_string())
-    ///             .source(Some("https://blog.example.com/post/1".to_string()))
-    ///         , HashMap::new()),
-    ///         (UnsyncPost::new()
-    ///             .authors(vec![author_id])
-    ///             .title("My First Post".to_string())
-    ///             .source(Some("https://blog.example.com/post/2".to_string())),
-    ///         HashMap::new()),
-    ///     ];
+    /// # use post_archiver::PlatformId;
+    /// # use std::collections::HashMap;
+    /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
+    /// let posts = vec![
+    ///     (
+    ///         UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]),
+    ///         HashMap::<String, ()>::new()
+    ///     ),
+    ///     (
+    ///         UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/2".to_string(), "My Second Post".to_string(), vec![]),
+    ///         HashMap::<String, ()>::new()
+    ///     ),
+    /// ];
     ///
-    ///     let post = manager.import_post(posts, true)?;
-    ///     
-    ///     Ok(())
-    /// }
+    /// let post = manager.import_posts(posts, true)?;
+    ///
+    /// Ok(())
+    /// # }
     /// ```
     pub fn import_posts<U>(
         &self,
