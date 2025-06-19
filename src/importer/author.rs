@@ -40,6 +40,8 @@ where
             None => {
                 let id = self.add_author(author.name, author.updated)?;
 
+                self.add_author_aliases(id, aliases)?;
+
                 Ok(id)
             }
         }
