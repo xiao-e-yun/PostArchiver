@@ -175,7 +175,12 @@ where
     ///
     pub fn set_collection_thumb_by_latest(&self, id: CollectionId) -> Result<(), rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
-            "UPDATE collections SET thumb = (SELECT id FROM file_metas WHERE post = (SELECT id FROM posts WHERE collection = ? ORDER BY updated DESC LIMIT 1)) WHERE id = ?",
+            "UPDATE collections SET thumb = (
+                SELECT posts.thumb FROM posts 
+                INNER JOIN collection_posts ON collection_posts.post = posts.id 
+                WHERE collection_posts.collection = ? AND posts.thumb IS NOT NULL
+                ORDER BY posts.updated DESC LIMIT 1
+            ) WHERE id = ?",
         )?;
         stmt.execute(params![id, id])?;
         Ok(())
