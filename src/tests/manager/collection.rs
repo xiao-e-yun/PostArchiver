@@ -397,15 +397,121 @@ fn test_post_collections_extension_method() {
 fn test_set_collection_thumb_by_latest() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
+    // Create a collection
     let collection_id = manager
         .add_collection("Test Collection".to_string(), None, None)
         .expect("Failed to add collection");
 
-    // The current implementation has SQL issues, but test that it doesn't panic
-    let result = manager.set_collection_thumb_by_latest(collection_id);
+    // Create posts with different update times
+    let early_time = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let later_time = chrono::DateTime::parse_from_rfc3339("2021-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let latest_time = chrono::DateTime::parse_from_rfc3339("2022-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
 
-    // The function should complete without panicking, even if the SQL is incorrect
-    assert!(result.is_ok() || result.is_err());
+    // Create first post (earliest)
+    let post1_id = manager
+        .add_post(
+            "Post 1".to_string(),
+            None,
+            None,
+            Some(early_time),
+            Some(early_time),
+        )
+        .expect("Failed to add post 1");
+
+    // Create second post (middle)
+    let post2_id = manager
+        .add_post(
+            "Post 2".to_string(),
+            None,
+            None,
+            Some(later_time),
+            Some(later_time),
+        )
+        .expect("Failed to add post 2");
+
+    // Create third post (latest)
+    let post3_id = manager
+        .add_post(
+            "Post 3".to_string(),
+            None,
+            None,
+            Some(latest_time),
+            Some(latest_time),
+        )
+        .expect("Failed to add post 3");
+
+    // Create file metas for thumbnails
+    let file_meta1_id = manager
+        .add_file_meta(
+            post1_id,
+            "thumb1.jpg".to_string(),
+            "image/jpeg".to_string(),
+            HashMap::new(),
+        )
+        .expect("Failed to add file meta 1");
+
+    let file_meta2_id = manager
+        .add_file_meta(
+            post2_id,
+            "thumb2.jpg".to_string(),
+            "image/jpeg".to_string(),
+            HashMap::new(),
+        )
+        .expect("Failed to add file meta 2");
+
+    let file_meta3_id = manager
+        .add_file_meta(
+            post3_id,
+            "thumb3.jpg".to_string(),
+            "image/jpeg".to_string(),
+            HashMap::new(),
+        )
+        .expect("Failed to add file meta 3");
+
+    // Set thumbnails for posts
+    manager
+        .set_post_thumb(post1_id, Some(file_meta1_id))
+        .expect("Failed to set post 1 thumb");
+
+    manager
+        .set_post_thumb(post2_id, Some(file_meta2_id))
+        .expect("Failed to set post 2 thumb");
+
+    manager
+        .set_post_thumb(post3_id, Some(file_meta3_id))
+        .expect("Failed to set post 3 thumb");
+
+    // Associate posts with collection
+    manager
+        .add_post_collections(post1_id, &[collection_id])
+        .expect("Failed to add post 1 to collection");
+
+    manager
+        .add_post_collections(post2_id, &[collection_id])
+        .expect("Failed to add post 2 to collection");
+
+    manager
+        .add_post_collections(post3_id, &[collection_id])
+        .expect("Failed to add post 3 to collection");
+
+    // Set collection thumb by latest post
+    manager
+        .set_collection_thumb_by_latest(collection_id)
+        .expect("Failed to set collection thumb by latest");
+
+    // Verify collection thumb is set to the latest post's thumb
+    let collection = manager
+        .get_collection(&collection_id)
+        .expect("Failed to get collection")
+        .expect("Collection should exist");
+
+    assert_eq!(collection.thumb, Some(file_meta3_id));
 }
 
 #[test]
