@@ -1,7 +1,7 @@
 pub mod config;
-mod v1;
 mod v2;
 mod v3;
+mod v4;
 
 use std::{fs, io, path::Path};
 
@@ -75,14 +75,14 @@ fn main() {
     }
 
     // Major Migrating
-    v1::Bridge::verify_and_upgrade(&mut config);
+    v2::Bridge::verify_and_upgrade(&mut config);
 
     // Add version check, and others.
-    v2::Bridge::verify_and_upgrade(&mut config);
+    v3::Bridge::verify_and_upgrade(&mut config);
 
     let mut conn = Connection::open(config.target.join("post-archiver.db")).unwrap();
     // Database Migration
-    v3::Bridge::verify_and_upgrade(&mut conn, &mut config);
+    v4::Bridge::verify_and_upgrade(&mut conn, &mut config);
 
     if config.updated {
         info!("Successfully updated");
@@ -113,11 +113,12 @@ pub trait Migration: Default {
 pub trait MigrationDatabase: Default {
     const VERSION: &'static str;
     const SQL: &'static str;
+    fn upgrade(&mut self, path: &Path) {}
 
     fn verify(&mut self, conn: &Connection) -> bool {
         conn.query_row(
             "SELECT count() FROM post_archiver_meta WHERE version LIKE ? || %",
-            [],
+            [Self::VERSION],
             |row| Ok(row.get_unwrap::<_, usize>(0) == 1),
         )
         .unwrap()
@@ -131,6 +132,7 @@ pub trait MigrationDatabase: Default {
             info!("Migrating from v{}", Self::VERSION);
             conn.execute_batch(Self::SQL)
                 .expect("Failed to execute migration SQL");
+            bridge.upgrade(&config.target);
             config.updated = true;
             info!("=================================");
         }

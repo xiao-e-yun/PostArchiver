@@ -1,49 +1,50 @@
-use crate::MigrationDatabase;
+use std::path::Path;
+
+use rusqlite::Connection;
+
+use crate::Migration;
 
 #[derive(Debug, Clone, Default)]
 pub struct Bridge;
 
-impl MigrationDatabase for Bridge {
-    const VERSION: &'static str = "0.3";
-    const SQL: &'static str = "
-UPDATE post_archiver_meta SET version = '0.4.0';
-ALTER TABLE author_alias RENAME TO author_aliases;
+impl Migration for Bridge {
+    const VERSION: &'static str = "0.2";
 
-ALTER TABLE tags RENAME TO tags_old;
-ALTER TABLE post_tags RENAME TO post_tags_old;
+    fn verify(&mut self, path: &Path) -> bool {
+        let db_path = path.join("post-archiver.db");
+        let conn = Connection::open(&db_path).expect("Failed to open database");
+        !conn.query_row("SELECT count() FROM sqlite_master WHERE type='table' AND name='post_archiver_meta'",[],|row|row.get::<_,bool>(0)).unwrap()
+    }
+
+    fn upgrade(&mut self, path: &Path) {
+        let db_path = path.join("post-archiver.db");
+        let mut conn = Connection::open(&db_path).expect("Failed to open database");
+        let tx = conn.transaction().unwrap();
+
+        tx.execute_batch(
+            "
+CREATE TABLE
+    post_archiver_meta (version TEXT NOT NULL PRIMARY KEY);
 
 CREATE TABLE
-    tags (
-        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        category TEXT NOT NULL COLLATE NOCASE,
-        name TEXT NOT NULL COLLATE NOCASE
-        UNIQUE (category, name),
+    features (
+        name TEXT NOT NULL PRIMARY KEY,
+        value INTEGER NOT NULL DEFAULT 0,
+        extra JSON NOT NULL DEFAULT '{}'
     );
 
-CREATE INDEX tags_category_idx ON tags (category);
-CREATE INDEX tags_idx ON tags (category, name);
+DROP TRIGGER update_post_thumb_on_file_meta_insert;
+DROP TRIGGER update_post_thumb_on_file_meta_update;
+DROP TRIGGER update_author_on_post_insert;
+DROP TRIGGER update_author_on_post_update;
 
-CREATE TABLE
-    post_tags (
-        post INTEGER NOT NULL,
-        tag INTEGER NOT NULL,
-        PRIMARY KEY (post, tag),
-        FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE,
-        FOREIGN KEY (tag) REFERENCES tags (id) ON DELETE CASCADE
-    );
+INSERT INTO post_archiver_meta (version) VALUES ('0.3.0');
 
-CREATE INDEX post_tags_idx ON post_tags (tag);
+UPDATE file_metas SET extra = '{}' WHERE extra = 'null';
+        ",
+        )
+        .unwrap();
 
--- Migrate old tags
-INSERT INTO tags (id, category, name) SELECT (id, 'platform', name) FROM tags_old;
-UPDATE tags SET category = 'general' WHERE name in ('r-18', 'free');
-
-INSERT INTO post_tags (post, tag) SELECT (post, tag) FROM post_tags_old;
-
--- Remove old tables
-DROP TABLE tags_old;
-DROP TABLE post_tags_old;
-
-VACUUM;
-    ";
+        tx.commit().expect("Failed to commit transaction");
+    }
 }
