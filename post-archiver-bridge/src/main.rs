@@ -3,12 +3,12 @@ mod v2;
 mod v3;
 mod v4;
 
-use std::{fs, io, path::Path};
+use std::{fs, io, path::Path, process::exit};
 
 use clap::Parser;
 use config::Config;
 use log::{error, info, warn};
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction};
 
 fn main() {
     simple_logger::init().unwrap();
@@ -54,6 +54,7 @@ fn main() {
     if !config.overwrite {
         if config.target.exists() {
             error!("Target is already exists");
+            exit(1)
         } else {
             copy_dir_all(&config.source, &config.target).unwrap();
 
@@ -113,11 +114,11 @@ pub trait Migration: Default {
 pub trait MigrationDatabase: Default {
     const VERSION: &'static str;
     const SQL: &'static str;
-    fn upgrade(&mut self, path: &Path) {}
+    fn upgrade(&mut self, path: &Path, tx: &mut Transaction<'_>);
 
     fn verify(&mut self, conn: &Connection) -> bool {
         conn.query_row(
-            "SELECT count() FROM post_archiver_meta WHERE version LIKE ? || %",
+            "SELECT count() FROM post_archiver_meta WHERE version LIKE ? || '%'",
             [Self::VERSION],
             |row| Ok(row.get_unwrap::<_, usize>(0) == 1),
         )
@@ -130,9 +131,12 @@ pub trait MigrationDatabase: Default {
         if bridge.verify(conn) {
             info!("=================================");
             info!("Migrating from v{}", Self::VERSION);
-            conn.execute_batch(Self::SQL)
-                .expect("Failed to execute migration SQL");
-            bridge.upgrade(&config.target);
+            conn.pragma_update(None, "foreign_keys", "off").expect("Failed to disable foreign keys");
+            let mut tx = conn.transaction().unwrap();
+            tx.execute_batch(Self::SQL).expect("Failed to execute migration SQL");
+            bridge.upgrade(&config.target, &mut tx);
+            tx.commit().expect("Failed to commit transaction");
+            conn.pragma_update(None, "foreign_keys", "on").expect("Failed to enable foreign keys");
             config.updated = true;
             info!("=================================");
         }

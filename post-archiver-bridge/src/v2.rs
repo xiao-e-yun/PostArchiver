@@ -21,7 +21,7 @@ pub struct Bridge {
 }
 
 impl Migration for Bridge {
-    const VERSION: &'static str = "v0.1";
+    const VERSION: &'static str = "0.1";
 
     fn verify(&mut self, path: &Path) -> bool {
         path.join("authors.json").exists() && !path.join("post-archiver.db").exists()
