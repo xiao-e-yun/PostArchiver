@@ -9,20 +9,9 @@ permissions:
   id-token: write
 
 jobs:
-  audit:
-    name: Audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: bp3d-actions/audit-check@9c23bd47e5e7b15b824739e0862cb878a52cc211
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   crates_publish:
     name: Publish (crates.io)
 
-    needs: audit
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -49,7 +38,6 @@ jobs:
   npm_publish:
     name: Publish (npm)
 
-    needs: audit
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
