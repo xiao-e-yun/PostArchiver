@@ -54,7 +54,7 @@ where
             .prepare_cached("SELECT id FROM tags WHERE platform = ? AND name = ?")?;
 
         let id = stmt
-            .query_row(params![name, platform], |row| row.get(0))
+            .query_row(params![platform, name], |row| row.get(0))
             .optional();
 
         if let Ok(Some(id)) = id {
