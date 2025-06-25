@@ -237,6 +237,9 @@ DROP TABLE posts_old;
 DROP TABLE tags_old;
 DROP TABLE post_tags_old;
 DROP TABLE file_metas_old;
+
+-- Update the database version
+UPDATE post_archiver_meta SET version = '0.4.0';
     ";
 
     fn upgrade(&mut self, path: &Path, tx: &mut Transaction<'_>) {
