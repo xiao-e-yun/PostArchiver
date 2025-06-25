@@ -51,7 +51,7 @@ where
 
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT id FROM tags WHERE platform = ? AND name = ?")?;
+            .prepare_cached("SELECT id FROM tags WHERE platform IS ? AND name = ?")?;
 
         let id = stmt
             .query_row(params![platform, name], |row| row.get(0))
