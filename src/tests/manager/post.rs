@@ -466,9 +466,8 @@ fn test_add_post_authors() {
         .expect("Failed to add post authors");
 
     // Verify authors were added
-    let post = manager.get_post(&post_id).expect("Failed to get post");
     let post_authors = manager
-        .list_post_authors(&post)
+        .list_post_authors(&post_id)
         .expect("Failed to list post authors");
 
     assert_eq!(post_authors.len(), 2);
@@ -506,9 +505,8 @@ fn test_remove_post_authors() {
         .expect("Failed to remove post authors");
 
     // Verify only one author remains
-    let post = manager.get_post(&post_id).expect("Failed to get post");
     let remaining_authors = manager
-        .list_post_authors(&post)
+        .list_post_authors(&post_id)
         .expect("Failed to list post authors");
 
     assert_eq!(remaining_authors.len(), 1);
@@ -705,9 +703,8 @@ fn test_post_relationships_bidirectional() {
         .expect("Failed to add post collections");
 
     // Test post -> entities
-    let post = manager.get_post(&post_id).expect("Failed to get post");
     let post_authors = manager
-        .list_post_authors(&post)
+        .list_post_authors(&post_id)
         .expect("Failed to list post authors");
     let post_tags = manager
         .list_post_tags(&post_id)
