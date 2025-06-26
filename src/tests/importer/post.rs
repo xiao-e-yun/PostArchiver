@@ -257,7 +257,7 @@ fn test_import_post_with_authors() {
 
     // Verify post-author relationships
     let post_authors = manager
-        .list_post_authors(&manager.get_post(&post_id).unwrap())
+        .list_post_authors(&post_id)
         .expect("Failed to list post authors");
     assert_eq!(post_authors.len(), 2);
 }
