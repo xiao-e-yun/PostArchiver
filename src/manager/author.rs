@@ -3,7 +3,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    Alias, Author, AuthorId, FileMetaId, PlatformId, Post,
+    Alias, Author, AuthorId, FileMetaId, PlatformId, Post, PostId,
 };
 
 //=============================================================
@@ -411,11 +411,11 @@ where
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn list_post_authors(&self, post: &Post) -> Result<Vec<Author>, rusqlite::Error> {
+    pub fn list_post_authors(&self, post: &PostId) -> Result<Vec<Author>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT authors.* FROM authors INNER JOIN author_posts ON author_posts.author = authors.id WHERE author_posts.post = ?")?;
-        let authors = stmt.query_map([post.id], Author::from_row)?;
+        let authors = stmt.query_map([post], Author::from_row)?;
         authors.collect()
     }
 }
@@ -446,6 +446,6 @@ impl Post {
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn authors(&self, manager: &PostArchiverManager) -> Result<Vec<Author>, rusqlite::Error> {
-        manager.list_post_authors(self)
+        manager.list_post_authors(&self.id)
     }
 }

@@ -252,9 +252,8 @@ fn test_author_post_relationships() {
     assert_eq!(author_posts[0].id, post_id);
 
     // Test post's authors
-    let post = manager.get_post(&post_id).expect("Failed to get post");
     let post_authors = manager
-        .list_post_authors(&post)
+        .list_post_authors(&post_id)
         .expect("Failed to list post authors");
 
     assert_eq!(post_authors.len(), 1);
