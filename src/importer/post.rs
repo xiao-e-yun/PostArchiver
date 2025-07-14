@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    path::PathBuf,
-};
+use std::{collections::HashSet, fmt::Debug, path::PathBuf};
 
 use chrono::{DateTime, Utc};
 
@@ -37,19 +33,18 @@ where
     /// # use post_archiver::PlatformId;
     /// # use std::collections::HashMap;
     /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    /// let post = UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]);
+    /// let post: UnsyncPost<()> = UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]);
     ///
     /// let files_data = HashMap::<String,()>::new(); // You can provide file data if needed
-    ///     
-    /// let post = manager.import_post(post, files_data, true)?;
+    ///    
+    /// let post = manager.import_post(post, true)?;
     ///
     /// Ok(())
     /// # }
     /// ```
     pub fn import_post<U>(
         &self,
-        post: UnsyncPost,
-        files_data: HashMap<String, U>,
+        post: UnsyncPost<U>,
         update_relation: bool,
     ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>, Vec<(PathBuf, U)>), rusqlite::Error>
     {
@@ -79,32 +74,29 @@ where
             )?,
         };
 
-        let thumb = post
+        let mut thumb = post
             .thumb
-            .clone()
-            .or_else(|| {
-                post.content.iter().find_map(|c| {
-                    let UnsyncContent::File(file) = c else {
-                        return None;
-                    };
-                    file.mime.starts_with("image/").then_some(file.clone())
-                })
-            })
+            .as_ref()
             .map(|thumb| self.import_file_meta(id, thumb))
             .transpose()?;
-        self.set_post_thumb(id, thumb)?;
 
         let content = post
             .content
-            .into_iter()
+            .iter()
             .map(|content| {
                 Ok(match content {
-                    UnsyncContent::Text(text) => Content::Text(text),
-                    UnsyncContent::File(file) => Content::File(self.import_file_meta(id, file)?),
+                    UnsyncContent::Text(text) => Content::Text(text.clone()),
+                    UnsyncContent::File(file) => {
+                        let need_thumb = thumb.is_none() && file.mime.starts_with("image/");
+                        let file_meta = self.import_file_meta(id, file)?;
+                        need_thumb.then(|| thumb = Some(file_meta));
+                        Content::File(file_meta)
+                    }
                 })
             })
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
         self.set_post_content(id, content)?;
+        self.set_post_thumb(id, thumb)?;
 
         self.set_post_comments(id, post.comments)?;
 
@@ -122,9 +114,15 @@ where
             .join((id.raw() / POSTS_PRE_CHUNK).to_string())
             .join((id.raw() % POSTS_PRE_CHUNK).to_string());
 
-        let files = files_data
+        let files = post
+            .content
             .into_iter()
-            .map(|(filename, data)| (path.join(&filename), data))
+            .flat_map(|c| match c {
+                UnsyncContent::Text(_) => None,
+                UnsyncContent::File(file) => Some(file),
+            })
+            .chain(post.thumb)
+            .map(|f| (path.join(f.filename), f.data))
             .collect::<Vec<_>>();
 
         if update_relation {
@@ -166,15 +164,9 @@ where
     /// # use post_archiver::PlatformId;
     /// # use std::collections::HashMap;
     /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    /// let posts = vec![
-    ///     (
-    ///         UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]),
-    ///         HashMap::<String, ()>::new()
-    ///     ),
-    ///     (
-    ///         UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/2".to_string(), "My Second Post".to_string(), vec![]),
-    ///         HashMap::<String, ()>::new()
-    ///     ),
+    /// let posts: Vec<UnsyncPost<()>> = vec![
+    ///     UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]),
+    ///     UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/2".to_string(), "My Second Post".to_string(), vec![]),
     /// ];
     ///
     /// let post = manager.import_posts(posts, true)?;
@@ -184,7 +176,7 @@ where
     /// ```
     pub fn import_posts<U>(
         &self,
-        posts: impl IntoIterator<Item = (UnsyncPost, HashMap<String, U>)>,
+        posts: impl IntoIterator<Item = UnsyncPost<U>>,
         update_relation: bool,
     ) -> Result<(Vec<PostId>, Vec<(PathBuf, U)>), rusqlite::Error> {
         let mut total_author = HashSet::new();
@@ -192,8 +184,8 @@ where
         let mut total_files = Vec::new();
         let mut results = Vec::new();
 
-        for (post, files) in posts {
-            let (id, authors, collections, files_data) = self.import_post(post, files, false)?;
+        for post in posts {
+            let (id, authors, collections, files_data) = self.import_post(post, false)?;
 
             results.push(id);
             total_files.extend(files_data);
@@ -218,15 +210,15 @@ where
 
 #[derive(Debug, Clone)]
 /// Represents a post that is not yet synchronized with the archive.
-pub struct UnsyncPost {
+pub struct UnsyncPost<T> {
     /// The original URL of this post (e.g., "https://example.com/blog/1")
     pub source: String,
     /// The title of the post
     pub title: String,
     /// The post's content items (text and file references)
-    pub content: Vec<UnsyncContent>,
+    pub content: Vec<UnsyncContent<T>>,
     /// Optional thumbnail image for the post
-    pub thumb: Option<UnsyncFileMeta>,
+    pub thumb: Option<UnsyncFileMeta<T>>,
     /// Comments on the post
     pub comments: Vec<Comment>,
     /// When the post was updated
@@ -243,12 +235,12 @@ pub struct UnsyncPost {
     pub collections: Vec<UnsyncCollection>,
 }
 
-impl UnsyncPost {
+impl<T> UnsyncPost<T> {
     pub fn new(
         platform: PlatformId,
         source: String,
         title: String,
-        content: Vec<UnsyncContent>,
+        content: Vec<UnsyncContent<T>>,
     ) -> Self {
         Self {
             source,
@@ -273,11 +265,11 @@ impl UnsyncPost {
         Self { title, ..self }
     }
 
-    pub fn content(self, content: Vec<UnsyncContent>) -> Self {
+    pub fn content(self, content: Vec<UnsyncContent<T>>) -> Self {
         Self { content, ..self }
     }
 
-    pub fn thumb(self, thumb: Option<UnsyncFileMeta>) -> Self {
+    pub fn thumb(self, thumb: Option<UnsyncFileMeta<T>>) -> Self {
         Self { thumb, ..self }
     }
 
@@ -325,15 +317,14 @@ impl UnsyncPost {
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn sync<T, U>(
+    pub fn sync<U>(
         self,
-        manager: &PostArchiverManager<T>,
-        files_data: HashMap<String, U>,
-    ) -> Result<(PostId, Vec<(PathBuf, U)>), rusqlite::Error>
+        manager: &PostArchiverManager<U>,
+    ) -> Result<(PostId, Vec<(PathBuf, T)>), rusqlite::Error>
     where
-        T: PostArchiverConnection,
+        U: PostArchiverConnection,
     {
-        let (id, authors, collections, files_data) = manager.import_post(self, files_data, true)?;
+        let (id, authors, collections, files_data) = manager.import_post(self, true)?;
 
         authors.into_iter().try_for_each(|author| {
             manager.set_author_thumb_by_latest(author)?;
@@ -349,7 +340,7 @@ impl UnsyncPost {
 }
 
 #[derive(Debug, Clone)]
-pub enum UnsyncContent {
+pub enum UnsyncContent<T> {
     Text(String),
-    File(UnsyncFileMeta),
+    File(UnsyncFileMeta<T>),
 }

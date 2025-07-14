@@ -32,16 +32,17 @@ where
     ///         filename: "image.jpg".to_string(),
     ///         mime: "image/jpeg".to_string(),
     ///         extra: HashMap::new(),
+    ///         data: (),
     ///     };
-    ///     let meta = manager.import_file_meta(post_id, file_meta)?;
+    ///     let meta = manager.import_file_meta(post_id, &file_meta)?;
     ///     
     ///     Ok(())
     /// }
     /// ```
-    pub fn import_file_meta(
+    pub fn import_file_meta<U>(
         &self,
         post: PostId,
-        file_meta: UnsyncFileMeta,
+        file_meta: &UnsyncFileMeta<U>,
     ) -> Result<FileMetaId, rusqlite::Error> {
         match self.find_file_meta(post, &file_meta.filename)? {
             Some(id) => {
@@ -49,31 +50,46 @@ where
                 self.set_file_meta_extra(id, file_meta.extra.clone())?;
                 Ok(id)
             }
-            None => self.add_file_meta(post, file_meta.filename, file_meta.mime, file_meta.extra),
+            None => self.add_file_meta(
+                post,
+                file_meta.filename.clone(),
+                file_meta.mime.clone(),
+                file_meta.extra.clone(),
+            ),
         }
     }
 }
 
 /// Represents a file metadata that is not yet synced to the database.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnsyncFileMeta {
+#[derive(Debug, Clone)]
+pub struct UnsyncFileMeta<T> {
     pub filename: String,
     pub mime: String,
     pub extra: HashMap<String, Value>,
+    pub data: T,
 }
 
-impl Hash for UnsyncFileMeta {
+impl<T> Hash for UnsyncFileMeta<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.filename.hash(state);
         self.mime.hash(state);
     }
 }
 
-impl UnsyncFileMeta {
-    pub fn new(filename: String, mime: String) -> Self {
+impl<T> PartialEq for UnsyncFileMeta<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.filename == other.filename && self.mime == other.mime && self.extra == other.extra
+    }
+}
+
+impl<T> Eq for UnsyncFileMeta<T> {}
+
+impl<T> UnsyncFileMeta<T> {
+    pub fn new(filename: String, mime: String, data: T) -> Self {
         Self {
             filename,
             mime,
+            data,
             extra: HashMap::new(),
         }
     }

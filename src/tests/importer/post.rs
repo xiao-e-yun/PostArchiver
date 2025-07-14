@@ -23,7 +23,7 @@ fn test_import_new_post() {
         .add_platform("Test Platform".to_string())
         .expect("Failed to add platform");
 
-    let content = vec![UnsyncContent::Text("Hello, world!".to_string())];
+    let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text("Hello, world!".to_string())];
     let unsync_post = UnsyncPost::new(
         platform_id,
         "https://example.com/post/1".to_string(),
@@ -33,9 +33,8 @@ fn test_import_new_post() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, authors, collections, files) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post");
 
     assert!(post_id.raw() > 0);
@@ -71,12 +70,11 @@ fn test_import_existing_post() {
         .expect("Failed to add existing post");
 
     // Import post with same source but different title
-    let content = vec![UnsyncContent::Text("Updated content".to_string())];
+    let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text("Updated content".to_string())];
     let unsync_post = UnsyncPost::new(platform_id, source, "Updated Title".to_string(), content);
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import existing post");
 
     // Should return the same ID
@@ -93,7 +91,8 @@ fn test_unsync_post_builder() {
     let updated_time = Utc::now();
     let published_time = Utc::now();
 
-    let content = vec![UnsyncContent::Text("Builder test content".to_string())];
+    let content: Vec<UnsyncContent<()>> =
+        vec![UnsyncContent::Text("Builder test content".to_string())];
     let tags = vec![UnsyncTag {
         name: "test_tag".to_string(),
         platform: Some(platform_id),
@@ -131,7 +130,7 @@ fn test_import_post_with_text_content() {
         .add_platform("Test Platform".to_string())
         .expect("Failed to add platform");
 
-    let content = vec![
+    let content: Vec<UnsyncContent<()>> = vec![
         UnsyncContent::Text("First paragraph".to_string()),
         UnsyncContent::Text("Second paragraph".to_string()),
     ];
@@ -145,9 +144,8 @@ fn test_import_post_with_text_content() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with text content");
 
     let post = manager.get_post(&post_id).expect("Failed to get post");
@@ -178,6 +176,7 @@ fn test_import_post_with_file_content() {
         filename: "test_image.jpg".to_string(),
         mime: "image/jpeg".to_string(),
         extra: HashMap::new(),
+        data: (),
     };
 
     let content = vec![
@@ -194,9 +193,8 @@ fn test_import_post_with_file_content() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with file content");
 
     let post = manager.get_post(&post_id).expect("Failed to get post");
@@ -235,7 +233,8 @@ fn test_import_post_with_authors() {
         .add_author("Author 2".to_string(), Some(Utc::now()))
         .expect("Failed to add author 2");
 
-    let content = vec![UnsyncContent::Text("Post by multiple authors".to_string())];
+    let content: Vec<UnsyncContent<()>> =
+        vec![UnsyncContent::Text("Post by multiple authors".to_string())];
     let unsync_post = UnsyncPost::new(
         platform_id,
         "https://example.com/multi_author".to_string(),
@@ -246,9 +245,8 @@ fn test_import_post_with_authors() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, authors, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with authors");
 
     assert_eq!(authors.len(), 2);
@@ -280,7 +278,7 @@ fn test_import_post_with_tags() {
         },
     ];
 
-    let content = vec![UnsyncContent::Text(
+    let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text(
         "A post about Rust programming".to_string(),
     )];
     let unsync_post = UnsyncPost::new(
@@ -293,9 +291,8 @@ fn test_import_post_with_tags() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with tags");
 
     // Verify post-tag relationships
@@ -327,7 +324,7 @@ fn test_import_post_with_collections() {
         },
     ];
 
-    let content = vec![UnsyncContent::Text("A tutorial post".to_string())];
+    let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text("A tutorial post".to_string())];
     let unsync_post = UnsyncPost::new(
         platform_id,
         "https://example.com/tutorial".to_string(),
@@ -338,9 +335,8 @@ fn test_import_post_with_collections() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, collection_ids, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with collections");
 
     assert_eq!(collection_ids.len(), 2);
@@ -372,7 +368,8 @@ fn test_import_post_with_comments() {
         },
     ];
 
-    let content = vec![UnsyncContent::Text("A post with comments".to_string())];
+    let content: Vec<UnsyncContent<()>> =
+        vec![UnsyncContent::Text("A post with comments".to_string())];
     let unsync_post = UnsyncPost::new(
         platform_id,
         "https://example.com/commented_post".to_string(),
@@ -383,9 +380,8 @@ fn test_import_post_with_comments() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with comments");
 
     let post = manager.get_post(&post_id).expect("Failed to get post");
@@ -401,29 +397,23 @@ fn test_import_posts_multiple() {
         .add_platform("Test Platform".to_string())
         .expect("Failed to add platform");
 
-    let posts = vec![
-        (
-            UnsyncPost::new(
-                platform_id,
-                "https://example.com/post1".to_string(),
-                "Post 1".to_string(),
-                vec![UnsyncContent::Text("Content 1".to_string())],
-            )
-            .published(Utc::now())
-            .updated(Utc::now()),
-            HashMap::<String, ()>::new(),
-        ),
-        (
-            UnsyncPost::new(
-                platform_id,
-                "https://example.com/post2".to_string(),
-                "Post 2".to_string(),
-                vec![UnsyncContent::Text("Content 2".to_string())],
-            )
-            .published(Utc::now())
-            .updated(Utc::now()),
-            HashMap::<String, ()>::new(),
-        ),
+    let posts: Vec<UnsyncPost<()>> = vec![
+        UnsyncPost::new(
+            platform_id,
+            "https://example.com/post1".to_string(),
+            "Post 1".to_string(),
+            vec![UnsyncContent::Text("Content 1".to_string())],
+        )
+        .published(Utc::now())
+        .updated(Utc::now()),
+        UnsyncPost::new(
+            platform_id,
+            "https://example.com/post2".to_string(),
+            "Post 2".to_string(),
+            vec![UnsyncContent::Text("Content 2".to_string())],
+        )
+        .published(Utc::now())
+        .updated(Utc::now()),
     ];
 
     let (post_ids, files) = manager
@@ -451,6 +441,7 @@ fn test_import_post_with_thumbnail() {
         filename: "thumbnail.jpg".to_string(),
         mime: "image/jpeg".to_string(),
         extra: HashMap::new(),
+        data: (),
     };
 
     let content = vec![UnsyncContent::Text("Post with thumbnail".to_string())];
@@ -464,9 +455,8 @@ fn test_import_post_with_thumbnail() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with thumbnail");
 
     let post = manager.get_post(&post_id).expect("Failed to get post");
@@ -489,6 +479,7 @@ fn test_import_post_auto_thumbnail_from_content() {
         filename: "content_image.png".to_string(),
         mime: "image/png".to_string(),
         extra: HashMap::new(),
+        data: (),
     };
 
     let content = vec![
@@ -507,9 +498,8 @@ fn test_import_post_auto_thumbnail_from_content() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
     let (post_id, _, _, _) = manager
-        .import_post(unsync_post, files_data, true)
+        .import_post(unsync_post, true)
         .expect("Failed to import post with auto thumbnail");
 
     let post = manager.get_post(&post_id).expect("Failed to get post");
@@ -528,7 +518,7 @@ fn test_unsync_post_sync_method() {
         .add_platform("Test Platform".to_string())
         .expect("Failed to add platform");
 
-    let content = vec![UnsyncContent::Text("Sync method test".to_string())];
+    let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text("Sync method test".to_string())];
     let post = UnsyncPost::new(
         platform_id,
         "https://example.com/sync_test".to_string(),
@@ -538,10 +528,7 @@ fn test_unsync_post_sync_method() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
-    let (post_id, files) = post
-        .sync(&manager, files_data)
-        .expect("Failed to sync post");
+    let (post_id, files) = post.sync(&manager).expect("Failed to sync post");
 
     assert!(post_id.raw() > 0);
     assert!(files.is_empty());
@@ -554,11 +541,12 @@ fn test_unsync_post_sync_method() {
 
 #[test]
 fn test_unsync_content_variants() {
-    let text_content = UnsyncContent::Text("Text content".to_string());
-    let file_content = UnsyncContent::File(UnsyncFileMeta {
+    let text_content: UnsyncContent<()> = UnsyncContent::Text("Text content".to_string());
+    let file_content: UnsyncContent<()> = UnsyncContent::File(UnsyncFileMeta {
         filename: "test.txt".to_string(),
         mime: "text/plain".to_string(),
         extra: HashMap::new(),
+        data: (),
     });
 
     // Test Debug implementation
@@ -574,40 +562,6 @@ fn test_unsync_content_variants() {
 }
 
 #[test]
-fn test_import_post_files_data_mapping() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
-
-    let content = vec![UnsyncContent::Text("File mapping test".to_string())];
-    let unsync_post = UnsyncPost::new(
-        platform_id,
-        "https://example.com/file_mapping".to_string(),
-        "File Mapping Test".to_string(),
-        content,
-    )
-    .published(Utc::now())
-    .updated(Utc::now());
-
-    let mut files_data = HashMap::new();
-    files_data.insert("file1.txt".to_string(), "File 1 data".to_string());
-    files_data.insert("file2.txt".to_string(), "File 2 data".to_string());
-
-    let (post_id, _, _, files) = manager
-        .import_post(unsync_post, files_data, true)
-        .expect("Failed to import post with files data");
-
-    assert_eq!(files.len(), 2);
-
-    // Verify file paths are constructed correctly
-    for (path, data) in files {
-        assert!(path.to_string_lossy().contains(&post_id.raw().to_string()));
-        assert!(data == "File 1 data" || data == "File 2 data");
-    }
-}
-
-#[test]
 fn test_import_post_without_update_relation() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let platform_id = manager
@@ -618,7 +572,8 @@ fn test_import_post_without_update_relation() {
         .add_author("Test Author".to_string(), Some(Utc::now()))
         .expect("Failed to add author");
 
-    let content = vec![UnsyncContent::Text("No relation update test".to_string())];
+    let content: Vec<UnsyncContent<()>> =
+        vec![UnsyncContent::Text("No relation update test".to_string())];
     let unsync_post = UnsyncPost::new(
         platform_id,
         "https://example.com/no_update".to_string(),
@@ -629,11 +584,9 @@ fn test_import_post_without_update_relation() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    let files_data: HashMap<String, ()> = HashMap::new();
-
     // Import without updating relations
     let (post_id, authors, _, _) = manager
-        .import_post(unsync_post, files_data, false)
+        .import_post(unsync_post, false)
         .expect("Failed to import post without relation update");
 
     assert!(post_id.raw() > 0);

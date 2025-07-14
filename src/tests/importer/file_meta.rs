@@ -5,7 +5,7 @@
 
 use crate::{importer::UnsyncFileMeta, manager::PostArchiverManager};
 use chrono::Utc;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 
 #[test]
@@ -31,10 +31,11 @@ fn test_import_new_file_meta() {
         filename: "test_image.jpg".to_string(),
         mime: "image/jpeg".to_string(),
         extra,
+        data: (),
     };
 
     let file_meta_id = manager
-        .import_file_meta(post_id, unsync_file_meta.clone())
+        .import_file_meta(post_id, &unsync_file_meta)
         .expect("Failed to import file meta");
 
     assert!(file_meta_id.raw() > 0);
@@ -101,10 +102,11 @@ fn test_import_existing_file_meta() {
         filename: filename.clone(),
         mime: original_mime.clone(),
         extra: updated_extra.clone(),
+        data: (),
     };
 
     let imported_file_meta_id = manager
-        .import_file_meta(post_id, unsync_file_meta)
+        .import_file_meta(post_id, &unsync_file_meta)
         .expect("Failed to import existing file meta");
 
     // Should return the same ID
@@ -132,11 +134,12 @@ fn test_unsync_file_meta_new() {
     let filename = "test_file.txt".to_string();
     let mime = "text/plain".to_string();
 
-    let file_meta = UnsyncFileMeta::new(filename.clone(), mime.clone());
+    let file_meta = UnsyncFileMeta::new(filename.clone(), mime.clone(), 1);
 
     assert_eq!(file_meta.filename, filename);
     assert_eq!(file_meta.mime, mime);
     assert!(file_meta.extra.is_empty());
+    assert_eq!(file_meta.data, 1);
 }
 
 #[test]
@@ -145,7 +148,7 @@ fn test_unsync_file_meta_with_extra() {
     extra.insert("size".to_string(), Value::Number(1024.into()));
     extra.insert("encoding".to_string(), Value::String("UTF-8".to_string()));
 
-    let file_meta = UnsyncFileMeta::new("document.txt".to_string(), "text/plain".to_string())
+    let file_meta = UnsyncFileMeta::new("document.txt".to_string(), "text/plain".to_string(), 1)
         .extra(extra.clone());
 
     assert_eq!(file_meta.filename, "document.txt");
@@ -162,6 +165,7 @@ fn test_unsync_file_meta_clone() {
         filename: "clone_test.pdf".to_string(),
         mime: "application/pdf".to_string(),
         extra,
+        data: 1,
     };
 
     let cloned = original.clone();
@@ -169,38 +173,32 @@ fn test_unsync_file_meta_clone() {
     assert_eq!(original.filename, cloned.filename);
     assert_eq!(original.mime, cloned.mime);
     assert_eq!(original.extra, cloned.extra);
+    assert_eq!(original.data, cloned.data);
 }
 
 #[test]
 fn test_unsync_file_meta_equality() {
-    let extra1 = {
-        let mut map = HashMap::new();
-        map.insert("key".to_string(), Value::String("value".to_string()));
-        map
-    };
-
-    let extra2 = {
-        let mut map = HashMap::new();
-        map.insert("key".to_string(), Value::String("value".to_string()));
-        map
-    };
+    let extra = HashMap::from([("key".to_string(), json!("value"))]);
 
     let file_meta1 = UnsyncFileMeta {
         filename: "test.jpg".to_string(),
         mime: "image/jpeg".to_string(),
-        extra: extra1,
+        extra: extra.clone(),
+        data: 1,
     };
 
     let file_meta2 = UnsyncFileMeta {
         filename: "test.jpg".to_string(),
         mime: "image/jpeg".to_string(),
-        extra: extra2,
+        extra,
+        data: 1,
     };
 
     let file_meta3 = UnsyncFileMeta {
         filename: "different.jpg".to_string(),
         mime: "image/jpeg".to_string(),
         extra: HashMap::new(),
+        data: 1,
     };
 
     assert_eq!(file_meta1, file_meta2);
@@ -215,30 +213,22 @@ fn test_unsync_file_meta_hash() {
     let file_meta1 = UnsyncFileMeta {
         filename: "hash_test.png".to_string(),
         mime: "image/png".to_string(),
-        extra: {
-            let mut map = HashMap::new();
-            map.insert("ignored".to_string(), Value::String("in_hash".to_string()));
-            map
-        },
+        extra: HashMap::from([("ignored".to_string(), json!("in_hash"))]),
+        data: 123,
     };
 
     let file_meta2 = UnsyncFileMeta {
         filename: "hash_test.png".to_string(),
         mime: "image/png".to_string(),
-        extra: {
-            let mut map = HashMap::new();
-            map.insert(
-                "different".to_string(),
-                Value::String("extra_data".to_string()),
-            );
-            map
-        },
+        extra: HashMap::from([("different".to_string(), json!("extra_data"))]),
+        data: 321,
     };
 
     let file_meta3 = UnsyncFileMeta {
         filename: "different_file.png".to_string(),
         mime: "image/png".to_string(),
         extra: HashMap::new(),
+        data: 123,
     };
 
     let mut hasher1 = DefaultHasher::new();
@@ -285,16 +275,16 @@ fn test_import_file_meta_different_posts() {
 
     let filename = "shared_name.jpg".to_string();
 
-    let file_meta1 = UnsyncFileMeta::new(filename.clone(), "image/jpeg".to_string());
-    let file_meta2 = UnsyncFileMeta::new(filename.clone(), "image/jpeg".to_string());
+    let file_meta1 = UnsyncFileMeta::new(filename.clone(), "image/jpeg".to_string(), ());
+    let file_meta2 = UnsyncFileMeta::new(filename.clone(), "image/jpeg".to_string(), ());
 
     // Import same filename to different posts
     let file_meta1_id = manager
-        .import_file_meta(post1_id, file_meta1)
+        .import_file_meta(post1_id, &file_meta1)
         .expect("Failed to import file meta to post 1");
 
     let file_meta2_id = manager
-        .import_file_meta(post2_id, file_meta2)
+        .import_file_meta(post2_id, &file_meta2)
         .expect("Failed to import file meta to post 2");
 
     // Should create different file metas (different post IDs)
@@ -331,10 +321,11 @@ fn test_import_file_meta_empty_extra() {
         filename: "simple_file.txt".to_string(),
         mime: "text/plain".to_string(),
         extra: HashMap::new(),
+        data: (),
     };
 
     let file_meta_id = manager
-        .import_file_meta(post_id, file_meta)
+        .import_file_meta(post_id, &file_meta)
         .expect("Failed to import file meta with empty extra");
 
     let stored_file_meta = manager
@@ -380,10 +371,11 @@ fn test_import_file_meta_complex_extra() {
         filename: "complex_photo.jpg".to_string(),
         mime: "image/jpeg".to_string(),
         extra,
+        data: (),
     };
 
     let file_meta_id = manager
-        .import_file_meta(post_id, file_meta.clone())
+        .import_file_meta(post_id, &file_meta)
         .expect("Failed to import file meta with complex extra");
 
     let stored_file_meta = manager
@@ -411,16 +403,16 @@ fn test_import_file_meta_preserves_mime() {
     let original_mime = "application/octet-stream".to_string();
 
     // First import
-    let file_meta1 = UnsyncFileMeta::new(filename.clone(), original_mime.clone());
+    let file_meta1 = UnsyncFileMeta::new(filename.clone(), original_mime.clone(), ());
     let file_meta_id = manager
-        .import_file_meta(post_id, file_meta1)
+        .import_file_meta(post_id, &file_meta1)
         .expect("Failed to import first file meta");
 
     // Second import with different MIME type (should not change)
     let different_mime = "text/plain".to_string();
-    let file_meta2 = UnsyncFileMeta::new(filename.clone(), different_mime);
+    let file_meta2 = UnsyncFileMeta::new(filename.clone(), different_mime, ());
     let same_file_meta_id = manager
-        .import_file_meta(post_id, file_meta2)
+        .import_file_meta(post_id, &file_meta2)
         .expect("Failed to import second file meta");
 
     assert_eq!(file_meta_id, same_file_meta_id);
@@ -435,13 +427,18 @@ fn test_import_file_meta_preserves_mime() {
 
 #[test]
 fn test_unsync_file_meta_debug() {
-    let file_meta = UnsyncFileMeta::new("debug_test.log".to_string(), "text/plain".to_string());
+    let file_meta = UnsyncFileMeta::new(
+        "debug_test.log".to_string(),
+        "text/plain".to_string(),
+        "DATA",
+    );
 
     let debug_string = format!("{:?}", file_meta);
 
     assert!(debug_string.contains("UnsyncFileMeta"));
     assert!(debug_string.contains("debug_test.log"));
     assert!(debug_string.contains("text/plain"));
+    assert!(debug_string.contains("DATA"));
 }
 
 #[test]
@@ -460,11 +457,14 @@ fn test_import_file_meta_with_transaction() {
 
     let tx = manager.transaction().expect("Failed to start transaction");
 
-    let file_meta =
-        UnsyncFileMeta::new("transaction_file.txt".to_string(), "text/plain".to_string());
+    let file_meta = UnsyncFileMeta::new(
+        "transaction_file.txt".to_string(),
+        "text/plain".to_string(),
+        (),
+    );
 
     let file_meta_id = tx
-        .import_file_meta(post_id, file_meta)
+        .import_file_meta(post_id, &file_meta)
         .expect("Failed to import file meta in transaction");
 
     // Verify file exists in transaction
