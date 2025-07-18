@@ -324,16 +324,7 @@ impl<T> UnsyncPost<T> {
     where
         U: PostArchiverConnection,
     {
-        let (id, authors, collections, files_data) = manager.import_post(self, true)?;
-
-        authors.into_iter().try_for_each(|author| {
-            manager.set_author_thumb_by_latest(author)?;
-            manager.set_author_updated_by_latest(author)
-        })?;
-
-        collections
-            .into_iter()
-            .try_for_each(|collection| manager.set_collection_thumb_by_latest(collection))?;
+        let (id, _, _, files_data) = manager.import_post(self, true)?;
 
         Ok((id, files_data))
     }
