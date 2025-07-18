@@ -215,7 +215,7 @@ impl PostArchiverManager {
     /// // ... perform operations
     /// tx.commit().unwrap();
     /// ```
-    pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction>, rusqlite::Error> {
+    pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction<'_>>, rusqlite::Error> {
         Ok(PostArchiverManager {
             path: self.path.clone(),
             conn: self.conn.transaction()?,
