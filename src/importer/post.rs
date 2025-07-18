@@ -1,4 +1,8 @@
-use std::{collections::HashSet, fmt::Debug, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    path::PathBuf,
+};
 
 use chrono::{DateTime, Utc};
 
@@ -123,6 +127,8 @@ where
             })
             .chain(post.thumb)
             .map(|f| (path.join(f.filename), f.data))
+            .collect::<HashMap<_, _>>()
+            .into_iter()
             .collect::<Vec<_>>();
 
         if update_relation {
