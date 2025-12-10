@@ -16,4 +16,4 @@ simple_logger = "5.0.0"
 rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
 chrono = "0.4.39"
 mime_guess = "2.0.5"
-tokio = { version = "1.43.0", default-features = false, features = ["fs", "rt"] }
+tokio = { version = "1.43.1", default-features = false, features = ["fs", "rt"] }
