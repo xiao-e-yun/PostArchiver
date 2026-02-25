@@ -28,16 +28,22 @@ pub struct CollectionPost {
 }
 
 #[cfg(feature = "utils")]
-crate::utils::macros::as_table! {
-    Collection {
-        id: "id",
-        name: "name",
-        thumb: "thumb",
-        source: "source",
-    }
+mod definitions {
+    use crate::utils::macros::as_table;
 
-    CollectionPost {
-        collection: "collection",
-        post: "post",
-    }
+    use super::*;
+
+    as_table!(
+        "collections" => Collection {
+            id: "id",
+            name: "name",
+            thumb: "thumb",
+            source: "source",
+        }
+
+        "collection_posts" => CollectionPost {
+            collection: "collection",
+            post: "post",
+        }
+    );
 }

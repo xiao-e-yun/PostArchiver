@@ -8,10 +8,16 @@ macro_rules! as_column {
     }};
 }
 
+pub trait AsTable: Sized {
+    const TABLE_NAME: &'static str;
+    fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error>;
+}
+
 macro_rules! as_table {
-    ($($name:ident { $($field:ident: $col:expr $(=> $mode: ident)?),* $(,)? })+) => {
-        $(impl $name {
-            pub fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
+    ($($table:expr => $name:ident { $($field:ident: $col:expr $(=> $mode: ident)?),* $(,)? })+) => {
+        $(impl crate::utils::macros::AsTable for $name {
+            const TABLE_NAME: &'static str = $table;
+            fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
                 Ok(Self {
                     $(
                         $field: crate::utils::macros::as_column!(

@@ -22,9 +22,6 @@
 //! - [`Platform`]: Information about the platform from which posts are archived
 //! - [`Comment`]: Nested discussion threads
 
-pub mod alias;
-pub use alias::*;
-
 pub mod author;
 pub use author::*;
 

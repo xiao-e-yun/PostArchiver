@@ -3,6 +3,13 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
+use crate::{Author, Collection, FileMeta, Platform, Post, Tag};
+
+pub trait HasId {
+    type Id: std::hash::Hash + Eq + Clone;
+    fn id(&self) -> Self::Id;
+}
+
 /// Defines a strongly-typed numeric identifier type
 ///
 /// # Safety
@@ -28,7 +35,7 @@ use ts_rs::TS;
 /// // let _: PostId = author_id;
 /// ```
 macro_rules! define_id {
-    ($(#[$meta:meta])*,$name:ident) => {
+    ($(#[$meta:meta])*,$table:ty : $name:ident) => {
         #[cfg_attr(feature = "typescript", derive(TS))]
         #[cfg_attr(feature = "typescript", ts(export))]
         #[derive(Deserialize, Serialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -110,6 +117,14 @@ macro_rules! define_id {
                 ))
             }
         }
+
+        #[cfg(feature = "utils")]
+        impl crate::id::HasId for $table {
+            type Id = $name;
+            fn id(&self) -> $name {
+                self.id.clone()
+            }
+        }
     };
 }
 
@@ -119,7 +134,7 @@ define_id!(
 /// # Safety
 /// - The wrapped value must be a valid u32
 /// - Must maintain referential integrity when used as a foreign key
-,AuthorId);
+,Author: AuthorId);
 
 define_id!(
 /// Unique identifier for a post in the system
@@ -127,7 +142,7 @@ define_id!(
 /// # Safety
 /// - The wrapped value must be a valid u32
 /// - Must maintain referential integrity when used as a foreign key
-,PostId);
+,Post: PostId);
 
 define_id!(
 /// Unique identifier for a file metadata entry in the system
@@ -135,7 +150,7 @@ define_id!(
 /// # Safety
 /// - The wrapped value must be a valid u32
 /// - Must maintain referential integrity when used as a foreign key
-,FileMetaId);
+,FileMeta: FileMetaId);
 
 define_id!(
 /// Unique identifier for a post tag in the system
@@ -143,15 +158,7 @@ define_id!(
 /// # Safety
 /// - The wrapped value must be a valid u32
 /// - Must maintain referential integrity when used as a foreign key
-,TagId);
-
-define_id!(
-/// Unique identifier for a post tag that is platform-specific
-///
-/// # Safety
-/// - The wrapped value must be a valid u32
-/// - Must maintain referential integrity when used as a foreign key
-,PlatformTagId);
+,Tag: TagId);
 
 define_id!(
 /// Unique identifier for a platform in the system
@@ -159,7 +166,7 @@ define_id!(
 /// # Safety
 /// - The wrapped value must be a valid u32
 /// - Must maintain referential integrity when used as a foreign key
-,PlatformId);
+,Platform: PlatformId);
 
 define_id!(
 /// Unique identifier for a collection in the system
@@ -167,4 +174,4 @@ define_id!(
 /// # Safety
 /// - The wrapped value must be a valid u32
 /// - Must maintain referential integrity when used as a foreign key
-,CollectionId);
+,Collection: CollectionId);

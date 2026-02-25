@@ -32,15 +32,21 @@ pub struct PostTag {
 }
 
 #[cfg(feature = "utils")]
-crate::utils::macros::as_table! {
-    Tag {
-        id: "id",
-        name: "name",
-        platform: "platform",
-    }
+mod definitions {
+    use crate::utils::macros::as_table;
 
-    PostTag {
-        post: "post",
-        tag: "tag",
+    use super::*;
+
+    as_table! {
+        "tags" => Tag {
+            id: "id",
+            name: "name",
+            platform: "platform",
+        }
+
+        "post_tags" => PostTag {
+            post: "post",
+            tag: "tag",
+        }
     }
 }

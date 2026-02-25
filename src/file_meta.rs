@@ -6,7 +6,10 @@ use ts_rs::TS;
 
 use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
-use crate::id::{FileMetaId, PostId};
+use crate::{
+    id::{FileMetaId, PostId},
+    Post,
+};
 
 /// The number of posts in one chunk.
 pub const POSTS_PRE_CHUNK: u32 = 2048;
@@ -50,12 +53,12 @@ impl FileMeta {
     /// assert_eq!(path.to_str(), Some("1/1/example.txt"));
     /// ```
     pub fn path(&self) -> PathBuf {
-        let id = self.post.raw();
-        let chunk = id / POSTS_PRE_CHUNK;
-        let index = id % POSTS_PRE_CHUNK;
-        PathBuf::from(chunk.to_string())
-            .join(index.to_string())
-            .join(&self.filename)
+        let directory = Post::directory(self.post);
+        directory.join(&self.filename)
+    }
+
+    pub fn directory(&self) -> PathBuf {
+        Post::directory(self.post)
     }
 }
 
@@ -70,12 +73,18 @@ impl Hash for FileMeta {
 }
 
 #[cfg(feature = "utils")]
-crate::utils::macros::as_table!(
-    FileMeta {
-        id: "id",
-        post: "post",
-        filename: "filename",
-        mime: "mime",
-        extra: "extra" => json,
-    }
-);
+mod definitions {
+    use crate::utils::macros::as_table;
+
+    use super::*;
+
+    as_table!(
+        "file_metas" => FileMeta {
+            id: "id",
+            post: "post",
+            filename: "filename",
+            mime: "mime",
+            extra: "extra" => json,
+        }
+    );
+}

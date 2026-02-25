@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{hash::Hash, path::PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -27,17 +27,35 @@ pub struct Post {
     pub platform: Option<PlatformId>,
 }
 
+impl Post {
+    /// The number of posts in one chunk.
+    pub const POSTS_PRE_CHUNK: u32 = 2048;
+
+    pub fn directory(post_id: PostId) -> PathBuf {
+        let id = post_id.raw();
+        let chunk = id / Self::POSTS_PRE_CHUNK;
+        let index = id % Self::POSTS_PRE_CHUNK;
+        PathBuf::from(chunk.to_string()).join(index.to_string())
+    }
+}
+
 #[cfg(feature = "utils")]
-crate::utils::macros::as_table! {
-    Post {
-        id: "id",
-        source: "source",
-        title: "title",
-        content: "content" => json,
-        thumb: "thumb",
-        comments: "comments" => json,
-        updated: "updated",
-        published: "published",
-        platform: "platform",
+mod definitions {
+    use crate::utils::macros::as_table;
+
+    use super::*;
+
+    as_table! {
+        "posts" => Post {
+            id: "id",
+            source: "source",
+            title: "title",
+            content: "content" => json,
+            thumb: "thumb",
+            comments: "comments" => json,
+            updated: "updated",
+            published: "published",
+            platform: "platform",
+        }
     }
 }
