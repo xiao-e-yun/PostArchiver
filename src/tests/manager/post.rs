@@ -1,31 +1,32 @@
 //! Post manager tests
 //!
-//! Tests for post CRUD operations, relationship management,
-//! and content handling.
+//! Tests for post Binded operations: update/delete and relationship management.
 
 use crate::{
-    manager::PostArchiverManager, AuthorId, CollectionId, Comment, Content, PostId, TagId,
+    manager::PostArchiverManager, tests::helpers, AuthorId, CollectionId, Comment, Content, PostId,
+    TagId,
 };
 use chrono::Utc;
 use std::collections::HashMap;
 
+// ── CRUD via helpers ──────────────────────────────────────────
+
 #[test]
 fn test_add_post() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let title = "Test Post".to_string();
     let now = Utc::now();
-
-    let post_id = manager
-        .add_post(title.clone(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
     assert!(post_id.raw() > 0);
 
-    // Verify the post was added
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
-    assert_eq!(post.title, title);
-    assert_eq!(post.id, post_id);
+    let post = helpers::get_post(&manager, post_id);
+    assert_eq!(post.title, "Test Post");
     assert_eq!(post.source, None);
     assert_eq!(post.platform, None);
 }
@@ -33,29 +34,21 @@ fn test_add_post() {
 #[test]
 fn test_add_post_with_source_and_platform() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Add platform first
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
-
-    let title = "Test Post".to_string();
-    let source = Some("https://example.com/post/123".to_string());
+    let platform_id = helpers::add_platform(&manager, "Test Platform".into());
     let now = Utc::now();
+    let source = Some("https://example.com/post/123".to_string());
 
-    let post_id = manager
-        .add_post(
-            title.clone(),
-            source.clone(),
-            Some(platform_id),
-            Some(now),
-            Some(now),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        source.clone(),
+        Some(platform_id),
+        Some(now),
+        Some(now),
+    );
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
-    assert_eq!(post.title, title);
+    let post = helpers::get_post(&manager, post_id);
+    assert_eq!(post.title, "Test Post");
     assert_eq!(post.source, source);
     assert_eq!(post.platform, Some(platform_id));
 }
@@ -64,19 +57,11 @@ fn test_add_post_with_source_and_platform() {
 fn test_list_posts() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let id1 = helpers::add_post(&manager, "Post 1".into(), None, None, Some(now), Some(now));
+    let id2 = helpers::add_post(&manager, "Post 2".into(), None, None, Some(now), Some(now));
 
-    // Add multiple posts
-    let id1 = manager
-        .add_post("Post 1".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post 1");
-    let id2 = manager
-        .add_post("Post 2".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post 2");
-
-    let posts = manager.list_posts().expect("Failed to list posts");
-
+    let posts = helpers::list_posts(&manager);
     assert_eq!(posts.len(), 2);
-
     let ids: Vec<PostId> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
     assert!(ids.contains(&id2));
@@ -85,17 +70,19 @@ fn test_list_posts() {
 #[test]
 fn test_get_post() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let title = "Get Test Post".to_string();
     let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "Get Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let post_id = manager
-        .add_post(title.clone(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.id, post_id);
-    assert_eq!(post.title, title);
+    assert_eq!(post.title, "Get Test Post");
 }
 
 #[test]
@@ -103,27 +90,19 @@ fn test_find_post() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let source = "https://example.com/unique-post".to_string();
     let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "Findable Post".into(),
+        Some(source.clone()),
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let post_id = manager
-        .add_post(
-            "Findable Post".to_string(),
-            Some(source.clone()),
-            None,
-            Some(now),
-            Some(now),
-        )
-        .expect("Failed to add post");
-
-    // Find post by source
-    let found_id = manager.find_post(&source).expect("Failed to find post");
-
+    let found_id = helpers::find_post(&manager, &source);
     assert_eq!(found_id, Some(post_id));
 
-    // Test not found
-    let not_found = manager
-        .find_post("https://example.com/nonexistent")
-        .expect("Failed to search for nonexistent post");
-
+    let not_found = helpers::find_post(&manager, "https://example.com/nonexistent");
     assert_eq!(not_found, None);
 }
 
@@ -134,103 +113,94 @@ fn test_find_post_with_updated() {
     let early_time = Utc::now();
     let later_time = early_time + chrono::Duration::hours(1);
 
-    let post_id = manager
-        .add_post(
-            "Updated Post".to_string(),
-            Some(source.clone()),
-            None,
-            Some(early_time),
-            Some(later_time),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Updated Post".into(),
+        Some(source.clone()),
+        None,
+        Some(early_time),
+        Some(later_time),
+    );
 
-    // Find with earlier time - should find the post
-    let found_id = manager
-        .find_post_with_updated(&source, &early_time)
-        .expect("Failed to find post with updated");
-
+    let found_id = helpers::find_post_with_updated(&manager, &source, &early_time);
     assert_eq!(found_id, Some(post_id));
 
-    // Find with much later time - should not find the post
     let much_later = later_time + chrono::Duration::hours(2);
-    let not_found = manager
-        .find_post_with_updated(&source, &much_later)
-        .expect("Failed to search for post with later updated");
-
+    let not_found = helpers::find_post_with_updated(&manager, &source, &much_later);
     assert_eq!(not_found, None);
 }
+
+// ── Binded: Delete ────────────────────────────────────────────
 
 #[test]
 fn test_remove_post() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "To Delete".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let post_id = manager
-        .add_post("To Delete".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let _ = helpers::get_post(&manager, post_id);
+    manager.bind(post_id).delete().unwrap();
 
-    // Verify post exists
-    manager
-        .get_post(&post_id)
-        .expect("Post should exist before deletion");
-
-    // Remove post
-    manager.remove_post(post_id).expect("Failed to remove post");
-
-    // Verify post is gone
-    let result = manager.get_post(&post_id);
-    assert!(result.is_err(), "Post should not exist after deletion");
+    let posts = helpers::list_posts(&manager);
+    assert!(posts.iter().all(|p| p.id != post_id));
 }
+
+// ── Binded: Set fields ───────────────────────────────────────
 
 #[test]
 fn test_set_post_title() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "Original Title".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let post_id = manager
-        .add_post(
-            "Original Title".to_string(),
-            None,
-            None,
-            Some(now),
-            Some(now),
-        )
-        .expect("Failed to add post");
-
-    let new_title = "Updated Title".to_string();
     manager
-        .set_post_title(post_id, new_title.clone())
-        .expect("Failed to update post title");
+        .bind(post_id)
+        .set_title("Updated Title".into())
+        .unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
-    assert_eq!(post.title, new_title);
+    let post = helpers::get_post(&manager, post_id);
+    assert_eq!(post.title, "Updated Title");
 }
 
 #[test]
 fn test_set_post_source() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
     let new_source = Some("https://example.com/new-source".to_string());
     manager
-        .set_post_source(post_id, new_source.clone())
-        .expect("Failed to set post source");
+        .bind(post_id)
+        .set_source(new_source.clone())
+        .unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.source, new_source);
 
-    // Test setting source to None
-    manager
-        .set_post_source(post_id, None)
-        .expect("Failed to set post source to None");
-
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    // Set to None
+    manager.bind(post_id).set_source(None).unwrap();
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.source, None);
 }
 
@@ -238,30 +208,26 @@ fn test_set_post_source() {
 fn test_set_post_platform() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-
-    // Add platform
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".into());
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
     manager
-        .set_post_platform(post_id, Some(platform_id))
-        .expect("Failed to set post platform");
+        .bind(post_id)
+        .set_platform(Some(platform_id))
+        .unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.platform, Some(platform_id));
 
-    // Test setting platform to None
-    manager
-        .set_post_platform(post_id, None)
-        .expect("Failed to set post platform to None");
-
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    manager.bind(post_id).set_platform(None).unwrap();
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.platform, None);
 }
 
@@ -269,45 +235,42 @@ fn test_set_post_platform() {
 fn test_set_post_published() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
     let new_published = Utc::now();
-    manager
-        .set_post_published(post_id, new_published)
-        .expect("Failed to set post published");
+    manager.bind(post_id).set_published(new_published).unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
-    // Allow small time difference due to precision
+    let post = helpers::get_post(&manager, post_id);
     let diff = (post.published - new_published).num_milliseconds().abs();
-    assert!(
-        diff < 1000,
-        "Published timestamp should be close to expected"
-    );
+    assert!(diff < 1000);
 }
 
 #[test]
 fn test_set_post_updated() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
     let new_updated = Utc::now();
-    manager
-        .set_post_updated(post_id, new_updated)
-        .expect("Failed to set post updated");
+    manager.bind(post_id).set_updated(new_updated).unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
-    // Allow small time difference due to precision
+    let post = helpers::get_post(&manager, post_id);
     let diff = (post.updated - new_updated).num_milliseconds().abs();
-    assert!(diff < 1000, "Updated timestamp should be close to expected");
+    assert!(diff < 1000);
 }
 
 #[test]
@@ -316,62 +279,56 @@ fn test_set_post_updated_by_latest() {
     let old_time = Utc::now() - chrono::Duration::hours(1);
     let new_time = Utc::now();
 
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(old_time),
-            Some(old_time),
-        )
-        .expect("Failed to add post");
-
-    // Update with newer timestamp - should update
-    manager
-        .set_post_updated_by_latest(post_id, new_time)
-        .expect("Failed to set post updated by latest");
-
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-    let diff = (post.updated - new_time).num_milliseconds().abs();
-    assert!(
-        diff < 1000,
-        "Updated timestamp should be updated to newer time"
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(old_time),
+        Some(old_time),
     );
 
-    // Try to update with older timestamp - should not update
+    manager
+        .bind(post_id)
+        .set_updated_by_latest(new_time)
+        .unwrap();
+
+    let post = helpers::get_post(&manager, post_id);
+    let diff = (post.updated - new_time).num_milliseconds().abs();
+    assert!(diff < 1000, "Should be updated to newer time");
+
     let even_older = old_time - chrono::Duration::hours(1);
     manager
-        .set_post_updated_by_latest(post_id, even_older)
-        .expect("Failed to call set_post_updated_by_latest");
+        .bind(post_id)
+        .set_updated_by_latest(even_older)
+        .unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     let diff = (post.updated - new_time).num_milliseconds().abs();
-    assert!(
-        diff < 1000,
-        "Updated timestamp should not change to older time"
-    );
+    assert!(diff < 1000, "Should not change to older time");
 }
 
 #[test]
 fn test_set_post_content() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
     let content = vec![
         Content::Text("Hello world!".to_string()),
         Content::Text("This is test content.".to_string()),
     ];
 
-    manager
-        .set_post_content(post_id, content.clone())
-        .expect("Failed to set post content");
+    manager.bind(post_id).set_content(content.clone()).unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content, content);
 }
 
@@ -379,10 +336,14 @@ fn test_set_post_content() {
 fn test_set_post_comments() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
     let comments = vec![
         Comment {
@@ -398,11 +359,11 @@ fn test_set_post_comments() {
     ];
 
     manager
-        .set_post_comments(post_id, comments.clone())
-        .expect("Failed to set post comments");
+        .bind(post_id)
+        .set_comments(comments.clone())
+        .unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.comments, comments);
 }
 
@@ -410,308 +371,283 @@ fn test_set_post_comments() {
 fn test_set_post_thumb() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "thumbnail.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
 
-    // Add a file meta for thumbnail
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "thumbnail.jpg".to_string(),
-            "image/jpeg".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta");
+    manager.bind(post_id).set_thumb(Some(file_meta_id)).unwrap();
 
-    // Set post thumbnail
-    manager
-        .set_post_thumb(post_id, Some(file_meta_id))
-        .expect("Failed to set post thumb");
-
-    // Verify thumbnail was set
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.thumb, Some(file_meta_id));
 
-    // Test setting thumbnail to None
-    manager
-        .set_post_thumb(post_id, None)
-        .expect("Failed to set post thumb to None");
-
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    manager.bind(post_id).set_thumb(None).unwrap();
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.thumb, None);
 }
+
+// ── Binded: Author relationships ─────────────────────────────
 
 #[test]
 fn test_add_post_authors() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let author1 = helpers::add_author(&manager, "Author 1".into(), Some(now));
+    let author2 = helpers::add_author(&manager, "Author 2".into(), Some(now));
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    // Add authors and post
-    let author1_id = manager
-        .add_author("Author 1".to_string(), Some(now))
-        .expect("Failed to add author 1");
-    let author2_id = manager
-        .add_author("Author 2".to_string(), Some(now))
-        .expect("Failed to add author 2");
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
-    // Add authors to post
     manager
-        .add_post_authors(post_id, &[author1_id, author2_id])
-        .expect("Failed to add post authors");
+        .bind(post_id)
+        .add_authors(&[author1, author2])
+        .unwrap();
 
-    // Verify authors were added
-    let post_authors = manager
-        .list_post_authors(&post_id)
-        .expect("Failed to list post authors");
-
-    assert_eq!(post_authors.len(), 2);
-
-    let author_ids: Vec<AuthorId> = post_authors.iter().map(|a| a.id).collect();
-    assert!(author_ids.contains(&author1_id));
-    assert!(author_ids.contains(&author2_id));
+    let authors = helpers::list_post_authors(&manager, post_id);
+    assert_eq!(authors.len(), 2);
+    let ids: Vec<AuthorId> = authors.iter().map(|a| a.id).collect();
+    assert!(ids.contains(&author1));
+    assert!(ids.contains(&author2));
 }
 
 #[test]
 fn test_remove_post_authors() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let author1 = helpers::add_author(&manager, "Author 1".into(), Some(now));
+    let author2 = helpers::add_author(&manager, "Author 2".into(), Some(now));
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    // Setup
-    let author1_id = manager
-        .add_author("Author 1".to_string(), Some(now))
-        .expect("Failed to add author 1");
-    let author2_id = manager
-        .add_author("Author 2".to_string(), Some(now))
-        .expect("Failed to add author 2");
+    helpers::add_post_authors(&manager, post_id, &[author1, author2]);
 
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    manager.bind(post_id).remove_authors(&[author1]).unwrap();
 
-    // Add authors
-    manager
-        .add_post_authors(post_id, &[author1_id, author2_id])
-        .expect("Failed to add post authors");
-
-    // Remove one author
-    manager
-        .remove_post_authors(post_id, &[author1_id])
-        .expect("Failed to remove post authors");
-
-    // Verify only one author remains
-    let remaining_authors = manager
-        .list_post_authors(&post_id)
-        .expect("Failed to list post authors");
-
-    assert_eq!(remaining_authors.len(), 1);
-    assert_eq!(remaining_authors[0].id, author2_id);
+    let remaining = helpers::list_post_authors(&manager, post_id);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, author2);
 }
+
+#[test]
+fn test_list_post_authors() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let author = helpers::add_author(&manager, "Author".into(), Some(now));
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
+
+    helpers::add_post_authors(&manager, post_id, &[author]);
+
+    let ids = manager.bind(post_id).list_authors().unwrap();
+    assert_eq!(ids, vec![author]);
+}
+
+// ── Binded: Tag relationships ────────────────────────────────
 
 #[test]
 fn test_add_post_tags() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let platform = helpers::add_platform(&manager, "Test Platform".into());
+    let tag1 = helpers::add_tag(&manager, "tag1".into(), Some(platform));
+    let tag2 = helpers::add_tag(&manager, "tag2".into(), Some(platform));
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    // Add platform and tags
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    manager.bind(post_id).add_tags(&[tag1, tag2]).unwrap();
 
-    let tag1_id = manager
-        .add_tag("tag1".to_string(), Some(platform_id))
-        .expect("Failed to add tag 1");
-    let tag2_id = manager
-        .add_tag("tag2".to_string(), Some(platform_id))
-        .expect("Failed to add tag 2");
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
-    // Add tags to post
-    manager
-        .add_post_tags(post_id, &[tag1_id, tag2_id])
-        .expect("Failed to add post tags");
-
-    // Verify tags were added
-    let _post = manager.get_post(&post_id).expect("Failed to get post");
-    let post_tags = manager
-        .list_post_tags(&post_id)
-        .expect("Failed to list post tags");
-
-    assert_eq!(post_tags.len(), 2);
-
-    let tag_ids: Vec<TagId> = post_tags.iter().map(|t| t.id).collect();
-    assert!(tag_ids.contains(&tag1_id));
-    assert!(tag_ids.contains(&tag2_id));
+    let tags = helpers::list_post_tags(&manager, post_id);
+    assert_eq!(tags.len(), 2);
+    let ids: Vec<TagId> = tags.iter().map(|t| t.id).collect();
+    assert!(ids.contains(&tag1));
+    assert!(ids.contains(&tag2));
 }
 
 #[test]
 fn test_remove_post_tags() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let platform = helpers::add_platform(&manager, "Test Platform".into());
+    let tag1 = helpers::add_tag(&manager, "tag1".into(), Some(platform));
+    let tag2 = helpers::add_tag(&manager, "tag2".into(), Some(platform));
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    // Setup
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    helpers::add_post_tags(&manager, post_id, &[tag1, tag2]);
 
-    let tag1_id = manager
-        .add_tag("tag1".to_string(), Some(platform_id))
-        .expect("Failed to add tag 1");
-    let tag2_id = manager
-        .add_tag("tag2".to_string(), Some(platform_id))
-        .expect("Failed to add tag 2");
+    manager.bind(post_id).remove_tags(&[tag1]).unwrap();
 
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
-    // Add tags
-    manager
-        .add_post_tags(post_id, &[tag1_id, tag2_id])
-        .expect("Failed to add post tags");
-
-    // Remove one tag
-    manager
-        .remove_post_tags(post_id, &[tag1_id])
-        .expect("Failed to remove post tags");
-
-    // Verify only one tag remains
-    let _post = manager.get_post(&post_id).expect("Failed to get post");
-    let remaining_tags = manager
-        .list_post_tags(&post_id)
-        .expect("Failed to list post tags");
-
-    assert_eq!(remaining_tags.len(), 1);
-    assert_eq!(remaining_tags[0].id, tag2_id);
+    let remaining = helpers::list_post_tags(&manager, post_id);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, tag2);
 }
+
+#[test]
+fn test_list_post_tags() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let tag = helpers::add_tag(&manager, "tag1".into(), None);
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
+
+    helpers::add_post_tags(&manager, post_id, &[tag]);
+
+    let ids = manager.bind(post_id).list_tags().unwrap();
+    assert_eq!(ids, vec![tag]);
+}
+
+// ── Binded: Collection relationships ─────────────────────────
 
 #[test]
 fn test_add_post_collections() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let col1 = helpers::add_collection(&manager, "Collection 1".into(), None, None);
+    let col2 = helpers::add_collection(&manager, "Collection 2".into(), None, None);
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    // Add collections
-    let collection1_id = manager
-        .add_collection("Collection 1".to_string(), None, None)
-        .expect("Failed to add collection 1");
-    let collection2_id = manager
-        .add_collection("Collection 2".to_string(), None, None)
-        .expect("Failed to add collection 2");
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
-    // Add collections to post
     manager
-        .add_post_collections(post_id, &[collection1_id, collection2_id])
-        .expect("Failed to add post collections");
+        .bind(post_id)
+        .add_collections(&[col1, col2])
+        .unwrap();
 
-    // Verify collections were added
-    let _post = manager.get_post(&post_id).expect("Failed to get post");
-    let post_collections = manager
-        .list_post_collections(&post_id)
-        .expect("Failed to list post collections");
-
-    assert_eq!(post_collections.len(), 2);
-
-    let collection_ids: Vec<CollectionId> = post_collections.iter().map(|c| c.id).collect();
-    assert!(collection_ids.contains(&collection1_id));
-    assert!(collection_ids.contains(&collection2_id));
+    let cols = helpers::list_post_collections(&manager, post_id);
+    assert_eq!(cols.len(), 2);
+    let ids: Vec<CollectionId> = cols.iter().map(|c| c.id).collect();
+    assert!(ids.contains(&col1));
+    assert!(ids.contains(&col2));
 }
 
 #[test]
 fn test_remove_post_collections() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let col1 = helpers::add_collection(&manager, "Collection 1".into(), None, None);
+    let col2 = helpers::add_collection(&manager, "Collection 2".into(), None, None);
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    // Setup
-    let collection1_id = manager
-        .add_collection("Collection 1".to_string(), None, None)
-        .expect("Failed to add collection 1");
-    let collection2_id = manager
-        .add_collection("Collection 2".to_string(), None, None)
-        .expect("Failed to add collection 2");
+    helpers::add_post_collections(&manager, post_id, &[col1, col2]);
 
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    manager.bind(post_id).remove_collections(&[col1]).unwrap();
 
-    // Add collections
-    manager
-        .add_post_collections(post_id, &[collection1_id, collection2_id])
-        .expect("Failed to add post collections");
-
-    // Remove one collection
-    manager
-        .remove_post_collections(post_id, &[collection1_id])
-        .expect("Failed to remove post collections");
-
-    // Verify only one collection remains
-    let _post = manager.get_post(&post_id).expect("Failed to get post");
-    let remaining_collections = manager
-        .list_post_collections(&post_id)
-        .expect("Failed to list post collections");
-
-    assert_eq!(remaining_collections.len(), 1);
-    assert_eq!(remaining_collections[0].id, collection2_id);
+    let remaining = helpers::list_post_collections(&manager, post_id);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, col2);
 }
+
+#[test]
+fn test_list_post_collections() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let col = helpers::add_collection(&manager, "Col".into(), None, None);
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
+
+    helpers::add_post_collections(&manager, post_id, &[col]);
+
+    let ids = manager.bind(post_id).list_collections().unwrap();
+    assert_eq!(ids, vec![col]);
+}
+
+// ── Binded: Bidirectional relationships ──────────────────────
 
 #[test]
 fn test_post_relationships_bidirectional() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
 
-    // Setup entities
-    let author_id = manager
-        .add_author("Test Author".to_string(), Some(now))
-        .expect("Failed to add author");
+    let author_id = helpers::add_author(&manager, "Test Author".into(), Some(now));
+    let platform_id = helpers::add_platform(&manager, "Test Platform".into());
+    let tag_id = helpers::add_tag(&manager, "test-tag".into(), Some(platform_id));
+    let collection_id = helpers::add_collection(&manager, "Test Collection".into(), None, None);
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
-
-    let tag_id = manager
-        .add_tag("test-tag".to_string(), Some(platform_id))
-        .expect("Failed to add tag");
-
-    let collection_id = manager
-        .add_collection("Test Collection".to_string(), None, None)
-        .expect("Failed to add collection");
-
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
-    // Add relationships
+    // Add relationships via Binded
+    manager.bind(post_id).add_authors(&[author_id]).unwrap();
+    manager.bind(post_id).add_tags(&[tag_id]).unwrap();
     manager
-        .add_post_authors(post_id, &[author_id])
-        .expect("Failed to add post authors");
-    manager
-        .add_post_tags(post_id, &[tag_id])
-        .expect("Failed to add post tags");
-    manager
-        .add_post_collections(post_id, &[collection_id])
-        .expect("Failed to add post collections");
+        .bind(post_id)
+        .add_collections(&[collection_id])
+        .unwrap();
 
-    // Test post -> entities
-    let post_authors = manager
-        .list_post_authors(&post_id)
-        .expect("Failed to list post authors");
-    let post_tags = manager
-        .list_post_tags(&post_id)
-        .expect("Failed to list post tags");
-    let post_collections = manager
-        .list_post_collections(&post_id)
-        .expect("Failed to list post collections");
+    // Verify post -> entities
+    let post_authors = helpers::list_post_authors(&manager, post_id);
+    let post_tags = helpers::list_post_tags(&manager, post_id);
+    let post_collections = helpers::list_post_collections(&manager, post_id);
 
     assert_eq!(post_authors.len(), 1);
     assert_eq!(post_authors[0].id, author_id);
@@ -720,16 +656,10 @@ fn test_post_relationships_bidirectional() {
     assert_eq!(post_collections.len(), 1);
     assert_eq!(post_collections[0].id, collection_id);
 
-    // Test entities -> post
-    let author_posts = manager
-        .list_author_posts(author_id)
-        .expect("Failed to list author posts");
-    let tag_posts = manager
-        .list_tag_posts(&tag_id)
-        .expect("Failed to list tag posts");
-    let collection_posts = manager
-        .list_collection_posts(&collection_id)
-        .expect("Failed to list collection posts");
+    // Verify entities -> post
+    let author_posts = helpers::list_author_posts(&manager, author_id);
+    let tag_posts = helpers::list_tag_posts(&manager, tag_id);
+    let collection_posts = helpers::list_collection_posts(&manager, collection_id);
 
     assert_eq!(author_posts.len(), 1);
     assert_eq!(author_posts[0].id, post_id);
@@ -739,37 +669,38 @@ fn test_post_relationships_bidirectional() {
     assert_eq!(collection_posts[0].id, post_id);
 }
 
+// ── Content edge cases ───────────────────────────────────────
+
 #[test]
 fn test_post_content_with_files() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let post_id = manager
-        .add_post("Test Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
-
-    // Add file meta for content
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "image.jpg".to_string(),
-            "image/jpeg".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "image.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
 
     let content = vec![
-        Content::Text("Check out this image:".to_string()),
+        Content::Text("Check out this image:".into()),
         Content::File(file_meta_id),
-        Content::Text("What do you think?".to_string()),
+        Content::Text("What do you think?".into()),
     ];
 
-    manager
-        .set_post_content(post_id, content.clone())
-        .expect("Failed to set post content");
+    manager.bind(post_id).set_content(content.clone()).unwrap();
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content, content);
 }
 
@@ -777,21 +708,19 @@ fn test_post_content_with_files() {
 fn test_empty_post_content_and_comments() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "Empty Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
 
-    let post_id = manager
-        .add_post("Empty Post".to_string(), None, None, Some(now), Some(now))
-        .expect("Failed to add post");
+    manager.bind(post_id).set_content(vec![]).unwrap();
+    manager.bind(post_id).set_comments(vec![]).unwrap();
 
-    // Set empty content and comments
-    manager
-        .set_post_content(post_id, vec![])
-        .expect("Failed to set empty post content");
-    manager
-        .set_post_comments(post_id, vec![])
-        .expect("Failed to set empty post comments");
-
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content, vec![]);
     assert_eq!(post.comments, vec![]);
 }

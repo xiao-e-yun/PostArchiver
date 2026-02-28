@@ -3,7 +3,7 @@
 //! Tests for file metadata import functionality including creation,
 //! updating existing file metadata, and handling extra data.
 
-use crate::{importer::UnsyncFileMeta, manager::PostArchiverManager};
+use crate::{importer::UnsyncFileMeta, manager::PostArchiverManager, tests::helpers};
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -12,16 +12,14 @@ use std::collections::HashMap;
 fn test_import_new_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    // Create a post first
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
     let mut extra = HashMap::new();
     extra.insert("width".to_string(), Value::Number(1920.into()));
@@ -40,16 +38,11 @@ fn test_import_new_file_meta() {
 
     assert!(file_meta_id.raw() > 0);
 
-    // Verify the file meta was created
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
+    let file_meta = helpers::get_file_meta(&manager, file_meta_id);
 
     assert_eq!(file_meta.filename, unsync_file_meta.filename);
     assert_eq!(file_meta.mime, unsync_file_meta.mime);
     assert_eq!(file_meta.post, post_id);
-
-    // Verify extra data
     assert_eq!(
         file_meta.extra.get("width"),
         Some(&Value::Number(1920.into()))
@@ -64,33 +57,29 @@ fn test_import_new_file_meta() {
 fn test_import_existing_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
     let filename = "existing_file.png".to_string();
     let original_mime = "image/png".to_string();
 
-    // First, add a file meta manually
     let mut original_extra = HashMap::new();
     original_extra.insert("version".to_string(), Value::String("1.0".to_string()));
 
-    let existing_file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            filename.clone(),
-            original_mime.clone(),
-            original_extra.clone(),
-        )
-        .expect("Failed to add existing file meta");
+    let existing_file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        filename.clone(),
+        original_mime.clone(),
+        original_extra.clone(),
+    );
 
-    // Now import the same file with updated extra data
     let mut updated_extra = HashMap::new();
     updated_extra.insert("version".to_string(), Value::String("2.0".to_string()));
     updated_extra.insert(
@@ -109,13 +98,9 @@ fn test_import_existing_file_meta() {
         .import_file_meta(post_id, &unsync_file_meta)
         .expect("Failed to import existing file meta");
 
-    // Should return the same ID
     assert_eq!(existing_file_meta_id, imported_file_meta_id);
 
-    // Verify the extra data was updated
-    let file_meta = manager
-        .get_file_meta(&existing_file_meta_id)
-        .expect("Failed to get updated file meta");
+    let file_meta = helpers::get_file_meta(&manager, existing_file_meta_id);
 
     assert_eq!(file_meta.filename, filename);
     assert_eq!(file_meta.mime, original_mime);
@@ -243,9 +228,7 @@ fn test_unsync_file_meta_hash() {
     let hash2 = hasher2.finish();
     let hash3 = hasher3.finish();
 
-    // Same filename and mime should have same hash (extra is not included in hash)
     assert_eq!(hash1, hash2);
-    // Different filename should have different hash
     assert_ne!(hash1, hash3);
 }
 
@@ -253,32 +236,29 @@ fn test_unsync_file_meta_hash() {
 fn test_import_file_meta_different_posts() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let post1_id = manager
-        .add_post(
-            "Post 1".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post 1");
+    let post1_id = helpers::add_post(
+        &manager,
+        "Post 1".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
-    let post2_id = manager
-        .add_post(
-            "Post 2".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post 2");
+    let post2_id = helpers::add_post(
+        &manager,
+        "Post 2".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
     let filename = "shared_name.jpg".to_string();
 
     let file_meta1 = UnsyncFileMeta::new(filename.clone(), "image/jpeg".to_string(), ());
     let file_meta2 = UnsyncFileMeta::new(filename.clone(), "image/jpeg".to_string(), ());
 
-    // Import same filename to different posts
     let file_meta1_id = manager
         .import_file_meta(post1_id, &file_meta1)
         .expect("Failed to import file meta to post 1");
@@ -287,16 +267,10 @@ fn test_import_file_meta_different_posts() {
         .import_file_meta(post2_id, &file_meta2)
         .expect("Failed to import file meta to post 2");
 
-    // Should create different file metas (different post IDs)
     assert_ne!(file_meta1_id, file_meta2_id);
 
-    // Verify they belong to different posts
-    let file1 = manager
-        .get_file_meta(&file_meta1_id)
-        .expect("Failed to get file 1");
-    let file2 = manager
-        .get_file_meta(&file_meta2_id)
-        .expect("Failed to get file 2");
+    let file1 = helpers::get_file_meta(&manager, file_meta1_id);
+    let file2 = helpers::get_file_meta(&manager, file_meta2_id);
 
     assert_eq!(file1.post, post1_id);
     assert_eq!(file2.post, post2_id);
@@ -307,15 +281,14 @@ fn test_import_file_meta_different_posts() {
 fn test_import_file_meta_empty_extra() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
     let file_meta = UnsyncFileMeta {
         filename: "simple_file.txt".to_string(),
@@ -328,10 +301,7 @@ fn test_import_file_meta_empty_extra() {
         .import_file_meta(post_id, &file_meta)
         .expect("Failed to import file meta with empty extra");
 
-    let stored_file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
+    let stored_file_meta = helpers::get_file_meta(&manager, file_meta_id);
     assert!(stored_file_meta.extra.is_empty());
 }
 
@@ -339,15 +309,14 @@ fn test_import_file_meta_empty_extra() {
 fn test_import_file_meta_complex_extra() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
     let mut extra = HashMap::new();
     extra.insert(
@@ -378,10 +347,7 @@ fn test_import_file_meta_complex_extra() {
         .import_file_meta(post_id, &file_meta)
         .expect("Failed to import file meta with complex extra");
 
-    let stored_file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
+    let stored_file_meta = helpers::get_file_meta(&manager, file_meta_id);
     assert_eq!(stored_file_meta.extra, file_meta.extra);
 }
 
@@ -389,26 +355,23 @@ fn test_import_file_meta_complex_extra() {
 fn test_import_file_meta_preserves_mime() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
     let filename = "mime_test.dat".to_string();
     let original_mime = "application/octet-stream".to_string();
 
-    // First import
     let file_meta1 = UnsyncFileMeta::new(filename.clone(), original_mime.clone(), ());
     let file_meta_id = manager
         .import_file_meta(post_id, &file_meta1)
         .expect("Failed to import first file meta");
 
-    // Second import with different MIME type (should not change)
     let different_mime = "text/plain".to_string();
     let file_meta2 = UnsyncFileMeta::new(filename.clone(), different_mime, ());
     let same_file_meta_id = manager
@@ -417,11 +380,7 @@ fn test_import_file_meta_preserves_mime() {
 
     assert_eq!(file_meta_id, same_file_meta_id);
 
-    let stored_file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    // MIME should remain the original one
+    let stored_file_meta = helpers::get_file_meta(&manager, file_meta_id);
     assert_eq!(stored_file_meta.mime, original_mime);
 }
 
@@ -445,15 +404,14 @@ fn test_unsync_file_meta_debug() {
 fn test_import_file_meta_with_transaction() {
     let mut manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let post_id = manager
-        .add_post(
-            "Transaction Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
+    let post_id = helpers::add_post(
+        &manager,
+        "Transaction Test Post".to_string(),
+        None,
+        None,
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
     let tx = manager.transaction().expect("Failed to start transaction");
 
@@ -467,20 +425,9 @@ fn test_import_file_meta_with_transaction() {
         .import_file_meta(post_id, &file_meta)
         .expect("Failed to import file meta in transaction");
 
-    // Verify file exists in transaction
-    let stored_file_meta = tx
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta in transaction");
-    assert_eq!(stored_file_meta.filename, "transaction_file.txt");
-
     tx.commit().expect("Failed to commit transaction");
 
     // Verify file still exists after commit
-    let stored_file_meta_after_commit = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta after commit");
-    assert_eq!(
-        stored_file_meta_after_commit.filename,
-        "transaction_file.txt"
-    );
+    let stored_file_meta = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(stored_file_meta.filename, "transaction_file.txt");
 }

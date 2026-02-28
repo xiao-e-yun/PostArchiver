@@ -7,80 +7,73 @@ use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::{manager::PostArchiverManager, FileMetaId, PostId};
+use crate::{manager::PostArchiverManager, tests::helpers, FileMetaId, PostId};
 
 fn create_test_post(manager: &PostArchiverManager) -> PostId {
-    manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to create test post")
+    let now = Utc::now();
+    helpers::add_post(
+        manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    )
 }
 
 fn create_test_extra() -> HashMap<String, Value> {
     let mut extra = HashMap::new();
-    extra.insert("width".to_string(), Value::Number(1920.into()));
-    extra.insert("height".to_string(), Value::Number(1080.into()));
-    extra.insert(
-        "description".to_string(),
-        Value::String("Test image".to_string()),
-    );
+    extra.insert("width".into(), Value::Number(1920.into()));
+    extra.insert("height".into(), Value::Number(1080.into()));
+    extra.insert("description".into(), Value::String("Test image".into()));
     extra
 }
+
+// ── CRUD via helpers ──────────────────────────────────────────
 
 #[test]
 fn test_add_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
-
-    let filename = "test_image.jpg".to_string();
-    let mime = "image/jpeg".to_string();
     let extra = create_test_extra();
 
-    let file_meta_id = manager
-        .add_file_meta(post_id, filename.clone(), mime.clone(), extra.clone())
-        .expect("Failed to add file meta");
-
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "test_image.jpg".into(),
+        "image/jpeg".into(),
+        extra.clone(),
+    );
     assert!(file_meta_id.raw() > 0);
 
-    // Verify the file meta was added correctly
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert_eq!(file_meta.id, file_meta_id);
-    assert_eq!(file_meta.post, post_id);
-    assert_eq!(file_meta.filename, filename);
-    assert_eq!(file_meta.mime, mime);
-    assert_eq!(file_meta.extra, extra);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.id, file_meta_id);
+    assert_eq!(fm.post, post_id);
+    assert_eq!(fm.filename, "test_image.jpg");
+    assert_eq!(fm.mime, "image/jpeg");
+    assert_eq!(fm.extra, extra);
 }
 
 #[test]
 fn test_get_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
-
-    let filename = "get_test.png".to_string();
-    let mime = "image/png".to_string();
     let extra = create_test_extra();
 
-    let file_meta_id = manager
-        .add_file_meta(post_id, filename.clone(), mime.clone(), extra.clone())
-        .expect("Failed to add file meta");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "get_test.png".into(),
+        "image/png".into(),
+        extra.clone(),
+    );
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert_eq!(file_meta.id, file_meta_id);
-    assert_eq!(file_meta.post, post_id);
-    assert_eq!(file_meta.filename, filename);
-    assert_eq!(file_meta.mime, mime);
-    assert_eq!(file_meta.extra, extra);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.id, file_meta_id);
+    assert_eq!(fm.post, post_id);
+    assert_eq!(fm.filename, "get_test.png");
+    assert_eq!(fm.mime, "image/png");
+    assert_eq!(fm.extra, extra);
 }
 
 #[test]
@@ -88,165 +81,126 @@ fn test_find_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
 
-    let filename = "findme.gif".to_string();
-    let mime = "image/gif".to_string();
-    let extra = HashMap::new();
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "findme.gif".into(),
+        "image/gif".into(),
+        HashMap::new(),
+    );
 
-    let file_meta_id = manager
-        .add_file_meta(post_id, filename.clone(), mime, extra)
-        .expect("Failed to add file meta");
-
-    // Test finding existing file
-    let found_id = manager
-        .find_file_meta(post_id, &filename)
-        .expect("Failed to find file meta");
-
+    let found_id = helpers::find_file_meta(&manager, post_id, "findme.gif");
     assert_eq!(found_id, Some(file_meta_id));
 
-    // Test not found cases
-    let not_found = manager
-        .find_file_meta(post_id, "nonexistent.txt")
-        .expect("Failed to search for nonexistent file");
-
+    let not_found = helpers::find_file_meta(&manager, post_id, "nonexistent.txt");
     assert_eq!(not_found, None);
 
-    // Test with different post ID
     let other_post_id = create_test_post(&manager);
-    let not_found_different_post = manager
-        .find_file_meta(other_post_id, &filename)
-        .expect("Failed to search for file in different post");
-
-    assert_eq!(not_found_different_post, None);
+    let not_found = helpers::find_file_meta(&manager, other_post_id, "findme.gif");
+    assert_eq!(not_found, None);
 }
+
+// ── Binded: Delete ────────────────────────────────────────────
 
 #[test]
 fn test_remove_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "to_delete.txt".into(),
+        "text/plain".into(),
+        HashMap::new(),
+    );
 
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "to_delete.txt".to_string(),
-            "text/plain".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta");
+    let _ = helpers::get_file_meta(&manager, file_meta_id);
 
-    // Verify file meta exists
-    manager
-        .get_file_meta(&file_meta_id)
-        .expect("File meta should exist before deletion");
+    manager.bind(file_meta_id).delete().unwrap();
 
-    // Remove file meta
-    manager
-        .remove_file_meta(file_meta_id)
-        .expect("Failed to remove file meta");
-
-    // Verify file meta is gone
-    let result = manager.get_file_meta(&file_meta_id);
-    assert!(result.is_err(), "File meta should not exist after deletion");
+    // Verify file meta is gone (find returns None)
+    let found = helpers::find_file_meta(&manager, post_id, "to_delete.txt");
+    assert_eq!(found, None);
 }
+
+// ── Binded: Set fields ───────────────────────────────────────
 
 #[test]
 fn test_set_file_meta_mime() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "mime_test.file".into(),
+        "application/octet-stream".into(),
+        HashMap::new(),
+    );
 
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "mime_test.file".to_string(),
-            "application/octet-stream".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta");
-
-    let new_mime = "text/plain".to_string();
     manager
-        .set_file_meta_mime(file_meta_id, new_mime.clone())
-        .expect("Failed to update file meta MIME type");
+        .bind(file_meta_id)
+        .set_mime("text/plain".into())
+        .unwrap();
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert_eq!(file_meta.mime, new_mime);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.mime, "text/plain");
 }
 
 #[test]
 fn test_set_file_meta_extra() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
-
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "extra_test.json".to_string(),
-            "application/json".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "extra_test.json".into(),
+        "application/json".into(),
+        HashMap::new(),
+    );
 
     let mut new_extra = HashMap::new();
-    new_extra.insert("size".to_string(), Value::Number(12345.into()));
-    new_extra.insert("compressed".to_string(), Value::Bool(true));
-    new_extra.insert("algorithm".to_string(), Value::String("gzip".to_string()));
+    new_extra.insert("size".into(), Value::Number(12345.into()));
+    new_extra.insert("compressed".into(), Value::Bool(true));
+    new_extra.insert("algorithm".into(), Value::String("gzip".into()));
 
     manager
-        .set_file_meta_extra(file_meta_id, new_extra.clone())
-        .expect("Failed to update file meta extra");
+        .bind(file_meta_id)
+        .set_extra(new_extra.clone())
+        .unwrap();
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert_eq!(file_meta.extra, new_extra);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.extra, new_extra);
 }
+
+// ── Multiple & edge cases ────────────────────────────────────
 
 #[test]
 fn test_multiple_files_same_post() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
 
-    // Add multiple files to the same post
-    let file1_id = manager
-        .add_file_meta(
-            post_id,
-            "file1.jpg".to_string(),
-            "image/jpeg".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file1");
+    let file1 = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "file1.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
+    let file2 = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "file2.png".into(),
+        "image/png".into(),
+        HashMap::new(),
+    );
 
-    let file2_id = manager
-        .add_file_meta(
-            post_id,
-            "file2.png".to_string(),
-            "image/png".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file2");
+    let found1 = helpers::find_file_meta(&manager, post_id, "file1.jpg");
+    let found2 = helpers::find_file_meta(&manager, post_id, "file2.png");
+    assert_eq!(found1, Some(file1));
+    assert_eq!(found2, Some(file2));
 
-    // Verify both files can be found
-    let found1 = manager
-        .find_file_meta(post_id, "file1.jpg")
-        .expect("Failed to find file1");
-    let found2 = manager
-        .find_file_meta(post_id, "file2.png")
-        .expect("Failed to find file2");
-
-    assert_eq!(found1, Some(file1_id));
-    assert_eq!(found2, Some(file2_id));
-
-    // Verify both files can be retrieved
-    let meta1 = manager
-        .get_file_meta(&file1_id)
-        .expect("Failed to get file1 meta");
-    let meta2 = manager
-        .get_file_meta(&file2_id)
-        .expect("Failed to get file2 meta");
-
+    let meta1 = helpers::get_file_meta(&manager, file1);
+    let meta2 = helpers::get_file_meta(&manager, file2);
     assert_eq!(meta1.filename, "file1.jpg");
     assert_eq!(meta2.filename, "file2.png");
     assert_eq!(meta1.post, post_id);
@@ -260,28 +214,26 @@ fn test_same_filename_different_posts() {
     let post2_id = create_test_post(&manager);
 
     let filename = "shared_name.txt".to_string();
-    let mime = "text/plain".to_string();
+    let file1 = helpers::add_file_meta(
+        &manager,
+        post1_id,
+        filename.clone(),
+        "text/plain".into(),
+        HashMap::new(),
+    );
+    let file2 = helpers::add_file_meta(
+        &manager,
+        post2_id,
+        filename.clone(),
+        "text/plain".into(),
+        HashMap::new(),
+    );
 
-    // Add files with same filename to different posts
-    let file1_id = manager
-        .add_file_meta(post1_id, filename.clone(), mime.clone(), HashMap::new())
-        .expect("Failed to add file to post1");
-
-    let file2_id = manager
-        .add_file_meta(post2_id, filename.clone(), mime.clone(), HashMap::new())
-        .expect("Failed to add file to post2");
-
-    // Verify files are found correctly for their respective posts
-    let found1 = manager
-        .find_file_meta(post1_id, &filename)
-        .expect("Failed to find file in post1");
-    let found2 = manager
-        .find_file_meta(post2_id, &filename)
-        .expect("Failed to find file in post2");
-
-    assert_eq!(found1, Some(file1_id));
-    assert_eq!(found2, Some(file2_id));
-    assert_ne!(file1_id, file2_id);
+    let found1 = helpers::find_file_meta(&manager, post1_id, &filename);
+    let found2 = helpers::find_file_meta(&manager, post2_id, &filename);
+    assert_eq!(found1, Some(file1));
+    assert_eq!(found2, Some(file2));
+    assert_ne!(file1, file2);
 }
 
 #[test]
@@ -289,50 +241,37 @@ fn test_complex_extra_metadata() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
 
-    // Create complex nested extra metadata
     let mut extra = HashMap::new();
-    extra.insert(
-        "simple_string".to_string(),
-        Value::String("test".to_string()),
-    );
-    extra.insert("number".to_string(), Value::Number(42.into()));
-    extra.insert("boolean".to_string(), Value::Bool(true));
-    extra.insert("null_value".to_string(), Value::Null);
+    extra.insert("simple_string".into(), Value::String("test".into()));
+    extra.insert("number".into(), Value::Number(42.into()));
+    extra.insert("boolean".into(), Value::Bool(true));
+    extra.insert("null_value".into(), Value::Null);
 
-    // Nested object
     let mut nested = HashMap::new();
-    nested.insert(
-        "inner_key".to_string(),
-        Value::String("inner_value".to_string()),
-    );
-    nested.insert("inner_number".to_string(), Value::Number(123.into()));
+    nested.insert("inner_key".into(), Value::String("inner_value".into()));
+    nested.insert("inner_number".into(), Value::Number(123.into()));
     extra.insert(
-        "nested_object".to_string(),
+        "nested_object".into(),
         Value::Object(nested.into_iter().collect()),
     );
 
-    // Array
     let array = vec![
-        Value::String("item1".to_string()),
+        Value::String("item1".into()),
         Value::Number(456.into()),
         Value::Bool(false),
     ];
-    extra.insert("array".to_string(), Value::Array(array));
+    extra.insert("array".into(), Value::Array(array));
 
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "complex.json".to_string(),
-            "application/json".to_string(),
-            extra.clone(),
-        )
-        .expect("Failed to add file meta with complex extra");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "complex.json".into(),
+        "application/json".into(),
+        extra.clone(),
+    );
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert_eq!(file_meta.extra, extra);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.extra, extra);
 }
 
 #[test]
@@ -340,92 +279,63 @@ fn test_empty_extra_metadata() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
 
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "empty_extra.txt".to_string(),
-            "text/plain".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta with empty extra");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "empty_extra.txt".into(),
+        "text/plain".into(),
+        HashMap::new(),
+    );
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert!(file_meta.extra.is_empty());
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert!(fm.extra.is_empty());
 }
 
 #[test]
 fn test_update_extra_metadata_multiple_times() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
     let post_id = create_test_post(&manager);
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "update_test.txt".into(),
+        "text/plain".into(),
+        HashMap::new(),
+    );
 
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "update_test.txt".to_string(),
-            "text/plain".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta");
-
-    // First update
     let mut extra1 = HashMap::new();
-    extra1.insert("version".to_string(), Value::Number(1.into()));
+    extra1.insert("version".into(), Value::Number(1.into()));
     manager
-        .set_file_meta_extra(file_meta_id, extra1.clone())
-        .expect("Failed to update extra first time");
+        .bind(file_meta_id)
+        .set_extra(extra1.clone())
+        .unwrap();
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-    assert_eq!(file_meta.extra, extra1);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.extra, extra1);
 
-    // Second update
     let mut extra2 = HashMap::new();
-    extra2.insert("version".to_string(), Value::Number(2.into()));
-    extra2.insert("author".to_string(), Value::String("test_user".to_string()));
+    extra2.insert("version".into(), Value::Number(2.into()));
+    extra2.insert("author".into(), Value::String("test_user".into()));
     manager
-        .set_file_meta_extra(file_meta_id, extra2.clone())
-        .expect("Failed to update extra second time");
+        .bind(file_meta_id)
+        .set_extra(extra2.clone())
+        .unwrap();
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-    assert_eq!(file_meta.extra, extra2);
-}
-
-#[test]
-fn test_get_nonexistent_file_meta() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Try to get a file meta that doesn't exist
-    let fake_id = FileMetaId::new(99999);
-    let result = manager.get_file_meta(&fake_id);
-
-    assert!(result.is_err(), "Getting nonexistent file meta should fail");
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.extra, extra2);
 }
 
 #[test]
 fn test_update_nonexistent_file_meta() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-
     let fake_id = FileMetaId::new(99999);
 
-    // Try to update MIME type of nonexistent file
-    let mime_result = manager.set_file_meta_mime(fake_id, "text/plain".to_string());
-    assert!(
-        mime_result.is_ok(),
-        "Update operations should not fail for nonexistent IDs"
-    );
+    // Update operations should not fail for nonexistent IDs (they just affect 0 rows)
+    let mime_result = manager.bind(fake_id).set_mime("text/plain".into());
+    assert!(mime_result.is_ok());
 
-    // Try to update extra of nonexistent file
-    let extra_result = manager.set_file_meta_extra(fake_id, HashMap::new());
-    assert!(
-        extra_result.is_ok(),
-        "Update operations should not fail for nonexistent IDs"
-    );
+    let extra_result = manager.bind(fake_id).set_extra(HashMap::new());
+    assert!(extra_result.is_ok());
 }
 
 #[test]
@@ -435,24 +345,20 @@ fn test_special_characters_in_filename() {
 
     let special_filename =
         "test file with spaces & symbols!@#$%^&()_+-=[]{}|;':\",./<>?.txt".to_string();
-    let mime = "text/plain".to_string();
 
-    let file_meta_id = manager
-        .add_file_meta(post_id, special_filename.clone(), mime, HashMap::new())
-        .expect("Failed to add file meta with special characters in filename");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        special_filename.clone(),
+        "text/plain".into(),
+        HashMap::new(),
+    );
 
-    // Verify the file can be found by its special filename
-    let found_id = manager
-        .find_file_meta(post_id, &special_filename)
-        .expect("Failed to find file with special characters");
-
+    let found_id = helpers::find_file_meta(&manager, post_id, &special_filename);
     assert_eq!(found_id, Some(file_meta_id));
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert_eq!(file_meta.filename, special_filename);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.filename, special_filename);
 }
 
 #[test]
@@ -461,21 +367,18 @@ fn test_unicode_filename() {
     let post_id = create_test_post(&manager);
 
     let unicode_filename = "测试文件_тест_ファイル_🎉.txt".to_string();
-    let mime = "text/plain".to_string();
 
-    let file_meta_id = manager
-        .add_file_meta(post_id, unicode_filename.clone(), mime, HashMap::new())
-        .expect("Failed to add file meta with Unicode filename");
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        unicode_filename.clone(),
+        "text/plain".into(),
+        HashMap::new(),
+    );
 
-    let found_id = manager
-        .find_file_meta(post_id, &unicode_filename)
-        .expect("Failed to find file with Unicode filename");
-
+    let found_id = helpers::find_file_meta(&manager, post_id, &unicode_filename);
     assert_eq!(found_id, Some(file_meta_id));
 
-    let file_meta = manager
-        .get_file_meta(&file_meta_id)
-        .expect("Failed to get file meta");
-
-    assert_eq!(file_meta.filename, unicode_filename);
+    let fm = helpers::get_file_meta(&manager, file_meta_id);
+    assert_eq!(fm.filename, unicode_filename);
 }

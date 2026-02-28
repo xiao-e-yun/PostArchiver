@@ -11,6 +11,7 @@ use crate::{
         UnsyncFileMeta,
     },
     manager::PostArchiverManager,
+    tests::helpers,
     Comment, PlatformId,
 };
 use chrono::Utc;
@@ -19,9 +20,7 @@ use std::collections::HashMap;
 #[test]
 fn test_import_new_post() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text("Hello, world!".to_string())];
     let unsync_post = UnsyncPost::new(
@@ -42,8 +41,7 @@ fn test_import_new_post() {
     assert!(collections.is_empty());
     assert!(files.is_empty());
 
-    // Verify the post was created
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.title, "Test Post");
     assert_eq!(post.source, Some("https://example.com/post/1".to_string()));
     assert_eq!(post.platform, Some(platform_id));
@@ -52,24 +50,19 @@ fn test_import_new_post() {
 #[test]
 fn test_import_existing_post() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let source = "https://example.com/post/1".to_string();
 
-    // Create an existing post
-    let existing_post_id = manager
-        .add_post(
-            "Original Title".to_string(),
-            Some(source.clone()),
-            Some(platform_id),
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add existing post");
+    let existing_post_id = helpers::add_post(
+        &manager,
+        "Original Title".to_string(),
+        Some(source.clone()),
+        Some(platform_id),
+        Some(Utc::now()),
+        Some(Utc::now()),
+    );
 
-    // Import post with same source but different title
     let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text("Updated content".to_string())];
     let unsync_post = UnsyncPost::new(platform_id, source, "Updated Title".to_string(), content);
 
@@ -77,11 +70,9 @@ fn test_import_existing_post() {
         .import_post(unsync_post, true)
         .expect("Failed to import existing post");
 
-    // Should return the same ID
     assert_eq!(post_id, existing_post_id);
 
-    // Verify the title was updated
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.title, "Updated Title");
 }
 
@@ -126,9 +117,7 @@ fn test_unsync_post_builder() {
 #[test]
 fn test_import_post_with_text_content() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let content: Vec<UnsyncContent<()>> = vec![
         UnsyncContent::Text("First paragraph".to_string()),
@@ -148,10 +137,9 @@ fn test_import_post_with_text_content() {
         .import_post(unsync_post, true)
         .expect("Failed to import post with text content");
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content.len(), 2);
 
-    // Verify content is text
     if let crate::Content::Text(text) = &post.content[0] {
         assert_eq!(text, "First paragraph");
     } else {
@@ -168,9 +156,7 @@ fn test_import_post_with_text_content() {
 #[test]
 fn test_import_post_with_file_content() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let file_meta = UnsyncFileMeta {
         filename: "test_image.jpg".to_string(),
@@ -197,10 +183,9 @@ fn test_import_post_with_file_content() {
         .import_post(unsync_post, true)
         .expect("Failed to import post with file content");
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content.len(), 2);
 
-    // Verify mixed content
     if let crate::Content::Text(text) = &post.content[0] {
         assert_eq!(text, "Check out this image:");
     } else {
@@ -208,9 +193,7 @@ fn test_import_post_with_file_content() {
     }
 
     if let crate::Content::File(file_id) = &post.content[1] {
-        let file = manager
-            .get_file_meta(file_id)
-            .expect("Failed to get file meta");
+        let file = helpers::get_file_meta(&manager, *file_id);
         assert_eq!(file.filename, "test_image.jpg");
         assert_eq!(file.mime, "image/jpeg");
     } else {
@@ -221,17 +204,10 @@ fn test_import_post_with_file_content() {
 #[test]
 fn test_import_post_with_authors() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
-    // Create authors
-    let author1_id = manager
-        .add_author("Author 1".to_string(), Some(Utc::now()))
-        .expect("Failed to add author 1");
-    let author2_id = manager
-        .add_author("Author 2".to_string(), Some(Utc::now()))
-        .expect("Failed to add author 2");
+    let author1_id = helpers::add_author(&manager, "Author 1".to_string(), Some(Utc::now()));
+    let author2_id = helpers::add_author(&manager, "Author 2".to_string(), Some(Utc::now()));
 
     let content: Vec<UnsyncContent<()>> =
         vec![UnsyncContent::Text("Post by multiple authors".to_string())];
@@ -253,19 +229,14 @@ fn test_import_post_with_authors() {
     assert!(authors.contains(&author1_id));
     assert!(authors.contains(&author2_id));
 
-    // Verify post-author relationships
-    let post_authors = manager
-        .list_post_authors(&post_id)
-        .expect("Failed to list post authors");
+    let post_authors = helpers::list_post_authors(&manager, post_id);
     assert_eq!(post_authors.len(), 2);
 }
 
 #[test]
 fn test_import_post_with_tags() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let tags = vec![
         UnsyncTag {
@@ -295,10 +266,7 @@ fn test_import_post_with_tags() {
         .import_post(unsync_post, true)
         .expect("Failed to import post with tags");
 
-    // Verify post-tag relationships
-    let post_tags = manager
-        .list_post_tags(&post_id)
-        .expect("Failed to list post tags");
+    let post_tags = helpers::list_post_tags(&manager, post_id);
     assert_eq!(post_tags.len(), 2);
 
     let tag_names: Vec<String> = post_tags.iter().map(|t| t.name.clone()).collect();
@@ -309,9 +277,7 @@ fn test_import_post_with_tags() {
 #[test]
 fn test_import_post_with_collections() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let collections = vec![
         UnsyncCollection {
@@ -341,19 +307,14 @@ fn test_import_post_with_collections() {
 
     assert_eq!(collection_ids.len(), 2);
 
-    // Verify post-collection relationships
-    let post_collections = manager
-        .list_post_collections(&post_id)
-        .expect("Failed to list post collections");
+    let post_collections = helpers::list_post_collections(&manager, post_id);
     assert_eq!(post_collections.len(), 2);
 }
 
 #[test]
 fn test_import_post_with_comments() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let comments = vec![
         Comment {
@@ -384,7 +345,7 @@ fn test_import_post_with_comments() {
         .import_post(unsync_post, true)
         .expect("Failed to import post with comments");
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.comments.len(), 2);
     assert_eq!(post.comments[0].user, "User1");
     assert_eq!(post.comments[1].user, "User2");
@@ -393,9 +354,7 @@ fn test_import_post_with_comments() {
 #[test]
 fn test_import_posts_multiple() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let posts: Vec<UnsyncPost<()>> = vec![
         UnsyncPost::new(
@@ -423,9 +382,8 @@ fn test_import_posts_multiple() {
     assert_eq!(post_ids.len(), 2);
     assert!(files.is_empty());
 
-    // Verify both posts were created
     for post_id in post_ids {
-        let post = manager.get_post(&post_id).expect("Failed to get post");
+        let post = helpers::get_post(&manager, post_id);
         assert!(post.title.starts_with("Post "));
     }
 }
@@ -433,9 +391,7 @@ fn test_import_posts_multiple() {
 #[test]
 fn test_import_post_with_thumbnail() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let thumb = UnsyncFileMeta {
         filename: "thumbnail.jpg".to_string(),
@@ -459,21 +415,17 @@ fn test_import_post_with_thumbnail() {
         .import_post(unsync_post, true)
         .expect("Failed to import post with thumbnail");
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert!(post.thumb.is_some());
 
-    let thumb_file = manager
-        .get_file_meta(&post.thumb.unwrap())
-        .expect("Failed to get thumbnail file");
+    let thumb_file = helpers::get_file_meta(&manager, post.thumb.unwrap());
     assert_eq!(thumb_file.filename, "thumbnail.jpg");
 }
 
 #[test]
 fn test_import_post_auto_thumbnail_from_content() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let image_file = UnsyncFileMeta {
         filename: "content_image.png".to_string(),
@@ -488,7 +440,6 @@ fn test_import_post_auto_thumbnail_from_content() {
         UnsyncContent::Text("Great image, right?".to_string()),
     ];
 
-    // No explicit thumbnail - should use first image from content
     let unsync_post = UnsyncPost::new(
         platform_id,
         "https://example.com/auto_thumb".to_string(),
@@ -502,21 +453,17 @@ fn test_import_post_auto_thumbnail_from_content() {
         .import_post(unsync_post, true)
         .expect("Failed to import post with auto thumbnail");
 
-    let post = manager.get_post(&post_id).expect("Failed to get post");
+    let post = helpers::get_post(&manager, post_id);
     assert!(post.thumb.is_some());
 
-    let thumb_file = manager
-        .get_file_meta(&post.thumb.unwrap())
-        .expect("Failed to get auto thumbnail");
+    let thumb_file = helpers::get_file_meta(&manager, post.thumb.unwrap());
     assert_eq!(thumb_file.filename, "content_image.png");
 }
 
 #[test]
 fn test_unsync_post_sync_method() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
     let content: Vec<UnsyncContent<()>> = vec![UnsyncContent::Text("Sync method test".to_string())];
     let post = UnsyncPost::new(
@@ -533,9 +480,7 @@ fn test_unsync_post_sync_method() {
     assert!(post_id.raw() > 0);
     assert!(files.is_empty());
 
-    let stored_post = manager
-        .get_post(&post_id)
-        .expect("Failed to get synced post");
+    let stored_post = helpers::get_post(&manager, post_id);
     assert_eq!(stored_post.title, "Sync Test");
 }
 
@@ -549,14 +494,12 @@ fn test_unsync_content_variants() {
         data: (),
     });
 
-    // Test Debug implementation
     let text_debug = format!("{:?}", text_content);
     let file_debug = format!("{:?}", file_content);
 
     assert!(text_debug.contains("Text"));
     assert!(file_debug.contains("File"));
 
-    // Test Clone
     let _text_clone = text_content.clone();
     let _file_clone = file_content.clone();
 }
@@ -564,13 +507,9 @@ fn test_unsync_content_variants() {
 #[test]
 fn test_import_post_without_update_relation() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let platform_id = manager
-        .add_platform("Test Platform".to_string())
-        .expect("Failed to add platform");
+    let platform_id = helpers::add_platform(&manager, "Test Platform".to_string());
 
-    let author_id = manager
-        .add_author("Test Author".to_string(), Some(Utc::now()))
-        .expect("Failed to add author");
+    let author_id = helpers::add_author(&manager, "Test Author".to_string(), Some(Utc::now()));
 
     let content: Vec<UnsyncContent<()>> =
         vec![UnsyncContent::Text("No relation update test".to_string())];
@@ -584,7 +523,6 @@ fn test_import_post_without_update_relation() {
     .published(Utc::now())
     .updated(Utc::now());
 
-    // Import without updating relations
     let (post_id, authors, _, _) = manager
         .import_post(unsync_post, false)
         .expect("Failed to import post without relation update");
