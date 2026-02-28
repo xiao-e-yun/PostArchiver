@@ -5,6 +5,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
+use rusqlite::{params, OptionalExtension};
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
@@ -28,24 +29,6 @@ where
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::importer::UnsyncPost;
-    /// # use post_archiver::PlatformId;
-    /// # use std::collections::HashMap;
-    /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    /// let post: UnsyncPost<()> = UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]);
-    ///
-    /// let files_data = HashMap::<String,()>::new(); // You can provide file data if needed
-    ///    
-    /// let post = manager.import_post(post, true)?;
-    ///
-    /// Ok(())
-    /// # }
-    /// ```
     pub fn import_post<U>(
         &self,
         post: UnsyncPost<U>,
@@ -60,23 +43,39 @@ where
             };
         }
 
-        let id = match self.find_post(&post.source)? {
-            Some(id) => {
-                self.set_post_title(id, post.title)?;
-                self.set_post_platform(id, Some(post.platform))?;
+        // find post by source
+        let existing: Option<PostId> = {
+            let mut stmt = self
+                .conn()
+                .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
+            stmt.query_row([&post.source], |row| row.get(0))
+                .optional()?
+        };
 
-                self.set_post_published(id, post.published.unwrap_or_else(Utc::now))?;
-                self.set_post_updated_by_latest(id, post.updated.unwrap_or_else(Utc::now))?;
+        let id = match existing {
+            Some(id) => {
+                let b = self.bind(id);
+                b.set_title(post.title)?;
+                b.set_platform(Some(post.platform))?;
+                b.set_published(post.published.unwrap_or_else(Utc::now))?;
+                b.set_updated_by_latest(post.updated.unwrap_or_else(Utc::now))?;
                 id
             }
-            None => self.add_post(
-                post.title,
-                Some(post.source),
-                Some(post.platform),
-                post.published,
-                post.updated,
-            )?,
+            None => {
+                // insert new post
+                let mut stmt = self.conn().prepare_cached(
+                    "INSERT INTO posts (title, source, platform, published, updated) VALUES (?, ?, ?, ?, ?) RETURNING id",
+                )?;
+                let published = post.published.unwrap_or_else(Utc::now);
+                let updated = post.updated.unwrap_or_else(Utc::now);
+                stmt.query_row(
+                    params![post.title, post.source, post.platform, published, updated],
+                    |row| row.get(0),
+                )?
+            }
         };
+
+        let b = self.bind(id);
 
         let mut thumb = post
             .thumb
@@ -99,18 +98,18 @@ where
                 })
             })
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
-        self.set_post_content(id, content)?;
-        self.set_post_thumb(id, thumb)?;
+        b.set_content(content)?;
+        b.set_thumb(thumb)?;
 
-        self.set_post_comments(id, post.comments)?;
+        b.set_comments(post.comments)?;
 
         let tags = import_many!(post.tags => import_tag);
-        self.add_post_tags(id, &tags)?;
+        b.add_tags(&tags)?;
 
         let collections = import_many!(post.collections => import_collection);
-        self.add_post_collections(id, &collections)?;
+        b.add_collections(&collections)?;
 
-        self.add_post_authors(id, &post.authors)?;
+        b.add_authors(&post.authors)?;
 
         //
         let path = self
@@ -133,13 +132,14 @@ where
 
         if update_relation {
             post.authors.iter().try_for_each(|&author| {
-                self.set_author_thumb_by_latest(author)?;
-                self.set_author_updated_by_latest(author)
+                let ab = self.bind(author);
+                ab.set_thumb_by_latest()?;
+                ab.set_updated_by_latest()
             })?;
 
             collections
                 .iter()
-                .try_for_each(|&collection| self.set_collection_thumb_by_latest(collection))?;
+                .try_for_each(|&collection| self.bind(collection).set_thumb_by_latest())?;
         }
 
         Ok((
@@ -161,25 +161,6 @@ where
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::importer::UnsyncPost;
-    /// # use post_archiver::PlatformId;
-    /// # use std::collections::HashMap;
-    /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    /// let posts: Vec<UnsyncPost<()>> = vec![
-    ///     UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]),
-    ///     UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/2".to_string(), "My Second Post".to_string(), vec![]),
-    /// ];
-    ///
-    /// let post = manager.import_posts(posts, true)?;
-    ///
-    /// Ok(())
-    /// # }
-    /// ```
     pub fn import_posts<U>(
         &self,
         posts: impl IntoIterator<Item = UnsyncPost<U>>,
@@ -201,13 +182,14 @@ where
 
         if update_relation {
             total_author.into_iter().try_for_each(|author| {
-                self.set_author_thumb_by_latest(author)?;
-                self.set_author_updated_by_latest(author)
+                let ab = self.bind(author);
+                ab.set_thumb_by_latest()?;
+                ab.set_updated_by_latest()
             })?;
 
             total_collections
                 .into_iter()
-                .try_for_each(|collection| self.set_collection_thumb_by_latest(collection))?;
+                .try_for_each(|collection| self.bind(collection).set_thumb_by_latest())?;
         }
 
         Ok((results, total_files))

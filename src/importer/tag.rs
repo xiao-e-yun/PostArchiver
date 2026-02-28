@@ -1,5 +1,7 @@
 use std::hash::Hash;
 
+use rusqlite::{params, OptionalExtension};
+
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     PlatformId, TagId,
@@ -17,11 +19,22 @@ where
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_tag(&self, tag: UnsyncTag) -> Result<TagId, rusqlite::Error> {
-        let find_tag = (tag.name.as_str(), tag.platform);
-        match self.find_tag(&find_tag)? {
-            Some(id) => Ok(id),
-            None => self.add_tag(tag.name, tag.platform),
+        // find
+        let mut find_stmt = self
+            .conn()
+            .prepare_cached("SELECT id FROM tags WHERE platform IS ? AND name = ?")?;
+        if let Some(id) = find_stmt
+            .query_row(params![tag.platform, tag.name], |row| row.get(0))
+            .optional()?
+        {
+            return Ok(id);
         }
+
+        // insert
+        let mut ins_stmt = self
+            .conn()
+            .prepare_cached("INSERT INTO tags (name, platform) VALUES (?, ?) RETURNING id")?;
+        ins_stmt.query_row(params![tag.name, tag.platform], |row| row.get(0))
     }
 
     /// Import multiple tags into the archive.

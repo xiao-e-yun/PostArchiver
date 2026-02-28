@@ -1,8 +1,10 @@
 use std::hash::Hash;
 
+use rusqlite::{params, OptionalExtension};
+
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    CollectionId,
+    CollectionId, FileMetaId,
 };
 
 impl<T> PostArchiverManager<T>
@@ -20,17 +22,31 @@ where
         &self,
         collection: UnsyncCollection,
     ) -> Result<CollectionId, rusqlite::Error> {
-        match self.find_collection(&collection.source)? {
-            Some(id) => {
-                self.set_collection_name(id, collection.name)?;
-                Ok(id)
-            }
-            None => self.add_collection(
-                collection.name,
-                Some(collection.source),
-                None, // No thumbnail for unsynced collections
-            ),
+        // find by source
+        let mut find_stmt = self
+            .conn()
+            .prepare_cached("SELECT id FROM collections WHERE source = ?")?;
+        if let Some(id) = find_stmt
+            .query_row([&collection.source], |row| row.get::<_, CollectionId>(0))
+            .optional()?
+        {
+            self.bind(id).set_name(collection.name)?;
+            return Ok(id);
         }
+
+        // insert
+        let mut ins_stmt = self.conn().prepare_cached(
+            "INSERT INTO collections (name, source, thumb) VALUES (?, ?, ?) RETURNING id",
+        )?;
+        let id: CollectionId = ins_stmt.query_row(
+            params![
+                collection.name,
+                collection.source,
+                Option::<FileMetaId>::None
+            ],
+            |row| row.get(0),
+        )?;
+        Ok(id)
     }
 
     /// Import multiple collections into the archive.
@@ -51,7 +67,7 @@ where
     }
 }
 
-/// Represents a file metadata that is not yet synced to the database.
+/// Represents a collection that is not yet synced to the database.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsyncCollection {
     pub name: String,

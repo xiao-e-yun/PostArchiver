@@ -1,5 +1,6 @@
 use std::{collections::HashMap, hash::Hash};
 
+use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::{
@@ -19,44 +20,39 @@ where
     /// # Errors
     ///
     /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::importer::UnsyncFileMeta;
-    /// # use post_archiver::PostId;
-    /// # use std::collections::HashMap;
-    /// fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), rusqlite::Error> {
-    ///     let file_meta = UnsyncFileMeta {
-    ///         filename: "image.jpg".to_string(),
-    ///         mime: "image/jpeg".to_string(),
-    ///         extra: HashMap::new(),
-    ///         data: (),
-    ///     };
-    ///     let meta = manager.import_file_meta(post_id, &file_meta)?;
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn import_file_meta<U>(
         &self,
         post: PostId,
         file_meta: &UnsyncFileMeta<U>,
     ) -> Result<FileMetaId, rusqlite::Error> {
-        match self.find_file_meta(post, &file_meta.filename)? {
-            Some(id) => {
-                // mime should not change
-                self.set_file_meta_extra(id, file_meta.extra.clone())?;
-                Ok(id)
-            }
-            None => self.add_file_meta(
-                post,
-                file_meta.filename.clone(),
-                file_meta.mime.clone(),
-                file_meta.extra.clone(),
-            ),
+        // find
+        let mut find_stmt = self
+            .conn()
+            .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
+        if let Some(id) = find_stmt
+            .query_row(params![post, file_meta.filename], |row| {
+                row.get::<_, FileMetaId>(0)
+            })
+            .optional()?
+        {
+            // update extra
+            self.bind(id).set_extra(file_meta.extra.clone())?;
+            return Ok(id);
         }
+
+        // insert
+        let mut ins_stmt = self.conn().prepare_cached(
+            "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
+        )?;
+        ins_stmt.query_row(
+            params![
+                post,
+                file_meta.filename,
+                file_meta.mime,
+                serde_json::to_string(&file_meta.extra).unwrap()
+            ],
+            |row| row.get(0),
+        )
     }
 }
 
