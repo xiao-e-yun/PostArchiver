@@ -1,16 +1,27 @@
 use rusqlite::params;
 
-use crate::{manager::binded::Binded, manager::PostArchiverConnection, PlatformId, PostId, TagId};
+use crate::{
+    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, Platform,
+    PlatformId, PostId, TagId,
+};
 
 //=============================================================
 // Update / Delete
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
+    /// Get this platform's current data from the database.
+    pub fn value(&self) -> Result<Platform, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM platforms WHERE id = ?")?;
+        stmt.query_row([self.id()], Platform::from_row)
+    }
+
     /// Remove this platform from the archive.
     ///
     /// This operation will also set the platform to UNKNOWN for all author aliases and posts.
     /// Tags associated with the platform will be deleted.
-    pub fn delete(&self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM platforms WHERE id = ?")?;

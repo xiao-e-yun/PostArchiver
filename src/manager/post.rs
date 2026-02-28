@@ -2,19 +2,27 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    manager::binded::Binded, manager::PostArchiverConnection, AuthorId, CollectionId, Comment,
-    Content, FileMetaId, PlatformId, PostId, TagId,
+    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, AuthorId,
+    CollectionId, Comment, Content, FileMetaId, PlatformId, Post, PostId, TagId,
 };
 
 //=============================================================
 // Update / Delete
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
+    /// Get this post's current data from the database.
+    pub fn value(&self) -> Result<Post, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM posts WHERE id = ?")?;
+        stmt.query_row([self.id()], Post::from_row)
+    }
+
     /// Remove this post from the archive.
     ///
     /// This also removes all associated file metadata, author associations,
     /// tag associations, and collection associations.
-    pub fn delete(&self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM posts WHERE id = ?")?;
@@ -103,6 +111,15 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
             .prepare_cached("UPDATE posts SET updated = ? WHERE id = ? AND updated < ?")?;
         stmt.execute(params![updated, self.id(), updated])?;
         Ok(())
+    }
+
+    /// List all file metadata IDs associated with this post.
+    pub fn list_file_metas(&self) -> Result<Vec<FileMetaId>, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT id FROM file_metas WHERE post = ?")?;
+        let rows = stmt.query_map([self.id()], |row| row.get(0))?;
+        rows.collect()
     }
 }
 

@@ -5,18 +5,27 @@ use serde_json::Value;
 
 use crate::{
     manager::{binded::Binded, PostArchiverConnection},
-    FileMetaId, Post, PostId,
+    utils::macros::AsTable,
+    FileMeta, FileMetaId, Post, PostId,
 };
 
 //=============================================================
 // Update / Delete
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
+    /// Get this file metadata's current data from the database.
+    pub fn value(&self) -> Result<FileMeta, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
+        stmt.query_row([self.id()], FileMeta::from_row)
+    }
+
     /// Remove this file metadata from the archive.
     ///
     /// This operation will also remove all associated thumb references.
     /// But it will not delete post.content related to this file.
-    pub fn delete(&self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM file_metas WHERE id = ?")?;

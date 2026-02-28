@@ -1,6 +1,9 @@
 use rusqlite::params;
 
-use crate::{manager::binded::Binded, manager::PostArchiverConnection, PlatformId, PostId, TagId};
+use crate::{
+    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, PlatformId,
+    PostId, Tag, TagId,
+};
 
 //=============================================================
 // FindTag trait (kept for importer compatibility)
@@ -40,10 +43,18 @@ impl FindTag for (&str, Option<PlatformId>) {
 // Update / Delete
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
+    /// Get this tag's current data from the database.
+    pub fn value(&self) -> Result<Tag, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM tags WHERE id = ?")?;
+        stmt.query_row([self.id()], Tag::from_row)
+    }
+
     /// Remove this tag from the archive.
     ///
     /// This will also remove all post-tag relationships, but will not delete the posts themselves.
-    pub fn delete(&self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<(), rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM tags WHERE id = ?")?;

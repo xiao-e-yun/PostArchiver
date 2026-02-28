@@ -3,17 +3,25 @@ use rusqlite::params;
 
 use crate::{
     manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, Alias,
-    AuthorId, FileMetaId, PlatformId, PostId,
+    Author, AuthorId, FileMetaId, PlatformId, PostId,
 };
 
 //=============================================================
 // Update / Delete
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
+    /// Get this author's current data from the database.
+    pub fn value(&self) -> Result<Author, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM authors WHERE id = ?")?;
+        stmt.query_row([self.id()], Author::from_row)
+    }
+
     /// Remove this author from the archive.
     ///
     /// This also removes all associated aliases and author-post relationships.
-    pub fn delete(&self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<(), rusqlite::Error> {
         self.conn()
             .execute("DELETE FROM authors WHERE id = ?", [self.id()])?;
         Ok(())

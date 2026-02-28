@@ -1,17 +1,26 @@
 use rusqlite::params;
 
 use crate::{
-    manager::binded::Binded, manager::PostArchiverConnection, CollectionId, FileMetaId, PostId,
+    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, Collection,
+    CollectionId, FileMetaId, PostId,
 };
 
 //=============================================================
 // Update / Delete
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
+    /// Get this collection's current data from the database.
+    pub fn value(&self) -> Result<Collection, rusqlite::Error> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM collections WHERE id = ?")?;
+        stmt.query_row([self.id()], Collection::from_row)
+    }
+
     /// Remove this collection from the archive.
     ///
     /// Also removes all collection-post relationships.
-    pub fn delete(&self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<(), rusqlite::Error> {
         self.conn()
             .execute("DELETE FROM collections WHERE id = ?", [self.id()])?;
         Ok(())
