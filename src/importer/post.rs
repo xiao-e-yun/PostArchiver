@@ -8,7 +8,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{
+        PostArchiverConnection, PostArchiverManager, UpdateAuthor, UpdateCollection, UpdatePost,
+    },
     AuthorId, CollectionId, Comment, Content, PlatformId, PostId, POSTS_PRE_CHUNK,
 };
 
@@ -55,10 +57,13 @@ where
         let id = match existing {
             Some(id) => {
                 let b = self.bind(id);
-                b.set_title(post.title)?;
-                b.set_platform(Some(post.platform))?;
-                b.set_published(post.published.unwrap_or_else(Utc::now))?;
-                b.set_updated_by_latest(post.updated.unwrap_or_else(Utc::now))?;
+                b.update(
+                    UpdatePost::default()
+                        .title(post.title)
+                        .platform(Some(post.platform))
+                        .published(post.published.unwrap_or_else(Utc::now))
+                        .updated_by_latest(post.updated.unwrap_or_else(Utc::now)),
+                )?;
                 id
             }
             None => {
@@ -98,10 +103,12 @@ where
                 })
             })
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
-        b.set_content(content)?;
-        b.set_thumb(thumb)?;
-
-        b.set_comments(post.comments)?;
+        b.update(
+            UpdatePost::default()
+                .content(content)
+                .thumb(thumb)
+                .comments(post.comments),
+        )?;
 
         let tags = import_many!(post.tags => import_tag);
         b.add_tags(&tags)?;
@@ -132,14 +139,17 @@ where
 
         if update_relation {
             post.authors.iter().try_for_each(|&author| {
-                let ab = self.bind(author);
-                ab.set_thumb_by_latest()?;
-                ab.set_updated_by_latest()
+                self.bind(author).update(
+                    UpdateAuthor::default()
+                        .thumb_by_latest()
+                        .updated_by_latest(),
+                )
             })?;
 
-            collections
-                .iter()
-                .try_for_each(|&collection| self.bind(collection).set_thumb_by_latest())?;
+            collections.iter().try_for_each(|&collection| {
+                self.bind(collection)
+                    .update(UpdateCollection::default().thumb_by_latest())
+            })?;
         }
 
         Ok((
@@ -182,14 +192,17 @@ where
 
         if update_relation {
             total_author.into_iter().try_for_each(|author| {
-                let ab = self.bind(author);
-                ab.set_thumb_by_latest()?;
-                ab.set_updated_by_latest()
+                self.bind(author).update(
+                    UpdateAuthor::default()
+                        .thumb_by_latest()
+                        .updated_by_latest(),
+                )
             })?;
 
-            total_collections
-                .into_iter()
-                .try_for_each(|collection| self.bind(collection).set_thumb_by_latest())?;
+            total_collections.into_iter().try_for_each(|collection| {
+                self.bind(collection)
+                    .update(UpdateCollection::default().thumb_by_latest())
+            })?;
         }
 
         Ok((results, total_files))

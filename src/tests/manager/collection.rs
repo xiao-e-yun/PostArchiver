@@ -3,7 +3,11 @@
 //! Tests for collection CRUD operations, property management,
 //! and collection-post relationships.
 
-use crate::{manager::PostArchiverManager, tests::helpers, CollectionId};
+use crate::{
+    manager::{PostArchiverManager, UpdateCollection, UpdatePost},
+    tests::helpers,
+    CollectionId,
+};
 use chrono::Utc;
 use std::collections::HashMap;
 
@@ -149,7 +153,7 @@ fn test_set_collection_name() {
 
     manager
         .bind(collection_id)
-        .set_name("Updated Name".into())
+        .update(UpdateCollection::default().name("Updated Name".into()))
         .unwrap();
 
     let collection = helpers::get_collection(&manager, collection_id).unwrap();
@@ -164,13 +168,16 @@ fn test_set_collection_source() {
     let new_source = Some("new_source".to_string());
     manager
         .bind(collection_id)
-        .set_source(new_source.clone())
+        .update(UpdateCollection::default().source(new_source.clone()))
         .unwrap();
 
     let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.source, new_source);
 
-    manager.bind(collection_id).set_source(None).unwrap();
+    manager
+        .bind(collection_id)
+        .update(UpdateCollection::default().source(None))
+        .unwrap();
     let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.source, None);
 }
@@ -198,13 +205,16 @@ fn test_set_collection_thumb() {
 
     manager
         .bind(collection_id)
-        .set_thumb(Some(file_meta_id))
+        .update(UpdateCollection::default().thumb(Some(file_meta_id)))
         .unwrap();
 
     let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.thumb, Some(file_meta_id));
 
-    manager.bind(collection_id).set_thumb(None).unwrap();
+    manager
+        .bind(collection_id)
+        .update(UpdateCollection::default().thumb(None))
+        .unwrap();
     let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.thumb, None);
 }
@@ -272,16 +282,28 @@ fn test_set_collection_thumb_by_latest() {
     );
 
     // Set post thumbnails
-    manager.bind(post1).set_thumb(Some(_fm1)).unwrap();
-    manager.bind(post2).set_thumb(Some(_fm2)).unwrap();
-    manager.bind(post3).set_thumb(Some(fm3)).unwrap();
+    manager
+        .bind(post1)
+        .update(UpdatePost::default().thumb(Some(_fm1)))
+        .unwrap();
+    manager
+        .bind(post2)
+        .update(UpdatePost::default().thumb(Some(_fm2)))
+        .unwrap();
+    manager
+        .bind(post3)
+        .update(UpdatePost::default().thumb(Some(fm3)))
+        .unwrap();
 
     // Associate posts with collection
     helpers::add_post_collections(&manager, post1, &[collection_id]);
     helpers::add_post_collections(&manager, post2, &[collection_id]);
     helpers::add_post_collections(&manager, post3, &[collection_id]);
 
-    manager.bind(collection_id).set_thumb_by_latest().unwrap();
+    manager
+        .bind(collection_id)
+        .update(UpdateCollection::default().thumb_by_latest())
+        .unwrap();
 
     let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.thumb, Some(fm3));

@@ -3,7 +3,7 @@ use std::hash::Hash;
 use rusqlite::{params, OptionalExtension};
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{PostArchiverConnection, PostArchiverManager, UpdateCollection},
     CollectionId, FileMetaId,
 };
 
@@ -30,7 +30,8 @@ where
             .query_row([&collection.source], |row| row.get::<_, CollectionId>(0))
             .optional()?
         {
-            self.bind(id).set_name(collection.name)?;
+            self.bind(id)
+                .update(UpdateCollection::default().name(collection.name))?;
             return Ok(id);
         }
 

@@ -3,7 +3,11 @@
 //! Tests for platform CRUD operations
 //! and platform-tag/post relationships.
 
-use crate::{manager::PostArchiverManager, tests::helpers, PlatformId};
+use crate::{
+    manager::{PostArchiverManager, UpdatePlatform},
+    tests::helpers,
+    PlatformId,
+};
 use chrono::Utc;
 
 // ── CRUD via helpers ──────────────────────────────────────────
@@ -77,7 +81,7 @@ fn test_set_platform_name() {
 
     manager
         .bind(platform_id)
-        .set_name("Updated Name".into())
+        .update(UpdatePlatform::default().name("Updated Name".into()))
         .unwrap();
 
     let platform = helpers::get_platform(&manager, platform_id);

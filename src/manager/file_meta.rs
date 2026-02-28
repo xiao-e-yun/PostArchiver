@@ -1,6 +1,5 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
@@ -8,6 +7,28 @@ use crate::{
     utils::macros::AsTable,
     FileMeta, FileMetaId, Post, PostId,
 };
+
+/// Builder for updating a file metadata's fields.
+///
+/// Fields left as `None` are not modified.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateFileMeta {
+    pub mime: Option<String>,
+    pub extra: Option<HashMap<String, Value>>,
+}
+
+impl UpdateFileMeta {
+    /// Set the MIME type.
+    pub fn mime(mut self, mime: String) -> Self {
+        self.mime = Some(mime);
+        self
+    }
+    /// Set the extra metadata.
+    pub fn extra(mut self, extra: HashMap<String, Value>) -> Self {
+        self.extra = Some(extra);
+        self
+    }
+}
 
 //=============================================================
 // Update / Delete
@@ -33,22 +54,38 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
         Ok(())
     }
 
-    /// Set the MIME type of this file metadata.
-    pub fn set_mime(&self, mime: String) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE file_metas SET mime = ? WHERE id = ?")?;
-        stmt.execute(params![mime, self.id()])?;
-        Ok(())
-    }
+    /// Apply a batch of field updates to this file metadata in a single SQL statement.
+    ///
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update(&self, update: UpdateFileMeta) -> Result<(), rusqlite::Error> {
+        use rusqlite::types::ToSql;
 
-    /// Set the extra metadata of this file metadata.
-    pub fn set_extra(&self, extra: HashMap<String, Value>) -> Result<(), rusqlite::Error> {
-        let extra_json = serde_json::to_string(&extra).unwrap();
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE file_metas SET extra = ? WHERE id = ?")?;
-        stmt.execute(params![extra_json, self.id()])?;
+        let extra_json = update.extra.map(|e| serde_json::to_string(&e).unwrap());
+
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
+
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
+
+        push!(update.mime, "mime = ?");
+        push!(extra_json, "extra = ?");
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        let id = self.id();
+        params.push(&id);
+
+        let sql = format!("UPDATE file_metas SET {} WHERE id = ?", sets.join(", "));
+        self.conn().execute(&sql, params.as_slice())?;
         Ok(())
     }
 

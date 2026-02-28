@@ -7,7 +7,11 @@ use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::{manager::PostArchiverManager, tests::helpers, FileMetaId, PostId};
+use crate::{
+    manager::{PostArchiverManager, UpdateFileMeta},
+    tests::helpers,
+    FileMetaId, PostId,
+};
 
 fn create_test_post(manager: &PostArchiverManager) -> PostId {
     let now = Utc::now();
@@ -139,7 +143,7 @@ fn test_set_file_meta_mime() {
 
     manager
         .bind(file_meta_id)
-        .set_mime("text/plain".into())
+        .update(UpdateFileMeta::default().mime("text/plain".into()))
         .unwrap();
 
     let fm = helpers::get_file_meta(&manager, file_meta_id);
@@ -165,7 +169,7 @@ fn test_set_file_meta_extra() {
 
     manager
         .bind(file_meta_id)
-        .set_extra(new_extra.clone())
+        .update(UpdateFileMeta::default().extra(new_extra.clone()))
         .unwrap();
 
     let fm = helpers::get_file_meta(&manager, file_meta_id);
@@ -307,7 +311,7 @@ fn test_update_extra_metadata_multiple_times() {
     extra1.insert("version".into(), Value::Number(1.into()));
     manager
         .bind(file_meta_id)
-        .set_extra(extra1.clone())
+        .update(UpdateFileMeta::default().extra(extra1.clone()))
         .unwrap();
 
     let fm = helpers::get_file_meta(&manager, file_meta_id);
@@ -318,7 +322,7 @@ fn test_update_extra_metadata_multiple_times() {
     extra2.insert("author".into(), Value::String("test_user".into()));
     manager
         .bind(file_meta_id)
-        .set_extra(extra2.clone())
+        .update(UpdateFileMeta::default().extra(extra2.clone()))
         .unwrap();
 
     let fm = helpers::get_file_meta(&manager, file_meta_id);
@@ -331,10 +335,14 @@ fn test_update_nonexistent_file_meta() {
     let fake_id = FileMetaId::new(99999);
 
     // Update operations should not fail for nonexistent IDs (they just affect 0 rows)
-    let mime_result = manager.bind(fake_id).set_mime("text/plain".into());
+    let mime_result = manager
+        .bind(fake_id)
+        .update(UpdateFileMeta::default().mime("text/plain".into()));
     assert!(mime_result.is_ok());
 
-    let extra_result = manager.bind(fake_id).set_extra(HashMap::new());
+    let extra_result = manager
+        .bind(fake_id)
+        .update(UpdateFileMeta::default().extra(HashMap::new()));
     assert!(extra_result.is_ok());
 }
 

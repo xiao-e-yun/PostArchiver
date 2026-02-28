@@ -4,7 +4,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{PostArchiverConnection, PostArchiverManager, UpdateFileMeta},
     FileMetaId, PostId,
 };
 
@@ -36,7 +36,8 @@ where
             .optional()?
         {
             // update extra
-            self.bind(id).set_extra(file_meta.extra.clone())?;
+            self.bind(id)
+                .update(UpdateFileMeta::default().extra(file_meta.extra.clone()))?;
             return Ok(id);
         }
 

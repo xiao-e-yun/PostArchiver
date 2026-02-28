@@ -1,9 +1,30 @@
-use rusqlite::params;
-
 use crate::{
     manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, PlatformId,
     PostId, Tag, TagId,
 };
+
+/// Builder for updating a tag's fields.
+///
+/// Fields left as `None` are not modified.
+/// For nullable columns (platform), use `Some(None)` to clear the value.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateTag {
+    pub name: Option<String>,
+    pub platform: Option<Option<PlatformId>>,
+}
+
+impl UpdateTag {
+    /// Set the tag's name.
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+    /// Set or clear the tag's platform.
+    pub fn platform(mut self, platform: Option<PlatformId>) -> Self {
+        self.platform = Some(platform);
+        self
+    }
+}
 
 //=============================================================
 // FindTag trait (kept for importer compatibility)
@@ -62,21 +83,36 @@ impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
         Ok(())
     }
 
-    /// Set this tag's name.
-    pub fn set_name(&self, name: String) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE tags SET name = ? WHERE id = ?")?;
-        stmt.execute(params![name, self.id()])?;
-        Ok(())
-    }
+    /// Apply a batch of field updates to this tag in a single SQL statement.
+    ///
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update(&self, update: UpdateTag) -> Result<(), rusqlite::Error> {
+        use rusqlite::types::ToSql;
 
-    /// Set this tag's platform.
-    pub fn set_platform(&self, platform: Option<PlatformId>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE tags SET platform = ? WHERE id = ?")?;
-        stmt.execute(params![platform, self.id()])?;
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
+
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
+
+        push!(update.name, "name = ?");
+        push!(update.platform, "platform = ?");
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        let id = self.id();
+        params.push(&id);
+
+        let sql = format!("UPDATE tags SET {} WHERE id = ?", sets.join(", "));
+        self.conn().execute(&sql, params.as_slice())?;
         Ok(())
     }
 }

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    manager::{PostArchiverConnection, PostArchiverManager, UpdateAuthor},
     AuthorId, PlatformId,
 };
 
@@ -45,11 +45,11 @@ where
         match id {
             Some(id) => {
                 let b = self.bind(id);
-                b.set_name(author.name)?;
-
+                let mut upd = UpdateAuthor::default().name(author.name);
                 if let Some(updated) = author.updated {
-                    b.set_updated(updated)?;
+                    upd = upd.updated(updated);
                 }
+                b.update(upd)?;
 
                 b.add_aliases(aliases)?;
 

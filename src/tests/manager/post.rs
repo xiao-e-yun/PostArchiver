@@ -3,8 +3,9 @@
 //! Tests for post Binded operations: update/delete and relationship management.
 
 use crate::{
-    manager::PostArchiverManager, tests::helpers, AuthorId, CollectionId, Comment, Content, PostId,
-    TagId,
+    manager::{PostArchiverManager, UpdatePost},
+    tests::helpers,
+    AuthorId, CollectionId, Comment, Content, PostId, TagId,
 };
 use chrono::Utc;
 use std::collections::HashMap;
@@ -169,7 +170,7 @@ fn test_set_post_title() {
 
     manager
         .bind(post_id)
-        .set_title("Updated Title".into())
+        .update(UpdatePost::default().title("Updated Title".into()))
         .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
@@ -192,14 +193,17 @@ fn test_set_post_source() {
     let new_source = Some("https://example.com/new-source".to_string());
     manager
         .bind(post_id)
-        .set_source(new_source.clone())
+        .update(UpdatePost::default().source(new_source.clone()))
         .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.source, new_source);
 
     // Set to None
-    manager.bind(post_id).set_source(None).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().source(None))
+        .unwrap();
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.source, None);
 }
@@ -220,13 +224,16 @@ fn test_set_post_platform() {
 
     manager
         .bind(post_id)
-        .set_platform(Some(platform_id))
+        .update(UpdatePost::default().platform(Some(platform_id)))
         .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.platform, Some(platform_id));
 
-    manager.bind(post_id).set_platform(None).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().platform(None))
+        .unwrap();
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.platform, None);
 }
@@ -245,7 +252,10 @@ fn test_set_post_published() {
     );
 
     let new_published = Utc::now();
-    manager.bind(post_id).set_published(new_published).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().published(new_published))
+        .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     let diff = (post.published - new_published).num_milliseconds().abs();
@@ -266,7 +276,10 @@ fn test_set_post_updated() {
     );
 
     let new_updated = Utc::now();
-    manager.bind(post_id).set_updated(new_updated).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().updated(new_updated))
+        .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     let diff = (post.updated - new_updated).num_milliseconds().abs();
@@ -290,7 +303,7 @@ fn test_set_post_updated_by_latest() {
 
     manager
         .bind(post_id)
-        .set_updated_by_latest(new_time)
+        .update(UpdatePost::default().updated_by_latest(new_time))
         .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
@@ -300,7 +313,7 @@ fn test_set_post_updated_by_latest() {
     let even_older = old_time - chrono::Duration::hours(1);
     manager
         .bind(post_id)
-        .set_updated_by_latest(even_older)
+        .update(UpdatePost::default().updated_by_latest(even_older))
         .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
@@ -326,7 +339,10 @@ fn test_set_post_content() {
         Content::Text("This is test content.".to_string()),
     ];
 
-    manager.bind(post_id).set_content(content.clone()).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().content(content.clone()))
+        .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content, content);
@@ -360,7 +376,7 @@ fn test_set_post_comments() {
 
     manager
         .bind(post_id)
-        .set_comments(comments.clone())
+        .update(UpdatePost::default().comments(comments.clone()))
         .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
@@ -388,12 +404,18 @@ fn test_set_post_thumb() {
         HashMap::new(),
     );
 
-    manager.bind(post_id).set_thumb(Some(file_meta_id)).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().thumb(Some(file_meta_id)))
+        .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.thumb, Some(file_meta_id));
 
-    manager.bind(post_id).set_thumb(None).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().thumb(None))
+        .unwrap();
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.thumb, None);
 }
@@ -698,7 +720,10 @@ fn test_post_content_with_files() {
         Content::Text("What do you think?".into()),
     ];
 
-    manager.bind(post_id).set_content(content.clone()).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().content(content.clone()))
+        .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content, content);
@@ -717,8 +742,14 @@ fn test_empty_post_content_and_comments() {
         Some(now),
     );
 
-    manager.bind(post_id).set_content(vec![]).unwrap();
-    manager.bind(post_id).set_comments(vec![]).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().content(vec![]))
+        .unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().comments(vec![]))
+        .unwrap();
 
     let post = helpers::get_post(&manager, post_id);
     assert_eq!(post.content, vec![]);

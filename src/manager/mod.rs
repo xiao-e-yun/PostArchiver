@@ -12,11 +12,22 @@ pub mod binded;
 pub use binded::*;
 
 pub mod author;
+pub use author::{AuthorThumb, AuthorUpdated, UpdateAuthor};
+
 pub mod collection;
+pub use collection::{CollectionThumb, UpdateCollection};
+
 pub mod file_meta;
+pub use file_meta::UpdateFileMeta;
+
 pub mod platform;
+pub use platform::UpdatePlatform;
+
 pub mod post;
+pub use post::{PostUpdated, UpdatePost};
+
 pub mod tag;
+pub use tag::UpdateTag;
 
 /// Core manager type for post archive operations with SQLite backend
 ///

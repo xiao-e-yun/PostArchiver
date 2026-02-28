@@ -6,6 +6,79 @@ use crate::{
     CollectionId, Comment, Content, FileMetaId, PlatformId, Post, PostId, TagId,
 };
 
+/// Specifies how to update a post's `updated` timestamp.
+#[derive(Debug, Clone)]
+pub enum PostUpdated {
+    /// Unconditionally set to this value.
+    Set(DateTime<Utc>),
+    /// Set to this value only if it is more recent than the current value.
+    ByLatest(DateTime<Utc>),
+}
+
+/// Builder for updating a post's fields.
+///
+/// Fields left as `None` are not modified.
+/// For nullable columns (source, platform, thumb), use `Some(None)` to clear the value.
+#[derive(Debug, Clone, Default)]
+pub struct UpdatePost {
+    pub title: Option<String>,
+    pub source: Option<Option<String>>,
+    pub platform: Option<Option<PlatformId>>,
+    pub thumb: Option<Option<FileMetaId>>,
+    pub content: Option<Vec<Content>>,
+    pub comments: Option<Vec<Comment>>,
+    pub published: Option<DateTime<Utc>>,
+    pub updated: Option<PostUpdated>,
+}
+
+impl UpdatePost {
+    /// Set the title.
+    pub fn title(mut self, title: String) -> Self {
+        self.title = Some(title);
+        self
+    }
+    /// Set or clear the source URL.
+    pub fn source(mut self, source: Option<String>) -> Self {
+        self.source = Some(source);
+        self
+    }
+    /// Set or clear the platform.
+    pub fn platform(mut self, platform: Option<PlatformId>) -> Self {
+        self.platform = Some(platform);
+        self
+    }
+    /// Set or clear the thumbnail.
+    pub fn thumb(mut self, thumb: Option<FileMetaId>) -> Self {
+        self.thumb = Some(thumb);
+        self
+    }
+    /// Replace the content list.
+    pub fn content(mut self, content: Vec<Content>) -> Self {
+        self.content = Some(content);
+        self
+    }
+    /// Replace the comments list.
+    pub fn comments(mut self, comments: Vec<Comment>) -> Self {
+        self.comments = Some(comments);
+        self
+    }
+    /// Set the published timestamp.
+    pub fn published(mut self, published: DateTime<Utc>) -> Self {
+        self.published = Some(published);
+        self
+    }
+    /// Unconditionally set the updated timestamp.
+    pub fn updated(mut self, updated: DateTime<Utc>) -> Self {
+        self.updated = Some(PostUpdated::Set(updated));
+        self
+    }
+    /// Set the updated timestamp only if `updated` is more recent than the stored value.
+    pub fn updated_by_latest(mut self, updated: DateTime<Utc>) -> Self {
+        self.updated = Some(PostUpdated::ByLatest(updated));
+        self
+    }
+}
+
 //=============================================================
 // Update / Delete
 //=============================================================
@@ -30,86 +103,57 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
         Ok(())
     }
 
-    /// Set this post's title.
-    pub fn set_title(&self, title: String) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET title = ? WHERE id = ?")?;
-        stmt.execute(params![title, self.id()])?;
-        Ok(())
-    }
+    /// Apply a batch of field updates to this post in a single SQL statement.
+    ///
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update(&self, update: UpdatePost) -> Result<(), rusqlite::Error> {
+        use rusqlite::types::ToSql;
 
-    /// Set this post's source URL.
-    pub fn set_source(&self, source: Option<String>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET source = ? WHERE id = ?")?;
-        stmt.execute(params![source, self.id()])?;
-        Ok(())
-    }
+        // Pre-serialize JSON fields so they outlive the params slice.
+        let content_json = update.content.map(|c| serde_json::to_string(&c).unwrap());
+        let comments_json = update.comments.map(|c| serde_json::to_string(&c).unwrap());
 
-    /// Set this post's platform.
-    pub fn set_platform(&self, platform: Option<PlatformId>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET platform = ? WHERE id = ?")?;
-        stmt.execute(params![platform, self.id()])?;
-        Ok(())
-    }
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
 
-    /// Set this post's thumbnail.
-    pub fn set_thumb(&self, thumb: Option<FileMetaId>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET thumb = ? WHERE id = ?")?;
-        stmt.execute(params![thumb, self.id()])?;
-        Ok(())
-    }
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
 
-    /// Set this post's content.
-    pub fn set_content(&self, content: Vec<Content>) -> Result<(), rusqlite::Error> {
-        let content = serde_json::to_string(&content).unwrap();
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET content = ? WHERE id = ?")?;
-        stmt.execute(params![content, self.id()])?;
-        Ok(())
-    }
+        push!(update.title, "title = ?");
+        push!(update.source, "source = ?");
+        push!(update.platform, "platform = ?");
+        push!(update.thumb, "thumb = ?");
+        push!(content_json, "content = ?");
+        push!(comments_json, "comments = ?");
+        push!(update.published, "published = ?");
 
-    /// Set this post's comments.
-    pub fn set_comments(&self, comments: Vec<Comment>) -> Result<(), rusqlite::Error> {
-        let comments = serde_json::to_string(&comments).unwrap();
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET comments = ? WHERE id = ?")?;
-        stmt.execute(params![comments, self.id()])?;
-        Ok(())
-    }
+        match &update.updated {
+            Some(PostUpdated::Set(t)) => {
+                sets.push("updated = ?");
+                params.push(t);
+            }
+            Some(PostUpdated::ByLatest(t)) => {
+                sets.push("updated = MAX(updated, ?)");
+                params.push(t);
+            }
+            None => {}
+        }
 
-    /// Set this post's published timestamp.
-    pub fn set_published(&self, published: DateTime<Utc>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET published = ? WHERE id = ?")?;
-        stmt.execute(params![published, self.id()])?;
-        Ok(())
-    }
+        if sets.is_empty() {
+            return Ok(());
+        }
 
-    /// Set this post's updated timestamp.
-    pub fn set_updated(&self, updated: DateTime<Utc>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET updated = ? WHERE id = ?")?;
-        stmt.execute(params![updated, self.id()])?;
-        Ok(())
-    }
+        let id = self.id();
+        params.push(&id);
 
-    /// Set this post's updated timestamp only if the new value is more recent.
-    pub fn set_updated_by_latest(&self, updated: DateTime<Utc>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE posts SET updated = ? WHERE id = ? AND updated < ?")?;
-        stmt.execute(params![updated, self.id(), updated])?;
+        let sql = format!("UPDATE posts SET {} WHERE id = ?", sets.join(", "));
+        self.conn().execute(&sql, params.as_slice())?;
         Ok(())
     }
 

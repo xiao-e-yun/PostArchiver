@@ -3,7 +3,11 @@
 //! Tests for author CRUD operations, alias management,
 //! and author-post relationships.
 
-use crate::{manager::PostArchiverManager, tests::helpers, AuthorId, PlatformId};
+use crate::{
+    manager::{PostArchiverManager, UpdateAuthor, UpdatePost},
+    tests::helpers,
+    AuthorId, PlatformId,
+};
 use chrono::Utc;
 
 // ── CRUD via helpers ──────────────────────────────────────────
@@ -97,7 +101,7 @@ fn test_set_author_name() {
 
     manager
         .bind(author_id)
-        .set_name("Updated Name".into())
+        .update(UpdateAuthor::default().name("Updated Name".into()))
         .unwrap();
 
     let author = helpers::get_author(&manager, author_id);
@@ -111,7 +115,10 @@ fn test_set_author_updated() {
     let author_id = helpers::add_author(&manager, "Test Author".into(), Some(now));
 
     let new_updated = Utc::now();
-    manager.bind(author_id).set_updated(new_updated).unwrap();
+    manager
+        .bind(author_id)
+        .update(UpdateAuthor::default().updated(new_updated))
+        .unwrap();
 
     let author = helpers::get_author(&manager, author_id);
     let diff = (author.updated - new_updated).num_milliseconds().abs();
@@ -141,13 +148,16 @@ fn test_set_author_thumb() {
 
     manager
         .bind(author_id)
-        .set_thumb(Some(file_meta_id))
+        .update(UpdateAuthor::default().thumb(Some(file_meta_id)))
         .unwrap();
 
     let author = helpers::get_author(&manager, author_id);
     assert_eq!(author.thumb, Some(file_meta_id));
 
-    manager.bind(author_id).set_thumb(None).unwrap();
+    manager
+        .bind(author_id)
+        .update(UpdateAuthor::default().thumb(None))
+        .unwrap();
     let author = helpers::get_author(&manager, author_id);
     assert_eq!(author.thumb, None);
 }
@@ -175,10 +185,16 @@ fn test_set_author_thumb_by_latest() {
     );
 
     // Set post thumb and associate author
-    manager.bind(post_id).set_thumb(Some(file_meta_id)).unwrap();
+    manager
+        .bind(post_id)
+        .update(UpdatePost::default().thumb(Some(file_meta_id)))
+        .unwrap();
     helpers::add_post_authors(&manager, post_id, &[author_id]);
 
-    manager.bind(author_id).set_thumb_by_latest().unwrap();
+    manager
+        .bind(author_id)
+        .update(UpdateAuthor::default().thumb_by_latest())
+        .unwrap();
 
     let author = helpers::get_author(&manager, author_id);
     assert_eq!(author.thumb, Some(file_meta_id));
@@ -201,7 +217,10 @@ fn test_set_author_updated_by_latest() {
     );
     helpers::add_post_authors(&manager, post_id, &[author_id]);
 
-    manager.bind(author_id).set_updated_by_latest().unwrap();
+    manager
+        .bind(author_id)
+        .update(UpdateAuthor::default().updated_by_latest())
+        .unwrap();
 
     let author = helpers::get_author(&manager, author_id);
     let diff = (author.updated - later_time).num_milliseconds().abs();

@@ -1,9 +1,23 @@
-use rusqlite::params;
-
 use crate::{
     manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, Platform,
     PlatformId, PostId, TagId,
 };
+
+/// Builder for updating a platform's fields.
+///
+/// Fields left as `None` are not modified.
+#[derive(Debug, Clone, Default)]
+pub struct UpdatePlatform {
+    pub name: Option<String>,
+}
+
+impl UpdatePlatform {
+    /// Set the platform's name.
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+}
 
 //=============================================================
 // Update / Delete
@@ -29,12 +43,35 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
         Ok(())
     }
 
-    /// Set this platform's name.
-    pub fn set_name(&self, name: String) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE platforms SET name = ? WHERE id = ?")?;
-        stmt.execute(params![name, self.id()])?;
+    /// Apply a batch of field updates to this platform in a single SQL statement.
+    ///
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update(&self, update: UpdatePlatform) -> Result<(), rusqlite::Error> {
+        use rusqlite::types::ToSql;
+
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
+
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
+
+        push!(update.name, "name = ?");
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        let id = self.id();
+        params.push(&id);
+
+        let sql = format!("UPDATE platforms SET {} WHERE id = ?", sets.join(", "));
+        self.conn().execute(&sql, params.as_slice())?;
         Ok(())
     }
 }

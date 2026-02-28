@@ -6,6 +6,62 @@ use crate::{
     Author, AuthorId, FileMetaId, PlatformId, PostId,
 };
 
+/// Specifies how to update an author's thumbnail.
+#[derive(Debug, Clone)]
+pub enum AuthorThumb {
+    /// Set to an explicit value (or clear with `None`).
+    Set(Option<FileMetaId>),
+    /// Set to the thumb of the most recently updated post associated with this author.
+    ByLatest,
+}
+
+/// Specifies how to update an author's `updated` timestamp.
+#[derive(Debug, Clone)]
+pub enum AuthorUpdated {
+    /// Unconditionally set to this value.
+    Set(DateTime<Utc>),
+    /// Set to the `updated` time of the most recently updated post associated with this author.
+    ByLatest,
+}
+
+/// Builder for updating an author's fields.
+///
+/// Fields left as `None` are not modified.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateAuthor {
+    pub name: Option<String>,
+    pub thumb: Option<AuthorThumb>,
+    pub updated: Option<AuthorUpdated>,
+}
+
+impl UpdateAuthor {
+    /// Set the author's name.
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+    /// Set or clear the author's thumbnail.
+    pub fn thumb(mut self, thumb: Option<FileMetaId>) -> Self {
+        self.thumb = Some(AuthorThumb::Set(thumb));
+        self
+    }
+    /// Set the author's thumbnail to the latest post's thumb.
+    pub fn thumb_by_latest(mut self) -> Self {
+        self.thumb = Some(AuthorThumb::ByLatest);
+        self
+    }
+    /// Unconditionally set the updated timestamp.
+    pub fn updated(mut self, updated: DateTime<Utc>) -> Self {
+        self.updated = Some(AuthorUpdated::Set(updated));
+        self
+    }
+    /// Set the updated timestamp to the latest associated post's `updated` time.
+    pub fn updated_by_latest(mut self) -> Self {
+        self.updated = Some(AuthorUpdated::ByLatest);
+        self
+    }
+}
+
 //=============================================================
 // Update / Delete
 //=============================================================
@@ -27,48 +83,59 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
         Ok(())
     }
 
-    /// Set this author's name.
-    pub fn set_name(&self, name: String) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET name = ? WHERE id = ?")?;
-        stmt.execute(params![name, self.id()])?;
-        Ok(())
-    }
+    /// Apply a batch of field updates to this author in a single SQL statement.
+    ///
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update(&self, update: UpdateAuthor) -> Result<(), rusqlite::Error> {
+        use rusqlite::types::ToSql;
 
-    /// Set this author's thumbnail.
-    pub fn set_thumb(&self, thumb: Option<FileMetaId>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET thumb = ? WHERE id = ?")?;
-        stmt.execute(params![thumb, self.id()])?;
-        Ok(())
-    }
+        let id = self.id();
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
 
-    /// Set this author's thumb to the latest post's thumb that has a non-null thumb.
-    pub fn set_thumb_by_latest(&self) -> Result<(), rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "UPDATE authors SET thumb = (SELECT thumb FROM posts WHERE id IN (SELECT post FROM author_posts WHERE author = ?) AND thumb IS NOT NULL ORDER BY updated DESC LIMIT 1) WHERE id = ?",
-        )?;
-        stmt.execute(params![self.id(), self.id()])?;
-        Ok(())
-    }
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
 
-    /// Set this author's updated timestamp.
-    pub fn set_updated(&self, updated: DateTime<Utc>) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE authors SET updated = ? WHERE id = ?")?;
-        stmt.execute(params![updated, self.id()])?;
-        Ok(())
-    }
+        push!(update.name, "name = ?");
 
-    /// Set this author's updated timestamp to the latest post's updated time.
-    pub fn set_updated_by_latest(&self) -> Result<(), rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "UPDATE authors SET updated = (SELECT updated FROM posts WHERE id IN (SELECT post FROM author_posts WHERE author = ?) ORDER BY updated DESC LIMIT 1) WHERE id = ?",
-        )?;
-        stmt.execute(params![self.id(), self.id()])?;
+        match &update.thumb {
+            Some(AuthorThumb::Set(v)) => {
+                sets.push("thumb = ?");
+                params.push(v);
+            }
+            Some(AuthorThumb::ByLatest) => {
+                sets.push("thumb = (SELECT thumb FROM posts WHERE id IN (SELECT post FROM author_posts WHERE author = ?) AND thumb IS NOT NULL ORDER BY updated DESC LIMIT 1)");
+                params.push(&id);
+            }
+            None => {}
+        }
+
+        match &update.updated {
+            Some(AuthorUpdated::Set(v)) => {
+                sets.push("updated = ?");
+                params.push(v);
+            }
+            Some(AuthorUpdated::ByLatest) => {
+                sets.push("updated = (SELECT updated FROM posts WHERE id IN (SELECT post FROM author_posts WHERE author = ?) ORDER BY updated DESC LIMIT 1)");
+                params.push(&id);
+            }
+            None => {}
+        }
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        params.push(&id);
+
+        let sql = format!("UPDATE authors SET {} WHERE id = ?", sets.join(", "));
+        self.conn().execute(&sql, params.as_slice())?;
         Ok(())
     }
 }

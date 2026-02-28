@@ -3,7 +3,11 @@
 //! Tests for tag CRUD operations, platform associations,
 //! and tag-post relationships.
 
-use crate::{manager::PostArchiverManager, tests::helpers, TagId};
+use crate::{
+    manager::{PostArchiverManager, UpdateTag},
+    tests::helpers,
+    TagId,
+};
 use chrono::Utc;
 
 // ── CRUD via helpers ──────────────────────────────────────────
@@ -151,7 +155,7 @@ fn test_set_tag_name() {
 
     manager
         .bind(tag_id)
-        .set_name("updated_name".into())
+        .update(UpdateTag::default().name("updated_name".into()))
         .unwrap();
 
     let tag = helpers::get_tag(&manager, tag_id).unwrap();
@@ -165,12 +169,18 @@ fn test_set_tag_platform() {
     let platform2 = helpers::add_platform(&manager, "Platform 2".into());
     let tag_id = helpers::add_tag(&manager, "test_tag".into(), Some(platform1));
 
-    manager.bind(tag_id).set_platform(Some(platform2)).unwrap();
+    manager
+        .bind(tag_id)
+        .update(UpdateTag::default().platform(Some(platform2)))
+        .unwrap();
 
     let tag = helpers::get_tag(&manager, tag_id).unwrap();
     assert_eq!(tag.platform, Some(platform2));
 
-    manager.bind(tag_id).set_platform(None).unwrap();
+    manager
+        .bind(tag_id)
+        .update(UpdateTag::default().platform(None))
+        .unwrap();
     let tag = helpers::get_tag(&manager, tag_id).unwrap();
     assert_eq!(tag.platform, None);
 }
