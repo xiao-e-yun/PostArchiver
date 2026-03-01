@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager, UpdateAuthor},
@@ -20,15 +20,9 @@ where
     pub fn import_author(&self, author: UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
         // find by aliases
         let id = {
-            let mut stmt = self.conn().prepare_cached(
-                "SELECT target FROM author_aliases WHERE platform = ? AND source = ?",
-            )?;
             let mut found: Option<AuthorId> = None;
             for alias in &author.aliases {
-                if let Some(id) = stmt
-                    .query_row(params![alias.platform, alias.source], |row| row.get(0))
-                    .optional()?
-                {
+                if let Some(id) = self.find_author_by_alias(&alias.source, alias.platform)? {
                     found = Some(id);
                     break;
                 }

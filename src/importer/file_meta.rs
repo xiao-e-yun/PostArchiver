@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs::File, hash::Hash, path::PathBuf};
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
@@ -26,15 +26,7 @@ where
         file_meta: &UnsyncFileMeta<U>,
     ) -> Result<FileMetaId, rusqlite::Error> {
         // find
-        let mut find_stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
-        if let Some(id) = find_stmt
-            .query_row(params![post, file_meta.filename], |row| {
-                row.get::<_, FileMetaId>(0)
-            })
-            .optional()?
-        {
+        if let Some(id) = self.find_file_meta(post, &file_meta.filename)? {
             // update extra
             self.bind(id)
                 .update(UpdateFileMeta::default().extra(file_meta.extra.clone()))?;

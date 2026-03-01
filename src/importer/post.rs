@@ -5,7 +5,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 use crate::{
     manager::{
@@ -46,13 +46,7 @@ where
         }
 
         // find post by source
-        let existing: Option<PostId> = {
-            let mut stmt = self
-                .conn()
-                .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
-            stmt.query_row([&post.source], |row| row.get(0))
-                .optional()?
-        };
+        let existing: Option<PostId> = self.find_post_by_source(&post.source)?;
 
         let id = match existing {
             Some(id) => {

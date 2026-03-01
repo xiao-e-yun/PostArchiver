@@ -1,5 +1,3 @@
-use rusqlite::OptionalExtension;
-
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     PlatformId,
@@ -18,10 +16,7 @@ where
     /// Returns `rusqlite::Error` if there was an error accessing the database.
     pub fn import_platform(&self, platform: String) -> Result<PlatformId, rusqlite::Error> {
         // find
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM platforms WHERE name = ?")?;
-        if let Some(id) = stmt.query_row([&platform], |row| row.get(0)).optional()? {
+        if let Some(id) = self.find_platform(&platform)? {
             return Ok(id);
         }
 

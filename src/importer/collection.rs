@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager, UpdateCollection},
@@ -23,13 +23,7 @@ where
         collection: UnsyncCollection,
     ) -> Result<CollectionId, rusqlite::Error> {
         // find by source
-        let mut find_stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM collections WHERE source = ?")?;
-        if let Some(id) = find_stmt
-            .query_row([&collection.source], |row| row.get::<_, CollectionId>(0))
-            .optional()?
-        {
+        if let Some(id) = self.find_collection_by_source(&collection.source)? {
             self.bind(id)
                 .update(UpdateCollection::default().name(collection.name))?;
             return Ok(id);
