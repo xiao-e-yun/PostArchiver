@@ -18,7 +18,7 @@ pub mod collection;
 pub use collection::{CollectionThumb, UpdateCollection};
 
 pub mod file_meta;
-pub use file_meta::UpdateFileMeta;
+pub use file_meta::{UpdateFileMeta, WritableFileMeta};
 
 pub mod platform;
 pub use platform::UpdatePlatform;

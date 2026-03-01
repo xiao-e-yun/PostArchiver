@@ -1,11 +1,11 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, fs::File, hash::Hash};
 
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager, UpdateFileMeta},
-    FileMetaId, PostId,
+    manager::{PostArchiverConnection, PostArchiverManager, UpdateFileMeta, WritableFileMeta},
+    FileMetaId, Post, PostId,
 };
 
 impl<T> PostArchiverManager<T>
@@ -54,6 +54,43 @@ where
             ],
             |row| row.get(0),
         )
+    }
+
+    /// Create or update a file metadata entry in the archive, and write `file_meta.data` to disk.
+    ///
+    /// Behaves like [`import_file_meta`](Self::import_file_meta) for the database entry, then
+    /// writes the content of `file_meta.data` to
+    /// `<archive_path>/<post_dir>/<filename>`, creating intermediate directories as needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn import_file_meta_with_content<U>(
+        &self,
+        post: PostId,
+        file_meta: &UnsyncFileMeta<U>,
+    ) -> Result<FileMetaId, rusqlite::Error>
+    where
+        U: WritableFileMeta,
+    {
+        let id = self.import_file_meta(post, file_meta)?;
+
+        let path = self
+            .path
+            .join(Post::directory(post))
+            .join(&file_meta.filename);
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("Failed to create directories for file content");
+        }
+
+        let mut file = File::create(&path).expect("Failed to create file for writing file content");
+        file_meta
+            .data
+            .write_to_file(&mut file)
+            .expect("Failed to write file content");
+
+        Ok(id)
     }
 }
 
