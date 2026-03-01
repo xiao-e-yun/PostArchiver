@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, fs::File, io::Write, path::PathBuf};
 
 use serde_json::Value;
 
@@ -11,13 +11,24 @@ use crate::{
 /// Builder for updating a file metadata's fields.
 ///
 /// Fields left as `None` are not modified.
-#[derive(Debug, Clone, Default)]
-pub struct UpdateFileMeta {
+#[derive(Debug, Clone)]
+pub struct UpdateFileMeta<T> {
     pub mime: Option<String>,
     pub extra: Option<HashMap<String, Value>>,
+    pub content: Option<T>,
 }
 
-impl UpdateFileMeta {
+impl Default for UpdateFileMeta<()> {
+    fn default() -> Self {
+        UpdateFileMeta {
+            mime: None,
+            extra: None,
+            content: None,
+        }
+    }
+}
+
+impl<T> UpdateFileMeta<T> {
     /// Set the MIME type.
     pub fn mime(mut self, mime: String) -> Self {
         self.mime = Some(mime);
@@ -27,6 +38,80 @@ impl UpdateFileMeta {
     pub fn extra(mut self, extra: HashMap<String, Value>) -> Self {
         self.extra = Some(extra);
         self
+    }
+    pub fn content<U: WritableFileMeta>(self, content: U) -> UpdateFileMeta<U> {
+        UpdateFileMeta {
+            content: Some(content),
+            mime: self.mime,
+            extra: self.extra,
+        }
+    }
+}
+
+impl UpdateFileMeta<()> {
+    /// Convert this update to a version without content, for use in the `update` method.
+    pub fn new() -> UpdateFileMeta<()> {
+        UpdateFileMeta {
+            content: None,
+            mime: None,
+            extra: None,
+        }
+    }
+}
+
+pub trait WritableFileMeta {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()>;
+}
+
+macro_rules! can_be_content {
+    ($t:ty) => {
+        impl UpdateFileMeta<$t> {
+            pub fn new(content: $t) -> Self {
+                Self {
+                    content: Some(content),
+                    mime: None,
+                    extra: None,
+                }
+            }
+        }
+    };
+}
+
+can_be_content!(File);
+impl WritableFileMeta for File {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        let mut src_file = self.try_clone()?;
+        std::io::copy(&mut src_file, file)?;
+        file.sync_data()?;
+        Ok(())
+    }
+}
+
+can_be_content!(Vec<u8>);
+impl WritableFileMeta for Vec<u8> {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        file.write_all(self)?;
+        file.sync_data()?;
+        Ok(())
+    }
+}
+
+can_be_content!(PathBuf);
+impl WritableFileMeta for PathBuf {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        let mut src_file = File::open(self)?;
+        std::io::copy(&mut src_file, file)?;
+        file.sync_data()?;
+        Ok(())
+    }
+}
+
+can_be_content!(String);
+impl WritableFileMeta for String {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        file.write_all(self.as_bytes())?;
+        file.sync_data()?;
+        Ok(())
     }
 }
 
@@ -57,7 +142,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
     /// Apply a batch of field updates to this file metadata in a single SQL statement.
     ///
     /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
-    pub fn update(&self, update: UpdateFileMeta) -> Result<(), rusqlite::Error> {
+    pub fn update<T>(&self, update: UpdateFileMeta<T>) -> Result<(), rusqlite::Error> {
         use rusqlite::types::ToSql;
 
         let extra_json = update.extra.map(|e| serde_json::to_string(&e).unwrap());
@@ -77,15 +162,37 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
         push!(update.mime, "mime = ?");
         push!(extra_json, "extra = ?");
 
-        if sets.is_empty() {
-            return Ok(());
-        }
-
+        let sql = format!("UPDATE file_metas SET {} WHERE id = ?", sets.join(", "));
         let id = self.id();
         params.push(&id);
-
-        let sql = format!("UPDATE file_metas SET {} WHERE id = ?", sets.join(", "));
         self.conn().execute(&sql, params.as_slice())?;
+
+        Ok(())
+    }
+
+    pub fn update_with_content<T>(
+        &self,
+        mut update: UpdateFileMeta<T>,
+    ) -> Result<(), rusqlite::Error>
+    where
+        T: WritableFileMeta,
+    {
+        let content = update.content.take();
+        self.update(UpdateFileMeta {
+            content: None,
+            ..update
+        })?;
+
+        let path = self.get_path()?;
+
+        if let Some(content) = content {
+            let mut file =
+                File::create(path).expect("Failed to create file for writing file content");
+            content
+                .write_to_file(&mut file)
+                .expect("Failed to write file content");
+        }
+
         Ok(())
     }
 
