@@ -55,6 +55,9 @@ pub mod utils;
 #[cfg(feature = "utils")]
 pub mod manager;
 
+#[cfg(feature = "utils")]
+pub mod query;
+
 #[cfg(feature = "importer")]
 pub mod importer;
 
