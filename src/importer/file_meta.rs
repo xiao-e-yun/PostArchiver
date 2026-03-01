@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, hash::Hash};
+use std::{collections::HashMap, fs::File, hash::Hash, path::PathBuf};
 
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
@@ -89,6 +89,42 @@ where
             .data
             .write_to_file(&mut file)
             .expect("Failed to write file content");
+
+        Ok(id)
+    }
+
+    /// Create or update a file metadata entry in the archive by moving a buffered file into it.
+    ///
+    /// Behaves like [`import_file_meta`](Self::import_file_meta) for the database entry, then
+    /// moves the already-buffered file at `file_meta.data` to
+    /// `<archive_path>/<post_dir>/<filename>`, creating intermediate directories as needed.
+    ///
+    /// Uses [`std::fs::rename`] for an atomic, zero-copy move. The source file and the archive
+    /// **must reside on the same filesystem**; cross-device moves will panic.
+    /// Use [`import_file_meta_with_content`](Self::import_file_meta_with_content) instead when
+    /// the source and destination may be on different filesystems.
+    ///
+    /// # Errors
+    ///
+    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    pub fn import_file_meta_by_rename(
+        &self,
+        post: PostId,
+        file_meta: &UnsyncFileMeta<PathBuf>,
+    ) -> Result<FileMetaId, rusqlite::Error> {
+        let id = self.import_file_meta(post, file_meta)?;
+
+        let path = self
+            .path
+            .join(Post::directory(post))
+            .join(&file_meta.filename);
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("Failed to create directories for file content");
+        }
+
+        std::fs::rename(&file_meta.data, &path)
+            .expect("Failed to move file content to archive directory");
 
         Ok(id)
     }
