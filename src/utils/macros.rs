@@ -9,6 +9,7 @@ macro_rules! as_column {
 }
 
 pub trait AsTable: Sized {
+    #[allow(dead_code)]
     const TABLE_NAME: &'static str;
     fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error>;
 }
