@@ -7,7 +7,8 @@ use rusqlite::OptionalExtension;
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     utils::macros::AsTable,
-    Author, AuthorId, Collection, CollectionId, FileMeta, PlatformId, Post, PostId, Tag, TagId,
+    Author, AuthorId, Collection, CollectionId, FileMeta, Platform, PlatformId, Post, PostId, Tag,
+    TagId,
 };
 
 use super::{NoRelations, NoTotal, PageResult, SortDir, WithRelations, WithTotal};
@@ -43,6 +44,7 @@ pub struct PostWithRelations {
     pub tags: Vec<Tag>,
     pub file_metas: Vec<FileMeta>,
     pub collections: Vec<Collection>,
+    pub platforms: Vec<Platform>,
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -355,6 +357,7 @@ impl<C: PostArchiverConnection> PostQuery<'_, C, WithRelations, NoTotal> {
             .map(|post| {
                 let id = post.id;
                 Ok(PostWithRelations {
+                    platforms: self.manager.list_post_platforms(id)?,
                     post,
                     authors: self.manager.list_post_authors(id)?,
                     tags: self.manager.list_post_tags(id)?,
@@ -376,6 +379,7 @@ impl<C: PostArchiverConnection> PostQuery<'_, C, WithRelations, WithTotal> {
             .map(|post| {
                 let id = post.id;
                 Ok(PostWithRelations {
+                    platforms: self.manager.list_post_platforms(id)?,
                     post,
                     authors: self.manager.list_post_authors(id)?,
                     tags: self.manager.list_post_tags(id)?,
@@ -421,12 +425,35 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             return Ok(None);
         };
         Ok(Some(PostWithRelations {
+            platforms: self.list_post_platforms(id)?,
             authors: self.list_post_authors(id)?,
             tags: self.list_post_tags(id)?,
             file_metas: self.list_post_files(id)?,
             collections: self.list_post_collections(id)?,
             post,
         }))
+    }
+
+    /// Fetch all distinct platforms associated with a post.
+    ///
+    /// This includes the post's own platform and the platforms of all tags
+    /// associated with the post. The UNKNOWN platform (id = 0) is excluded.
+    pub(crate) fn list_post_platforms(
+        &self,
+        post: PostId,
+    ) -> Result<Vec<Platform>, rusqlite::Error> {
+        let mut stmt = self.conn().prepare_cached(
+            "SELECT DISTINCT platforms.* FROM platforms \
+             WHERE platforms.id != 0 AND platforms.id IN ( \
+                 SELECT platform FROM posts WHERE id = ? \
+                 UNION \
+                 SELECT tags.platform FROM tags \
+                 INNER JOIN post_tags ON post_tags.tag = tags.id \
+                 WHERE post_tags.post = ? AND tags.platform IS NOT NULL \
+             )",
+        )?;
+        let rows = stmt.query_map([post, post], Platform::from_row)?;
+        rows.collect()
     }
 
     /// Fetch all authors of a post (full entities).
