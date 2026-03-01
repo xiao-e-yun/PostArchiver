@@ -1,18 +1,14 @@
-//! Test helper functions providing direct SQL insert/query operations.
-//!
-//! These functions are needed because the manager module now only exposes
-//! update/delete/relation operations through `Binded`. Insert and query
-//! methods will eventually live in dedicated importer/query modules.
+//! Test helper functions providing direct SQL insert operations and query wrappers.
 
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
-    manager::PostArchiverManager, utils::macros::AsTable, Alias, Author, AuthorId, Collection,
-    CollectionId, FileMeta, FileMetaId, Platform, PlatformId, Post, PostId, Tag, TagId,
+    manager::PostArchiverManager, Alias, Author, AuthorId, Collection, CollectionId, FileMeta,
+    FileMetaId, Platform, PlatformId, Post, PostId, Tag, TagId,
 };
 
 // ── Post helpers ──────────────────────────────────────────────
@@ -46,21 +42,11 @@ pub fn add_post(
 }
 
 pub fn get_post(m: &PostArchiverManager, id: PostId) -> Post {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM posts WHERE id = ?")
-        .unwrap();
-    stmt.query_row([id], Post::from_row).unwrap()
+    m.get_post(id).unwrap().unwrap()
 }
 
 pub fn find_post(m: &PostArchiverManager, source: &str) -> Option<PostId> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT id FROM posts WHERE source = ?")
-        .unwrap();
-    stmt.query_row([source], |row| row.get(0))
-        .optional()
-        .unwrap()
+    m.find_post_by_source(source).unwrap()
 }
 
 pub fn find_post_with_updated(
@@ -68,6 +54,7 @@ pub fn find_post_with_updated(
     source: &str,
     updated: &DateTime<Utc>,
 ) -> Option<PostId> {
+    use rusqlite::OptionalExtension;
     let mut stmt = m
         .conn()
         .prepare_cached("SELECT id FROM posts WHERE source = ? AND updated >= ?")
@@ -78,9 +65,7 @@ pub fn find_post_with_updated(
 }
 
 pub fn list_posts(m: &PostArchiverManager) -> Vec<Post> {
-    let mut stmt = m.conn().prepare_cached("SELECT * FROM posts").unwrap();
-    let rows = stmt.query_map([], Post::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.posts().query().unwrap()
 }
 
 // ── Author helpers ────────────────────────────────────────────
@@ -101,47 +86,16 @@ pub fn add_author(
 }
 
 pub fn get_author(m: &PostArchiverManager, id: AuthorId) -> Author {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM authors WHERE id = ?")
-        .unwrap();
-    stmt.query_row([id], |row| {
-        Ok(Author {
-            id: row.get("id")?,
-            name: row.get("name")?,
-            thumb: row.get("thumb")?,
-            updated: row.get("updated")?,
-        })
-    })
-    .unwrap()
+    m.get_author(id).unwrap().unwrap()
 }
 
 pub fn list_authors(m: &PostArchiverManager) -> Vec<Author> {
-    let mut stmt = m.conn().prepare_cached("SELECT * FROM authors").unwrap();
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(Author {
-                id: row.get("id")?,
-                name: row.get("name")?,
-                thumb: row.get("thumb")?,
-                updated: row.get("updated")?,
-            })
-        })
-        .unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.authors().query().unwrap()
 }
 
 pub fn find_author(m: &PostArchiverManager, aliases: &[(&str, PlatformId)]) -> Option<AuthorId> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT target FROM author_aliases WHERE platform = ? AND source = ?")
-        .unwrap();
     for (source, platform) in aliases {
-        if let Some(id) = stmt
-            .query_row(params![platform, source], |row| row.get(0))
-            .optional()
-            .unwrap()
-        {
+        if let Some(id) = m.find_author_by_alias(source, *platform).unwrap() {
             return Some(id);
         }
     }
@@ -166,43 +120,15 @@ pub fn add_author_aliases(
 }
 
 pub fn list_author_aliases(m: &PostArchiverManager, author: AuthorId) -> Vec<Alias> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")
-        .unwrap();
-    let rows = stmt.query_map([author], Alias::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.list_author_aliases(author).unwrap()
 }
 
 pub fn list_author_posts(m: &PostArchiverManager, author: AuthorId) -> Vec<Post> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached(
-            "SELECT posts.* FROM posts INNER JOIN author_posts ON author_posts.post = posts.id WHERE author_posts.author = ?",
-        )
-        .unwrap();
-    let rows = stmt.query_map([author], Post::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.list_author_posts(author).unwrap()
 }
 
 pub fn list_post_authors(m: &PostArchiverManager, post: PostId) -> Vec<Author> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached(
-            "SELECT authors.* FROM authors INNER JOIN author_posts ON author_posts.author = authors.id WHERE author_posts.post = ?",
-        )
-        .unwrap();
-    let rows = stmt
-        .query_map([post], |row| {
-            Ok(Author {
-                id: row.get("id")?,
-                name: row.get("name")?,
-                thumb: row.get("thumb")?,
-                updated: row.get("updated")?,
-            })
-        })
-        .unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.list_post_authors(post).unwrap()
 }
 
 // ── Platform helpers ──────────────────────────────────────────
@@ -216,25 +142,15 @@ pub fn add_platform(m: &PostArchiverManager, name: String) -> PlatformId {
 }
 
 pub fn get_platform(m: &PostArchiverManager, id: PlatformId) -> Platform {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM platforms WHERE id = ?")
-        .unwrap();
-    stmt.query_row([id], Platform::from_row).unwrap()
+    m.get_platform(id).unwrap().unwrap()
 }
 
 pub fn find_platform(m: &PostArchiverManager, name: &str) -> Option<PlatformId> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT id FROM platforms WHERE name = ?")
-        .unwrap();
-    stmt.query_row([name], |row| row.get(0)).optional().unwrap()
+    m.find_platform(name).unwrap()
 }
 
 pub fn list_platforms(m: &PostArchiverManager) -> Vec<Platform> {
-    let mut stmt = m.conn().prepare_cached("SELECT * FROM platforms").unwrap();
-    let rows = stmt.query_map([], Platform::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.platforms().query().unwrap()
 }
 
 // ── Tag helpers ───────────────────────────────────────────────
@@ -249,11 +165,7 @@ pub fn add_tag(m: &PostArchiverManager, name: String, platform: Option<PlatformI
 }
 
 pub fn get_tag(m: &PostArchiverManager, id: TagId) -> Option<Tag> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM tags WHERE id = ?")
-        .unwrap();
-    stmt.query_row([id], Tag::from_row).optional().unwrap()
+    m.get_tag(id).unwrap()
 }
 
 pub fn find_tag(
@@ -261,41 +173,19 @@ pub fn find_tag(
     name: &str,
     platform: Option<PlatformId>,
 ) -> Option<TagId> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT id FROM tags WHERE platform IS ? AND name = ?")
-        .unwrap();
-    stmt.query_row(params![platform, name], |row| row.get(0))
-        .optional()
-        .unwrap()
+    m.find_tag(name, platform).unwrap()
 }
 
 pub fn list_tags(m: &PostArchiverManager) -> Vec<Tag> {
-    let mut stmt = m.conn().prepare_cached("SELECT * FROM tags").unwrap();
-    let rows = stmt.query_map([], Tag::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.tags().query().unwrap()
 }
 
 pub fn list_post_tags(m: &PostArchiverManager, post: PostId) -> Vec<Tag> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached(
-            "SELECT tags.* FROM tags INNER JOIN post_tags ON post_tags.tag = tags.id WHERE post_tags.post = ?",
-        )
-        .unwrap();
-    let rows = stmt.query_map([post], Tag::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.list_post_tags(post).unwrap()
 }
 
 pub fn list_tag_posts(m: &PostArchiverManager, tag: TagId) -> Vec<Post> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached(
-            "SELECT posts.* FROM posts INNER JOIN post_tags ON post_tags.post = posts.id WHERE post_tags.tag = ?",
-        )
-        .unwrap();
-    let rows = stmt.query_map([tag], Post::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.list_tag_posts(tag).unwrap()
 }
 
 // ── Collection helpers ────────────────────────────────────────
@@ -317,54 +207,23 @@ pub fn add_collection(
 }
 
 pub fn get_collection(m: &PostArchiverManager, id: CollectionId) -> Option<Collection> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM collections WHERE id = ?")
-        .unwrap();
-    stmt.query_row([id], Collection::from_row)
-        .optional()
-        .unwrap()
+    m.get_collection(id).unwrap()
 }
 
 pub fn find_collection(m: &PostArchiverManager, source: &str) -> Option<CollectionId> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT id FROM collections WHERE source = ?")
-        .unwrap();
-    stmt.query_row([source], |row| row.get(0))
-        .optional()
-        .unwrap()
+    m.find_collection_by_source(source).unwrap()
 }
 
 pub fn list_collections(m: &PostArchiverManager) -> Vec<Collection> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM collections")
-        .unwrap();
-    let rows = stmt.query_map([], Collection::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.collections().query().unwrap()
 }
 
 pub fn list_post_collections(m: &PostArchiverManager, post: PostId) -> Vec<Collection> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached(
-            "SELECT collections.* FROM collections INNER JOIN collection_posts ON collection_posts.collection = collections.id WHERE collection_posts.post = ?",
-        )
-        .unwrap();
-    let rows = stmt.query_map([post], Collection::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.list_post_collections(post).unwrap()
 }
 
 pub fn list_collection_posts(m: &PostArchiverManager, collection: CollectionId) -> Vec<Post> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached(
-            "SELECT posts.* FROM posts INNER JOIN collection_posts ON collection_posts.post = posts.id WHERE collection_posts.collection = ?",
-        )
-        .unwrap();
-    let rows = stmt.query_map([collection], Post::from_row).unwrap();
-    rows.collect::<Result<Vec<_>, _>>().unwrap()
+    m.list_collection_posts(collection).unwrap()
 }
 
 // ── FileMeta helpers ──────────────────────────────────────────
@@ -390,21 +249,11 @@ pub fn add_file_meta(
 }
 
 pub fn get_file_meta(m: &PostArchiverManager, id: FileMetaId) -> FileMeta {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT * FROM file_metas WHERE id = ?")
-        .unwrap();
-    stmt.query_row([id], FileMeta::from_row).unwrap()
+    m.get_file_meta(id).unwrap().unwrap()
 }
 
 pub fn find_file_meta(m: &PostArchiverManager, post: PostId, filename: &str) -> Option<FileMetaId> {
-    let mut stmt = m
-        .conn()
-        .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")
-        .unwrap();
-    stmt.query_row(params![post, filename], |row| row.get(0))
-        .optional()
-        .unwrap()
+    m.find_file_meta(post, filename).unwrap()
 }
 
 // ── Relationship helpers (add) ────────────────────────────────
