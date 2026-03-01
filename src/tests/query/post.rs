@@ -340,7 +340,7 @@ fn test_posts_with_relations_empty_associations() {
     assert_eq!(wr.post.id, id);
     assert!(wr.authors.is_empty());
     assert!(wr.tags.is_empty());
-    assert!(wr.files.is_empty());
+    assert!(wr.file_metas.is_empty());
     assert!(wr.collections.is_empty());
 }
 
@@ -370,8 +370,8 @@ fn test_posts_with_relations_loaded() {
     assert_eq!(wr.authors[0].id, author_id);
     assert_eq!(wr.tags.len(), 1);
     assert_eq!(wr.tags[0].id, tag_id);
-    assert_eq!(wr.files.len(), 1);
-    assert_eq!(wr.files[0].id, file_id);
+    assert_eq!(wr.file_metas.len(), 1);
+    assert_eq!(wr.file_metas[0].id, file_id);
     assert_eq!(wr.collections.len(), 1);
     assert_eq!(wr.collections[0].id, coll_id);
 }

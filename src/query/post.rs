@@ -41,7 +41,7 @@ pub struct PostWithRelations {
     pub post: Post,
     pub authors: Vec<Author>,
     pub tags: Vec<Tag>,
-    pub files: Vec<FileMeta>,
+    pub file_metas: Vec<FileMeta>,
     pub collections: Vec<Collection>,
 }
 
@@ -358,7 +358,7 @@ impl<C: PostArchiverConnection> PostQuery<'_, C, WithRelations, NoTotal> {
                     post,
                     authors: self.manager.list_post_authors(id)?,
                     tags: self.manager.list_post_tags(id)?,
-                    files: self.manager.list_post_files(id)?,
+                    file_metas: self.manager.list_post_files(id)?,
                     collections: self.manager.list_post_collections(id)?,
                 })
             })
@@ -379,7 +379,7 @@ impl<C: PostArchiverConnection> PostQuery<'_, C, WithRelations, WithTotal> {
                     post,
                     authors: self.manager.list_post_authors(id)?,
                     tags: self.manager.list_post_tags(id)?,
-                    files: self.manager.list_post_files(id)?,
+                    file_metas: self.manager.list_post_files(id)?,
                     collections: self.manager.list_post_collections(id)?,
                 })
             })
@@ -423,7 +423,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         Ok(Some(PostWithRelations {
             authors: self.list_post_authors(id)?,
             tags: self.list_post_tags(id)?,
-            files: self.list_post_files(id)?,
+            file_metas: self.list_post_files(id)?,
             collections: self.list_post_collections(id)?,
             post,
         }))
