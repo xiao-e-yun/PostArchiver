@@ -75,7 +75,7 @@ pub struct PostQuery<'a, C, R = NoRelations, T = NoTotal> {
     platforms: Vec<PlatformId>,
     tags: Vec<TagId>,
     collections: Vec<CollectionId>,
-    author: Option<AuthorId>,
+    authors: Vec<AuthorId>,
     ids: Vec<PostId>,
     limit: u64,
     page: u64,
@@ -94,7 +94,7 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
             platforms: Vec::new(),
             tags: Vec::new(),
             collections: Vec::new(),
-            author: None,
+            authors: Vec::new(),
             ids: Vec::new(),
             limit: 50,
             page: 0,
@@ -123,6 +123,16 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
         self
     }
 
+    pub fn collections(mut self, ids: impl IntoIterator<Item = CollectionId>) -> Self {
+        self.collections.extend(ids);
+        self
+    }
+
+    pub fn tag(mut self, id: TagId) -> Self {
+        self.tags.push(id);
+        self
+    }
+
     /// Filter posts that belong to **all** of the given tags (AND semantics).
     pub fn tags(mut self, ids: impl IntoIterator<Item = TagId>) -> Self {
         self.tags.extend(ids);
@@ -131,7 +141,12 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
 
     /// Filter posts by author.
     pub fn author(mut self, id: AuthorId) -> Self {
-        self.author = Some(id);
+        self.authors.push(id);
+        self
+    }
+
+    pub fn authors(mut self, ids: impl IntoIterator<Item = AuthorId>) -> Self {
+        self.authors.extend(ids);
         self
     }
 
@@ -168,7 +183,7 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
             platforms: self.platforms,
             tags: self.tags,
             collections: self.collections,
-            author: self.author,
+            authors: self.authors,
             ids: self.ids,
             limit: self.limit,
             page: self.page,
@@ -186,7 +201,7 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
             platforms: self.platforms,
             tags: self.tags,
             collections: self.collections,
-            author: self.author,
+            authors: self.authors,
             ids: self.ids,
             limit: self.limit,
             page: self.page,
@@ -208,44 +223,72 @@ impl<C: PostArchiverConnection, R, T> PostQuery<'_, C, R, T> {
         let mut wheres: Vec<String> = Vec::new();
         let mut params: Vec<BoxParam> = Vec::new();
 
-        if !self.ids.is_empty() {
-            let ph = repeat_placeholders(self.ids.len());
-            wheres.push(format!("id IN ({ph})"));
-            for &id in &self.ids {
-                params.push(Box::new(id));
+        match self.ids.len() {
+            0 => {}
+            1 => {
+                wheres.push("id = ?".to_string());
+                params.push(Box::new(self.ids[0]));
+            }
+            _ => {
+                wheres.push("id IN (SELECT value FROM json_each(?))".to_string());
+                let json_array = serde_json::to_string(&self.ids).unwrap();
+                params.push(Box::new(json_array));
             }
         }
 
-        if !self.platforms.is_empty() {
-            let ph = repeat_placeholders(self.platforms.len());
-            wheres.push(format!("platform IN ({ph})"));
-            for &p in &self.platforms {
-                params.push(Box::new(p));
+        match self.platforms.len() {
+            0 => {}
+            1 => {
+                wheres.push("platform = ?".to_string());
+                params.push(Box::new(self.platforms[0]));
+            }
+            _ => {
+                wheres.push("platform IN (SELECT value FROM json_each(?))".to_string());
+                let json_array = serde_json::to_string(&self.platforms).unwrap();
+                params.push(Box::new(json_array));
             }
         }
 
-        if let Some(author) = self.author {
-            wheres.push(
-                "EXISTS (SELECT 1 FROM author_posts WHERE post = posts.id AND author = ?)"
-                    .to_string(),
-            );
-            params.push(Box::new(author));
+        macro_rules! add_relation_filter {
+            ($ty:ident $field:ident, $table:ident, $col:ident) => {
+                match self.$field.len() {
+                    0 => {}
+                    1 => {
+                        wheres.push(format!(
+                                "EXISTS (SELECT 1 FROM {} WHERE post = posts.id AND {} = ?)",
+                                stringify!($table), stringify!($col)
+                        ));
+                        params.push(Box::new(self.$field[0]));
+                    }
+                    #[allow(unused_variables)]
+                    n => {
+                        add_relation_filter!($ty(n) => $field, $table, $col);
+                    }
+                }
+            };
+            (AND($count:expr) => $field:ident, $table:ident, $col:ident) => {
+                wheres.push(format!(
+                    "? == (SELECT COUNT(*) FROM {} WHERE post = posts.id AND {} IN (SELECT value FROM json_each(?)))",
+                    stringify!($table), stringify!($col)
+                ));
+                params.push(Box::new(self.$field.len() as u64));
+                let json_array = serde_json::to_string(&self.$field).unwrap();
+                params.push(Box::new(json_array));
+            };
+            (OR($count: expr) => $field:ident, $table:ident, $col:ident) => {
+                wheres.push(format!(
+                    "EXISTS (SELECT 1 FROM {} WHERE post = posts.id AND {} IN (SELECT value FROM json_each(?)))",
+                    stringify!($table), stringify!($col)
+                ));
+
+                let json_array = serde_json::to_string(&self.$field).unwrap();
+                params.push(Box::new(json_array));
+            };
         }
 
-        for &tag in &self.tags {
-            wheres.push(
-                "EXISTS (SELECT 1 FROM post_tags WHERE post = posts.id AND tag = ?)".to_string(),
-            );
-            params.push(Box::new(tag));
-        }
-
-        for &col in &self.collections {
-            wheres.push(
-                "EXISTS (SELECT 1 FROM collection_posts WHERE post = posts.id AND collection = ?)"
-                    .to_string(),
-            );
-            params.push(Box::new(col));
-        }
+        add_relation_filter!(AND authors, author_posts, author);
+        add_relation_filter!(AND tags, post_tags, tag);
+        add_relation_filter!(AND collections, collection_posts, collection);
 
         let clause = if wheres.is_empty() {
             String::new()
@@ -283,10 +326,6 @@ impl<C: PostArchiverConnection, R, T> PostQuery<'_, C, R, T> {
             .conn()
             .query_row(&sql, refs.as_slice(), |row| row.get(0))
     }
-}
-
-fn repeat_placeholders(n: usize) -> String {
-    (0..n).map(|_| "?").collect::<Vec<_>>().join(", ")
 }
 
 // ── query() impls — 4 typestate combinations ──────────────────────────────────
