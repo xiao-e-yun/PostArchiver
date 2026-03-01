@@ -427,81 +427,55 @@ fn test_get_post_with_relations_found() {
     assert_eq!(wr.authors.len(), 1);
 }
 
-// ── list_post_authors / list_post_tags / list_post_files / list_post_collections
+// ── posts().collection() filter ───────────────────────────────────────────────
 
 #[test]
-fn test_list_post_authors() {
+fn test_posts_filter_by_collection() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-    let a1 = helpers::add_author(&m, "A1".into(), Some(now));
-    let a2 = helpers::add_author(&m, "A2".into(), Some(now));
-    let pid = helpers::add_post(&m, "Post".into(), None, None, Some(now), Some(now));
-    helpers::add_post_authors(&m, pid, &[a1, a2]);
+    let col = helpers::add_collection(&m, "Series".into(), Some("s".into()), None);
+    let id1 = helpers::add_post(&m, "P1".into(), None, None, Some(now), Some(now));
+    let id2 = helpers::add_post(&m, "P2".into(), None, None, Some(now), Some(now));
+    let _id3 = helpers::add_post(&m, "P3-other".into(), None, None, Some(now), Some(now));
+    helpers::add_post_collections(&m, id1, &[col]);
+    helpers::add_post_collections(&m, id2, &[col]);
 
-    let authors = m.list_post_authors(pid).unwrap();
-    assert_eq!(authors.len(), 2);
-    let ids: Vec<_> = authors.iter().map(|a| a.id).collect();
-    assert!(ids.contains(&a1));
-    assert!(ids.contains(&a2));
+    let posts = m.posts().collection(col).query().unwrap();
+    assert_eq!(posts.len(), 2);
+    let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
+    assert!(ids.contains(&id1));
+    assert!(ids.contains(&id2));
 }
 
 #[test]
-fn test_list_post_tags() {
+fn test_posts_filter_by_collection_empty() {
     let m = PostArchiverManager::open_in_memory().unwrap();
-    let now = Utc::now();
-    let t1 = helpers::add_tag(&m, "t1".into(), None);
-    let t2 = helpers::add_tag(&m, "t2".into(), None);
-    let pid = helpers::add_post(&m, "Post".into(), None, None, Some(now), Some(now));
-    helpers::add_post_tags(&m, pid, &[t1, t2]);
+    let col = helpers::add_collection(&m, "Empty".into(), None, None);
 
-    let tags = m.list_post_tags(pid).unwrap();
-    assert_eq!(tags.len(), 2);
-    let ids: Vec<_> = tags.iter().map(|t| t.id).collect();
-    assert!(ids.contains(&t1));
-    assert!(ids.contains(&t2));
+    let posts = m.posts().collection(col).query().unwrap();
+    assert!(posts.is_empty());
 }
 
 #[test]
-fn test_list_post_files() {
+fn test_posts_filter_by_collection_isolates_correctly() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
-    let pid = helpers::add_post(&m, "Post".into(), None, None, Some(now), Some(now));
-    let f1 = helpers::add_file_meta(
-        &m,
-        pid,
-        "a.jpg".into(),
-        "image/jpeg".into(),
-        Default::default(),
-    );
-    let f2 = helpers::add_file_meta(
-        &m,
-        pid,
-        "b.mp4".into(),
-        "video/mp4".into(),
-        Default::default(),
-    );
+    let col_a = helpers::add_collection(&m, "A".into(), Some("a".into()), None);
+    let col_b = helpers::add_collection(&m, "B".into(), Some("b".into()), None);
+    let id1 = helpers::add_post(&m, "in A".into(), None, None, Some(now), Some(now));
+    let id2 = helpers::add_post(&m, "in B".into(), None, None, Some(now), Some(now));
+    let id3 = helpers::add_post(&m, "in both".into(), None, None, Some(now), Some(now));
+    helpers::add_post_collections(&m, id1, &[col_a]);
+    helpers::add_post_collections(&m, id2, &[col_b]);
+    helpers::add_post_collections(&m, id3, &[col_a, col_b]);
 
-    let files = m.list_post_files(pid).unwrap();
-    assert_eq!(files.len(), 2);
-    let ids: Vec<_> = files.iter().map(|f| f.id).collect();
-    assert!(ids.contains(&f1));
-    assert!(ids.contains(&f2));
-}
-
-#[test]
-fn test_list_post_collections() {
-    let m = PostArchiverManager::open_in_memory().unwrap();
-    let now = Utc::now();
-    let c1 = helpers::add_collection(&m, "C1".into(), Some("s1".into()), None);
-    let c2 = helpers::add_collection(&m, "C2".into(), Some("s2".into()), None);
-    let pid = helpers::add_post(&m, "Post".into(), None, None, Some(now), Some(now));
-    helpers::add_post_collections(&m, pid, &[c1, c2]);
-
-    let cols = m.list_post_collections(pid).unwrap();
-    assert_eq!(cols.len(), 2);
-    let ids: Vec<_> = cols.iter().map(|c| c.id).collect();
-    assert!(ids.contains(&c1));
-    assert!(ids.contains(&c2));
+    let posts_a = m.posts().collection(col_a).query().unwrap();
+    assert_eq!(posts_a.len(), 2);
+    let posts_b = m.posts().collection(col_b).query().unwrap();
+    assert_eq!(posts_b.len(), 2);
+    let ids_a: Vec<_> = posts_a.iter().map(|p| p.id).collect();
+    assert!(ids_a.contains(&id1));
+    assert!(ids_a.contains(&id3));
 }
 
 // ── combined filters ──────────────────────────────────────────────────────────

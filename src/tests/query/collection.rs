@@ -188,10 +188,10 @@ fn test_collections_with_total_filtered() {
     assert_eq!(result.total, 2);
 }
 
-// ── list_collection_posts ─────────────────────────────────────────────────────
+// ── collection posts via posts() builder ─────────────────────────────────────
 
 #[test]
-fn test_list_collection_posts() {
+fn test_collection_posts_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let col = helpers::add_collection(&m, "Series".into(), Some("s".into()), None);
@@ -201,7 +201,7 @@ fn test_list_collection_posts() {
     helpers::add_post_collections(&m, id1, &[col]);
     helpers::add_post_collections(&m, id2, &[col]);
 
-    let posts = m.list_collection_posts(col).unwrap();
+    let posts = m.posts().collection(col).query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -209,34 +209,31 @@ fn test_list_collection_posts() {
 }
 
 #[test]
-fn test_list_collection_posts_empty() {
+fn test_collection_posts_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let col = helpers::add_collection(&m, "Empty".into(), None, None);
 
-    let posts = m.list_collection_posts(col).unwrap();
+    let posts = m.posts().collection(col).query().unwrap();
     assert!(posts.is_empty());
 }
 
 #[test]
-fn test_list_collection_posts_multiple_collections() {
+fn test_collection_posts_multiple_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let col_a = helpers::add_collection(&m, "A".into(), Some("a".into()), None);
     let col_b = helpers::add_collection(&m, "B".into(), Some("b".into()), None);
-
     let id1 = helpers::add_post(&m, "in A".into(), None, None, Some(now), Some(now));
     let id2 = helpers::add_post(&m, "in B".into(), None, None, Some(now), Some(now));
     let id3 = helpers::add_post(&m, "in both".into(), None, None, Some(now), Some(now));
-
     helpers::add_post_collections(&m, id1, &[col_a]);
     helpers::add_post_collections(&m, id2, &[col_b]);
     helpers::add_post_collections(&m, id3, &[col_a, col_b]);
 
-    let posts_a = m.list_collection_posts(col_a).unwrap();
+    let posts_a = m.posts().collection(col_a).query().unwrap();
     assert_eq!(posts_a.len(), 2);
-    let posts_b = m.list_collection_posts(col_b).unwrap();
+    let posts_b = m.posts().collection(col_b).query().unwrap();
     assert_eq!(posts_b.len(), 2);
-
     let ids_a: Vec<_> = posts_a.iter().map(|p| p.id).collect();
     assert!(ids_a.contains(&id1));
     assert!(ids_a.contains(&id3));

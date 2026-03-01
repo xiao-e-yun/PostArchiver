@@ -251,7 +251,10 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch all aliases of an author.
-    pub fn list_author_aliases(&self, author: AuthorId) -> Result<Vec<Alias>, rusqlite::Error> {
+    pub(crate) fn list_author_aliases(
+        &self,
+        author: AuthorId,
+    ) -> Result<Vec<Alias>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")?;
@@ -260,7 +263,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch all posts by an author (full entities).
-    pub fn list_author_posts(&self, author: AuthorId) -> Result<Vec<Post>, rusqlite::Error> {
+    pub(crate) fn list_author_posts(&self, author: AuthorId) -> Result<Vec<Post>, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
             "SELECT posts.* FROM posts \
              INNER JOIN author_posts ON author_posts.post = posts.id \

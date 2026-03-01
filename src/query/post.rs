@@ -7,7 +7,7 @@ use rusqlite::OptionalExtension;
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     utils::macros::AsTable,
-    Author, AuthorId, Collection, FileMeta, PlatformId, Post, PostId, Tag, TagId,
+    Author, AuthorId, Collection, CollectionId, FileMeta, PlatformId, Post, PostId, Tag, TagId,
 };
 
 use super::{NoRelations, NoTotal, PageResult, SortDir, WithRelations, WithTotal};
@@ -74,6 +74,7 @@ pub struct PostQuery<'a, C, R = NoRelations, T = NoTotal> {
     manager: &'a PostArchiverManager<C>,
     platforms: Vec<PlatformId>,
     tags: Vec<TagId>,
+    collections: Vec<CollectionId>,
     author: Option<AuthorId>,
     ids: Vec<PostId>,
     limit: u64,
@@ -92,6 +93,7 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
             manager,
             platforms: Vec::new(),
             tags: Vec::new(),
+            collections: Vec::new(),
             author: None,
             ids: Vec::new(),
             limit: 50,
@@ -112,6 +114,12 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
     /// Filter posts by multiple platforms (OR semantics).
     pub fn platforms(mut self, ids: impl IntoIterator<Item = PlatformId>) -> Self {
         self.platforms.extend(ids);
+        self
+    }
+
+    /// Filter posts belonging to a specific collection.
+    pub fn collection(mut self, id: CollectionId) -> Self {
+        self.collections.push(id);
         self
     }
 
@@ -159,6 +167,7 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
             manager: self.manager,
             platforms: self.platforms,
             tags: self.tags,
+            collections: self.collections,
             author: self.author,
             ids: self.ids,
             limit: self.limit,
@@ -176,6 +185,7 @@ impl<'a, C, R, T> PostQuery<'a, C, R, T> {
             manager: self.manager,
             platforms: self.platforms,
             tags: self.tags,
+            collections: self.collections,
             author: self.author,
             ids: self.ids,
             limit: self.limit,
@@ -227,6 +237,14 @@ impl<C: PostArchiverConnection, R, T> PostQuery<'_, C, R, T> {
                 "EXISTS (SELECT 1 FROM post_tags WHERE post = posts.id AND tag = ?)".to_string(),
             );
             params.push(Box::new(tag));
+        }
+
+        for &col in &self.collections {
+            wheres.push(
+                "EXISTS (SELECT 1 FROM collection_posts WHERE post = posts.id AND collection = ?)"
+                    .to_string(),
+            );
+            params.push(Box::new(col));
         }
 
         let clause = if wheres.is_empty() {
@@ -373,7 +391,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch all authors of a post (full entities).
-    pub fn list_post_authors(&self, post: PostId) -> Result<Vec<Author>, rusqlite::Error> {
+    pub(crate) fn list_post_authors(&self, post: PostId) -> Result<Vec<Author>, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
             "SELECT authors.* FROM authors \
              INNER JOIN author_posts ON author_posts.author = authors.id \
@@ -384,7 +402,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch all tags of a post (full entities).
-    pub fn list_post_tags(&self, post: PostId) -> Result<Vec<Tag>, rusqlite::Error> {
+    pub(crate) fn list_post_tags(&self, post: PostId) -> Result<Vec<Tag>, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
             "SELECT tags.* FROM tags \
              INNER JOIN post_tags ON post_tags.tag = tags.id \
@@ -395,7 +413,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch all file metas of a post.
-    pub fn list_post_files(&self, post: PostId) -> Result<Vec<FileMeta>, rusqlite::Error> {
+    pub(crate) fn list_post_files(&self, post: PostId) -> Result<Vec<FileMeta>, rusqlite::Error> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM file_metas WHERE post = ?")?;
@@ -404,7 +422,10 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch all collections a post belongs to.
-    pub fn list_post_collections(&self, post: PostId) -> Result<Vec<Collection>, rusqlite::Error> {
+    pub(crate) fn list_post_collections(
+        &self,
+        post: PostId,
+    ) -> Result<Vec<Collection>, rusqlite::Error> {
         let mut stmt = self.conn().prepare_cached(
             "SELECT collections.* FROM collections \
              INNER JOIN collection_posts ON collection_posts.collection = collections.id \

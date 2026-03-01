@@ -232,10 +232,10 @@ fn test_tags_with_total() {
     assert_eq!(result.items.len(), 2);
 }
 
-// ── list_tag_posts ────────────────────────────────────────────────────────────
+// ── tag posts via posts() builder ────────────────────────────────────────────
 
 #[test]
-fn test_list_tag_posts() {
+fn test_tag_posts_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let t = helpers::add_tag(&m, "featured".into(), None);
@@ -245,7 +245,7 @@ fn test_list_tag_posts() {
     helpers::add_post_tags(&m, id1, &[t]);
     helpers::add_post_tags(&m, id2, &[t]);
 
-    let posts = m.list_tag_posts(t).unwrap();
+    let posts = m.posts().tags([t]).query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -253,10 +253,10 @@ fn test_list_tag_posts() {
 }
 
 #[test]
-fn test_list_tag_posts_empty() {
+fn test_tag_posts_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let t = helpers::add_tag(&m, "unused".into(), None);
 
-    let posts = m.list_tag_posts(t).unwrap();
+    let posts = m.posts().tags([t]).query().unwrap();
     assert!(posts.is_empty());
 }

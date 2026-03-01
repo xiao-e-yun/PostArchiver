@@ -185,7 +185,7 @@ pub fn list_post_tags(m: &PostArchiverManager, post: PostId) -> Vec<Tag> {
 }
 
 pub fn list_tag_posts(m: &PostArchiverManager, tag: TagId) -> Vec<Post> {
-    m.list_tag_posts(tag).unwrap()
+    m.posts().tags([tag]).query().unwrap()
 }
 
 // ── Collection helpers ────────────────────────────────────────
@@ -223,7 +223,7 @@ pub fn list_post_collections(m: &PostArchiverManager, post: PostId) -> Vec<Colle
 }
 
 pub fn list_collection_posts(m: &PostArchiverManager, collection: CollectionId) -> Vec<Post> {
-    m.list_collection_posts(collection).unwrap()
+    m.posts().collection(collection).query().unwrap()
 }
 
 // ── FileMeta helpers ──────────────────────────────────────────

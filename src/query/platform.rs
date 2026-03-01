@@ -5,7 +5,7 @@ use rusqlite::OptionalExtension;
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     utils::macros::AsTable,
-    Platform, PlatformId, Post, Tag,
+    Platform, PlatformId,
 };
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -59,23 +59,5 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             .conn()
             .prepare_cached("SELECT id FROM platforms WHERE name = ?")?;
         stmt.query_row([name], |row| row.get(0)).optional()
-    }
-
-    /// Fetch all posts on a platform (full entities).
-    pub fn list_platform_posts(&self, platform: PlatformId) -> Result<Vec<Post>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM posts WHERE platform = ?")?;
-        let rows = stmt.query_map([platform], Post::from_row)?;
-        rows.collect()
-    }
-
-    /// Fetch all tags belonging to a platform (full entities).
-    pub fn list_platform_tags(&self, platform: PlatformId) -> Result<Vec<Tag>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM tags WHERE platform = ?")?;
-        let rows = stmt.query_map([platform], Tag::from_row)?;
-        rows.collect()
     }
 }

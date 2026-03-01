@@ -82,11 +82,10 @@ fn test_platforms_sorted_by_name() {
     assert_eq!(user[1].name, "mmm");
     assert_eq!(user[2].name, "zzz");
 }
-
-// ── list_platform_posts ───────────────────────────────────────────────────────
+// ── platform posts / tags via builders ───────────────────────────────────────
 
 #[test]
-fn test_list_platform_posts() {
+fn test_platform_posts_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let plt = helpers::add_platform(&m, "p".into());
@@ -94,7 +93,7 @@ fn test_list_platform_posts() {
     let id2 = helpers::add_post(&m, "B".into(), None, Some(plt), Some(now), Some(now));
     helpers::add_post(&m, "C".into(), None, None, Some(now), Some(now)); // different platform
 
-    let posts = m.list_platform_posts(plt).unwrap();
+    let posts = m.posts().platform(plt).query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -102,25 +101,23 @@ fn test_list_platform_posts() {
 }
 
 #[test]
-fn test_list_platform_posts_empty() {
+fn test_platform_posts_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let plt = helpers::add_platform(&m, "empty".into());
 
-    let posts = m.list_platform_posts(plt).unwrap();
+    let posts = m.posts().platform(plt).query().unwrap();
     assert!(posts.is_empty());
 }
 
-// ── list_platform_tags ────────────────────────────────────────────────────────
-
 #[test]
-fn test_list_platform_tags() {
+fn test_platform_tags_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let plt = helpers::add_platform(&m, "p".into());
     let t1 = helpers::add_tag(&m, "tag-one".into(), Some(plt));
     let t2 = helpers::add_tag(&m, "tag-two".into(), Some(plt));
     helpers::add_tag(&m, "global".into(), None); // no platform
 
-    let tags = m.list_platform_tags(plt).unwrap();
+    let tags = m.tags().platform(Some(plt)).query().unwrap();
     assert_eq!(tags.len(), 2);
     let ids: Vec<_> = tags.iter().map(|t| t.id).collect();
     assert!(ids.contains(&t1));
@@ -128,23 +125,23 @@ fn test_list_platform_tags() {
 }
 
 #[test]
-fn test_list_platform_tags_empty() {
+fn test_platform_tags_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let plt = helpers::add_platform(&m, "empty".into());
 
-    let tags = m.list_platform_tags(plt).unwrap();
+    let tags = m.tags().platform(Some(plt)).query().unwrap();
     assert!(tags.is_empty());
 }
 
 #[test]
-fn test_list_platform_tags_does_not_include_other_platform() {
+fn test_platform_tags_isolates_correctly() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let plt_a = helpers::add_platform(&m, "A".into());
     let plt_b = helpers::add_platform(&m, "B".into());
     helpers::add_tag(&m, "ta".into(), Some(plt_a));
     let tb = helpers::add_tag(&m, "tb".into(), Some(plt_b));
 
-    let tags = m.list_platform_tags(plt_b).unwrap();
+    let tags = m.tags().platform(Some(plt_b)).query().unwrap();
     assert_eq!(tags.len(), 1);
     assert_eq!(tags[0].id, tb);
 }

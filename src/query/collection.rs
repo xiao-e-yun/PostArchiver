@@ -7,7 +7,7 @@ use rusqlite::OptionalExtension;
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     utils::macros::AsTable,
-    Collection, CollectionId, Post,
+    Collection, CollectionId,
 };
 
 use super::{NoTotal, PageResult, SortDir, WithTotal};
@@ -158,19 +158,5 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             .conn()
             .prepare_cached("SELECT id FROM collections WHERE source = ?")?;
         stmt.query_row([source], |row| row.get(0)).optional()
-    }
-
-    /// Fetch all posts in a collection (full entities).
-    pub fn list_collection_posts(
-        &self,
-        collection: CollectionId,
-    ) -> Result<Vec<Post>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "SELECT posts.* FROM posts \
-             INNER JOIN collection_posts ON collection_posts.post = posts.id \
-             WHERE collection_posts.collection = ?",
-        )?;
-        let rows = stmt.query_map([collection], Post::from_row)?;
-        rows.collect()
     }
 }

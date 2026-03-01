@@ -263,10 +263,10 @@ fn test_authors_relations_with_total() {
     assert_eq!(result.items.len(), 2);
 }
 
-// ── list_author_aliases ───────────────────────────────────────────────────────
+// ── author aliases via relations ────────────────────────────────────────────
 
 #[test]
-fn test_list_author_aliases() {
+fn test_author_aliases_via_relations() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let plt1 = helpers::add_platform(&m, "github".into());
@@ -285,27 +285,29 @@ fn test_list_author_aliases() {
         ],
     );
 
-    let aliases = m.list_author_aliases(id).unwrap();
-    assert_eq!(aliases.len(), 2);
-    let sources: Vec<_> = aliases.iter().map(|a| a.source.as_str()).collect();
+    let result = m.authors().relations().query().unwrap();
+    let wr = result.iter().find(|a| a.author.id == id).unwrap();
+    assert_eq!(wr.aliases.len(), 2);
+    let sources: Vec<_> = wr.aliases.iter().map(|a| a.source.as_str()).collect();
     assert!(sources.contains(&"dev-gh"));
     assert!(sources.contains(&"dev-tw"));
 }
 
 #[test]
-fn test_list_author_aliases_empty() {
+fn test_author_aliases_empty_via_relations() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let id = helpers::add_author(&m, "NoAlias".into(), Some(now));
 
-    let aliases = m.list_author_aliases(id).unwrap();
-    assert!(aliases.is_empty());
+    let result = m.authors().relations().query().unwrap();
+    let wr = result.iter().find(|a| a.author.id == id).unwrap();
+    assert!(wr.aliases.is_empty());
 }
 
-// ── list_author_posts ────────────────────────────────────────────────────────
+// ── author posts via posts() builder ────────────────────────────────────────
 
 #[test]
-fn test_list_author_posts() {
+fn test_author_posts_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let author = helpers::add_author(&m, "Writer".into(), Some(now));
@@ -315,7 +317,7 @@ fn test_list_author_posts() {
     helpers::add_post_authors(&m, id1, &[author]);
     helpers::add_post_authors(&m, id2, &[author]);
 
-    let posts = m.list_author_posts(author).unwrap();
+    let posts = m.posts().author(author).query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -323,11 +325,11 @@ fn test_list_author_posts() {
 }
 
 #[test]
-fn test_list_author_posts_empty() {
+fn test_author_posts_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let author = helpers::add_author(&m, "Silent".into(), Some(now));
 
-    let posts = m.list_author_posts(author).unwrap();
+    let posts = m.posts().author(author).query().unwrap();
     assert!(posts.is_empty());
 }

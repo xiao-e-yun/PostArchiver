@@ -7,7 +7,7 @@ use rusqlite::OptionalExtension;
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     utils::macros::AsTable,
-    PlatformId, Post, Tag, TagId,
+    PlatformId, Tag, TagId,
 };
 
 use super::{NoTotal, PageResult, SortDir, WithTotal};
@@ -197,16 +197,5 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             .prepare_cached("SELECT id FROM tags WHERE platform IS ? AND name = ?")?;
         stmt.query_row(rusqlite::params![platform, name], |row| row.get(0))
             .optional()
-    }
-
-    /// Fetch all posts with this tag (full entities).
-    pub fn list_tag_posts(&self, tag: TagId) -> Result<Vec<Post>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "SELECT posts.* FROM posts \
-             INNER JOIN post_tags ON post_tags.post = posts.id \
-             WHERE post_tags.tag = ?",
-        )?;
-        let rows = stmt.query_map([tag], Post::from_row)?;
-        rows.collect()
     }
 }
