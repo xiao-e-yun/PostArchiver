@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
+    fs::File,
     path::PathBuf,
 };
 
@@ -10,6 +11,7 @@ use rusqlite::params;
 use crate::{
     manager::{
         PostArchiverConnection, PostArchiverManager, UpdateAuthor, UpdateCollection, UpdatePost,
+        WritableFileMeta,
     },
     AuthorId, CollectionId, Comment, Content, PlatformId, PostId, POSTS_PRE_CHUNK,
 };
@@ -154,6 +156,45 @@ where
         ))
     }
 
+    pub fn import_post_with_files<U: WritableFileMeta>(
+        &self,
+        post: UnsyncPost<U>,
+    ) -> Result<PostId, rusqlite::Error> {
+        let (id, _, _, contents) = self.import_post(post, true)?;
+
+        let mut first = true;
+        for (path, content) in &contents {
+            if first {
+                std::fs::create_dir_all(path.parent().unwrap())
+                    .expect("Failed to create directories for post files");
+                first = false;
+            }
+
+            let mut file =
+                File::create(path).expect("Failed to create file for writing post content");
+            content
+                .write_to_file(&mut file)
+                .expect("Failed to write post content to file");
+        }
+
+        Ok(id)
+    }
+
+    pub fn import_post_with_rename_files(
+        &self,
+        post: UnsyncPost<PathBuf>,
+    ) -> Result<PostId, rusqlite::Error> {
+        let (id, _, _, contents) = self.import_post(post, true)?;
+
+        for (path, src) in &contents {
+            std::fs::create_dir_all(path.parent().unwrap())
+                .expect("Failed to create directories for post files");
+            std::fs::rename(src, path).expect("Failed to rename file for post content");
+        }
+
+        Ok(id)
+    }
+
     /// Import multiple posts into the archive.
     ///
     /// This function processes each post, importing its authors, collections, and files.
@@ -200,6 +241,41 @@ where
         }
 
         Ok((results, total_files))
+    }
+
+    pub fn import_posts_with_files<U: WritableFileMeta>(
+        &self,
+        posts: impl IntoIterator<Item = UnsyncPost<U>>,
+    ) -> Result<Vec<PostId>, rusqlite::Error> {
+        let (ids, contents) = self.import_posts(posts, true)?;
+
+        for (path, content) in contents {
+            std::fs::create_dir_all(path.parent().unwrap())
+                .expect("Failed to create directories for post files");
+
+            let mut file =
+                File::create(path).expect("Failed to create file for writing post content");
+            content
+                .write_to_file(&mut file)
+                .expect("Failed to write post content to file");
+        }
+
+        Ok(ids)
+    }
+
+    pub fn import_posts_with_rename_files(
+        &self,
+        posts: impl IntoIterator<Item = UnsyncPost<PathBuf>>,
+    ) -> Result<Vec<PostId>, rusqlite::Error> {
+        let (ids, contents) = self.import_posts(posts, true)?;
+
+        for (path, src) in contents {
+            std::fs::create_dir_all(path.parent().unwrap())
+                .expect("Failed to create directories for post files");
+            std::fs::rename(src, path).expect("Failed to rename file for post content");
+        }
+
+        Ok(ids)
     }
 }
 
