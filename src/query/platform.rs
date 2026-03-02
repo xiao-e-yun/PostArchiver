@@ -66,7 +66,7 @@ impl<C: PostArchiverConnection> Query for PlatformQuery<'_, C> {
         self,
         sql: &str,
         params: Vec<super::Param>,
-    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
         self.queryer().fetch(sql, params)
     }
 }
@@ -80,18 +80,18 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch a single platform by primary key.
-    pub fn get_platform(&self, id: PlatformId) -> Result<Option<Platform>, rusqlite::Error> {
+    pub fn get_platform(&self, id: PlatformId) -> crate::error::Result<Option<Platform>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM platforms WHERE id = ?")?;
-        stmt.query_row([id], Platform::from_row).optional()
+        Ok(stmt.query_row([id], Platform::from_row).optional()?)
     }
 
     /// Find a platform ID by name (exact match, case-sensitive).
-    pub fn find_platform(&self, name: &str) -> Result<Option<PlatformId>, rusqlite::Error> {
+    pub fn find_platform(&self, name: &str) -> crate::error::Result<Option<PlatformId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM platforms WHERE name = ?")?;
-        stmt.query_row([name], |row| row.get(0)).optional()
+        Ok(stmt.query_row([name], |row| row.get(0)).optional()?)
     }
 }

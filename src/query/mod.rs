@@ -57,9 +57,9 @@ pub trait Query: Sized + BaseQuery {
         self,
         sql: &str,
         params: Vec<Param>,
-    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error>;
+    ) -> crate::error::Result<Self::Wrapper<Self::Item>>;
 
-    fn query(self) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+    fn query(self) -> crate::error::Result<Self::Wrapper<Self::Item>> {
         let (sql, params) = self.sql().build_sql();
         self.query_with_context(&sql, params)
     }
@@ -164,27 +164,23 @@ impl<'a, C: PostArchiverConnection> Queryer<'a, C> {
         Self { manager }
     }
 
-    pub fn fetch<Q: AsTable>(
-        &self,
-        sql: &str,
-        params: Vec<Param>,
-    ) -> Result<Vec<Q>, rusqlite::Error> {
+    pub fn fetch<Q: AsTable>(&self, sql: &str, params: Vec<Param>) -> crate::error::Result<Vec<Q>> {
         let mut stmt = self.manager.conn().prepare_cached(sql)?;
         let params = params
             .iter()
             .map(|p| p.as_ref() as &dyn ToSql)
             .collect::<Vec<_>>();
         let rows = stmt.query_map(params.as_slice(), Q::from_row)?;
-        rows.collect()
+        rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 
-    pub fn count(&self, sql: &str, params: Vec<Param>) -> Result<u64, rusqlite::Error> {
+    pub fn count(&self, sql: &str, params: Vec<Param>) -> crate::error::Result<u64> {
         let mut stmt = self.manager.conn().prepare_cached(sql)?;
         let params = params
             .iter()
             .map(|p| p.as_ref() as &dyn ToSql)
             .collect::<Vec<_>>();
-        stmt.query_row(params.as_slice(), |row| row.get(0))
+        Ok(stmt.query_row(params.as_slice(), |row| row.get(0))?)
     }
 }
 
@@ -240,13 +236,11 @@ pub mod paginate {
             self,
             sql: &str,
             params: Vec<super::Param>,
-        ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
             self.inner.query_with_context(sql, params)
         }
     }
 }
-
-// ── Countable Trait ───────────────────────────────────────────────────────────
 
 pub mod countable {
     use crate::{
@@ -258,7 +252,7 @@ pub mod countable {
 
     pub trait Countable: Sized {
         /// Count total matching rows (ignoring pagination).
-        fn count(&self) -> Result<u64, rusqlite::Error>;
+        fn count(&self) -> crate::error::Result<u64>;
 
         /// Chain: wrap result in [`PageResult`] including total count.
         fn with_total(self) -> WithTotal<Self> {
@@ -267,7 +261,7 @@ pub mod countable {
     }
 
     impl<T: BaseQuery> Countable for T {
-        fn count(&self) -> Result<u64, rusqlite::Error> {
+        fn count(&self) -> crate::error::Result<u64> {
             let (sql, params) = self.sql().build_count_sql();
             self.queryer().count(&sql, params)
         }
@@ -294,7 +288,7 @@ pub mod countable {
             self,
             sql: &str,
             params: Vec<super::Param>,
-        ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
             let total = self.0.count()?;
             let items = self.0.query_with_context(sql, params)?;
             Ok(PageResult { items, total })
@@ -395,7 +389,7 @@ pub mod sortable {
             self,
             sql: &str,
             params: Vec<super::Param>,
-        ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
             self.inner.query_with_context(sql, params)
         }
     }
@@ -406,7 +400,7 @@ pub mod sortable {
             self,
             sql: &str,
             params: Vec<super::Param>,
-        ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
             self.inner.query_with_context(sql, params)
         }
     }

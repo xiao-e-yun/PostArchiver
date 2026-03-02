@@ -4,6 +4,7 @@ use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
+    error::Result,
     manager::{PostArchiverConnection, PostArchiverManager, UpdateFileMeta, WritableFileMeta},
     FileMetaId, Post, PostId,
 };
@@ -19,12 +20,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_file_meta<U>(
         &self,
         post: PostId,
         file_meta: &UnsyncFileMeta<U>,
-    ) -> Result<FileMetaId, rusqlite::Error> {
+    ) -> Result<FileMetaId> {
         // find
         if let Some(id) = self.find_file_meta(post, &file_meta.filename)? {
             // update extra
@@ -37,7 +38,7 @@ where
         let mut ins_stmt = self.conn().prepare_cached(
             "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
         )?;
-        ins_stmt.query_row(
+        Ok(ins_stmt.query_row(
             params![
                 post,
                 file_meta.filename,
@@ -45,7 +46,7 @@ where
                 serde_json::to_string(&file_meta.extra).unwrap()
             ],
             |row| row.get(0),
-        )
+        )?)
     }
 
     /// Create or update a file metadata entry in the archive, and write `file_meta.data` to disk.
@@ -56,12 +57,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_file_meta_with_content<U>(
         &self,
         post: PostId,
         file_meta: &UnsyncFileMeta<U>,
-    ) -> Result<FileMetaId, rusqlite::Error>
+    ) -> Result<FileMetaId>
     where
         U: WritableFileMeta,
     {
@@ -73,14 +74,11 @@ where
             .join(&file_meta.filename);
 
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("Failed to create directories for file content");
+            std::fs::create_dir_all(parent)?;
         }
 
-        let mut file = File::create(&path).expect("Failed to create file for writing file content");
-        file_meta
-            .data
-            .write_to_file(&mut file)
-            .expect("Failed to write file content");
+        let mut file = File::create(&path)?;
+        file_meta.data.write_to_file(&mut file)?;
 
         Ok(id)
     }
@@ -92,18 +90,18 @@ where
     /// `<archive_path>/<post_dir>/<filename>`, creating intermediate directories as needed.
     ///
     /// Uses [`std::fs::rename`] for an atomic, zero-copy move. The source file and the archive
-    /// **must reside on the same filesystem**; cross-device moves will panic.
+    /// **must reside on the same filesystem**; cross-device moves will fail.
     /// Use [`import_file_meta_with_content`](Self::import_file_meta_with_content) instead when
     /// the source and destination may be on different filesystems.
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_file_meta_by_rename(
         &self,
         post: PostId,
         file_meta: &UnsyncFileMeta<PathBuf>,
-    ) -> Result<FileMetaId, rusqlite::Error> {
+    ) -> Result<FileMetaId> {
         let id = self.import_file_meta(post, file_meta)?;
 
         let path = self
@@ -112,11 +110,10 @@ where
             .join(&file_meta.filename);
 
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("Failed to create directories for file content");
+            std::fs::create_dir_all(parent)?;
         }
 
-        std::fs::rename(&file_meta.data, &path)
-            .expect("Failed to move file content to archive directory");
+        std::fs::rename(&file_meta.data, &path)?;
 
         Ok(id)
     }

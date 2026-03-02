@@ -50,6 +50,9 @@ pub mod content;
 pub use content::*;
 
 #[cfg(feature = "utils")]
+pub mod error;
+
+#[cfg(feature = "utils")]
 pub mod utils;
 
 #[cfg(feature = "utils")]

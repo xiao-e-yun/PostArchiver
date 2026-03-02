@@ -3,6 +3,7 @@ use std::{collections::HashMap, fs::File, io::Write, path::PathBuf};
 use serde_json::Value;
 
 use crate::{
+    error::Result,
     manager::{binded::Binded, PostArchiverConnection},
     utils::macros::AsTable,
     FileMeta, FileMetaId, Post, PostId,
@@ -120,18 +121,18 @@ impl WritableFileMeta for String {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
     /// Get this file metadata's current data from the database.
-    pub fn value(&self) -> Result<FileMeta, rusqlite::Error> {
+    pub fn value(&self) -> Result<FileMeta> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
-        stmt.query_row([self.id()], FileMeta::from_row)
+        Ok(stmt.query_row([self.id()], FileMeta::from_row)?)
     }
 
     /// Remove this file metadata from the archive.
     ///
     /// This operation will also remove all associated thumb references.
     /// But it will not delete post.content related to this file.
-    pub fn delete(self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM file_metas WHERE id = ?")?;
@@ -142,7 +143,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
     /// Apply a batch of field updates to this file metadata in a single SQL statement.
     ///
     /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
-    pub fn update<T>(&self, update: UpdateFileMeta<T>) -> Result<(), rusqlite::Error> {
+    pub fn update<T>(&self, update: UpdateFileMeta<T>) -> Result<()> {
         use rusqlite::types::ToSql;
 
         let extra_json = update.extra.map(|e| serde_json::to_string(&e).unwrap());
@@ -170,10 +171,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
         Ok(())
     }
 
-    pub fn update_with_content<T>(
-        &self,
-        mut update: UpdateFileMeta<T>,
-    ) -> Result<(), rusqlite::Error>
+    pub fn update_with_content<T>(&self, mut update: UpdateFileMeta<T>) -> Result<()>
     where
         T: WritableFileMeta,
     {
@@ -186,25 +184,22 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
         let path = self.get_path()?;
 
         if let Some(content) = content {
-            let mut file =
-                File::create(path).expect("Failed to create file for writing file content");
-            content
-                .write_to_file(&mut file)
-                .expect("Failed to write file content");
+            let mut file = File::create(path)?;
+            content.write_to_file(&mut file)?;
         }
 
         Ok(())
     }
 
     /// Get the file path of this file metadata.
-    pub fn get_path(&self) -> Result<PathBuf, rusqlite::Error> {
+    pub fn get_path(&self) -> Result<PathBuf> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT post, filename FROM file_metas WHERE id = ?")?;
-        stmt.query_row([self.id()], |row| {
+        Ok(stmt.query_row([self.id()], |row| {
             let post_id: PostId = row.get(0)?;
             let filename: String = row.get(1)?;
             Ok(Post::directory(post_id).join(filename))
-        })
+        })?)
     }
 }

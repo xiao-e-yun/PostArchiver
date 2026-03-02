@@ -1,4 +1,5 @@
 use crate::{
+    error::Result,
     manager::{PostArchiverConnection, PostArchiverManager},
     PlatformId,
 };
@@ -13,8 +14,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_platform(&self, platform: String) -> Result<PlatformId, rusqlite::Error> {
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_platform(&self, platform: String) -> Result<PlatformId> {
         // find
         if let Some(id) = self.find_platform(&platform)? {
             return Ok(id);
@@ -24,6 +25,6 @@ where
         let mut stmt = self
             .conn()
             .prepare_cached("INSERT INTO platforms (name) VALUES (?) RETURNING id")?;
-        stmt.query_row([&platform], |row| row.get(0))
+        Ok(stmt.query_row([&platform], |row| row.get(0))?)
     }
 }

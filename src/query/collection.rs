@@ -70,7 +70,7 @@ impl<C: PostArchiverConnection> Query for CollectionQuery<'_, C> {
         self,
         sql: &str,
         params: Vec<super::Param>,
-    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
         self.queryer().fetch(sql, params)
     }
 }
@@ -82,29 +82,30 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch a single collection by primary key.
-    pub fn get_collection(&self, id: CollectionId) -> Result<Option<Collection>, rusqlite::Error> {
+    pub fn get_collection(&self, id: CollectionId) -> crate::error::Result<Option<Collection>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM collections WHERE id = ?")?;
-        stmt.query_row([id], Collection::from_row).optional()
+        Ok(stmt.query_row([id], Collection::from_row).optional()?)
     }
 
     /// Find a collection ID by `name` and optional `platform`.
-    pub fn find_collection(&self, name: &str) -> Result<Option<CollectionId>, rusqlite::Error> {
+    pub fn find_collection(&self, name: &str) -> crate::error::Result<Option<CollectionId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM collections WHERE platform IS ? AND name = ?")?;
-        stmt.query_row(rusqlite::params![name], |row| row.get(0))
-            .optional()
+        Ok(stmt
+            .query_row(rusqlite::params![name], |row| row.get(0))
+            .optional()?)
     }
 
     pub fn find_collection_by_source(
         &self,
         source: &str,
-    ) -> Result<Option<CollectionId>, rusqlite::Error> {
+    ) -> crate::error::Result<Option<CollectionId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM collections WHERE source = ?")?;
-        stmt.query_row([source], |row| row.get(0)).optional()
+        Ok(stmt.query_row([source], |row| row.get(0)).optional()?)
     }
 }

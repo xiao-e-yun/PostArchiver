@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, Transaction};
 
+use crate::error::{Error, Result};
 use crate::utils::{DATABASE_NAME, VERSION};
 
 pub mod binded;
@@ -54,7 +55,7 @@ impl PostArchiverManager {
     ///
     /// let manager = PostArchiverManager::create("./new_archive").unwrap();
     /// ```
-    pub fn create<P>(path: P) -> Result<Self, rusqlite::Error>
+    pub fn create<P>(path: P) -> Result<Self>
     where
         P: AsRef<Path>,
     {
@@ -62,7 +63,7 @@ impl PostArchiverManager {
         let db_path = path.join(DATABASE_NAME);
 
         if db_path.exists() {
-            panic!("Database already exists");
+            return Err(Error::DatabaseAlreadyExists);
         }
 
         let conn = Connection::open(&db_path)?;
@@ -94,14 +95,14 @@ impl PostArchiverManager {
     ///     println!("Archive opened successfully");
     /// }
     /// ```
-    pub fn open<P>(path: P) -> Result<Option<Self>, rusqlite::Error>
+    pub fn open<P>(path: P) -> Result<Option<Self>>
     where
         P: AsRef<Path>,
     {
-        let manager = Self::open_uncheck(path);
+        let manager = Self::open_uncheck(path)?;
 
         // check version
-        if let Ok(Some(manager)) = &manager {
+        if let Some(manager) = &manager {
             let version: String = manager
                 .conn()
                 .query_row("SELECT version FROM post_archiver_meta", [], |row| {
@@ -119,14 +120,14 @@ impl PostArchiverManager {
             let expect_version = get_compatible_version(VERSION);
 
             if match_version != expect_version {
-                panic!(
-                    "Database version mismatch \n + current: {}\n + expected: {}",
-                    version, VERSION
-                )
+                return Err(Error::VersionMismatch {
+                    current: version,
+                    expected: VERSION.to_string(),
+                });
             }
         }
 
-        manager
+        Ok(manager)
     }
 
     /// Opens an existing archive at the specified path without checking version.
@@ -135,7 +136,7 @@ impl PostArchiverManager {
     /// - `Ok(Some(manager))` if archive exists
     /// - `Ok(None)` if archive doesn't exist
     /// - `Err(_)` on database errors
-    pub fn open_uncheck<P>(path: P) -> Result<Option<Self>, rusqlite::Error>
+    pub fn open_uncheck<P>(path: P) -> Result<Option<Self>>
     where
         P: AsRef<Path>,
     {
@@ -159,7 +160,7 @@ impl PostArchiverManager {
     ///
     /// let manager = PostArchiverManager::open_or_create("./archive").unwrap();
     /// ```
-    pub fn open_or_create<P>(path: P) -> Result<Self, rusqlite::Error>
+    pub fn open_or_create<P>(path: P) -> Result<Self>
     where
         P: AsRef<Path>,
     {
@@ -176,7 +177,7 @@ impl PostArchiverManager {
     ///
     /// let manager = PostArchiverManager::open_in_memory().unwrap();
     /// ```
-    pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
+    pub fn open_in_memory() -> Result<Self> {
         let path = std::env::temp_dir();
 
         let conn = Connection::open_in_memory()?;
@@ -204,7 +205,7 @@ impl PostArchiverManager {
     /// // ... perform operations
     /// tx.commit().unwrap();
     /// ```
-    pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction<'_>>, rusqlite::Error> {
+    pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction<'_>>> {
         Ok(PostArchiverManager {
             path: self.path.clone(),
             conn: self.conn.transaction()?,
@@ -214,8 +215,8 @@ impl PostArchiverManager {
 
 impl PostArchiverManager<Transaction<'_>> {
     /// Commits the transaction
-    pub fn commit(self) -> Result<(), rusqlite::Error> {
-        self.conn.commit()
+    pub fn commit(self) -> Result<()> {
+        Ok(self.conn.commit()?)
     }
 }
 

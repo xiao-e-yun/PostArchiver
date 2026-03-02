@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
+    error::Result,
     manager::{
         PostArchiverConnection, PostArchiverManager, UpdateAuthor, UpdateCollection, UpdatePost,
         WritableFileMeta,
@@ -32,18 +33,17 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_post<U>(
         &self,
         post: UnsyncPost<U>,
         update_relation: bool,
-    ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>, Vec<(PathBuf, U)>), rusqlite::Error>
-    {
+    ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>, Vec<(PathBuf, U)>)> {
         macro_rules! import_many {
             ($vec:expr => $method:ident) => {
                 $vec.into_iter()
                     .map(|d| self.$method(d))
-                    .collect::<Result<Vec<_>, _>>()?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
             };
         }
 
@@ -98,7 +98,7 @@ where
                     }
                 })
             })
-            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+            .collect::<Result<Vec<_>>>()?;
         b.update(
             UpdatePost::default()
                 .content(content)
@@ -159,37 +159,29 @@ where
     pub fn import_post_with_files<U: WritableFileMeta>(
         &self,
         post: UnsyncPost<U>,
-    ) -> Result<PostId, rusqlite::Error> {
+    ) -> Result<PostId> {
         let (id, _, _, contents) = self.import_post(post, true)?;
 
         let mut first = true;
         for (path, content) in &contents {
             if first {
-                std::fs::create_dir_all(path.parent().unwrap())
-                    .expect("Failed to create directories for post files");
+                std::fs::create_dir_all(path.parent().unwrap())?;
                 first = false;
             }
 
-            let mut file =
-                File::create(path).expect("Failed to create file for writing post content");
-            content
-                .write_to_file(&mut file)
-                .expect("Failed to write post content to file");
+            let mut file = File::create(path)?;
+            content.write_to_file(&mut file)?;
         }
 
         Ok(id)
     }
 
-    pub fn import_post_with_rename_files(
-        &self,
-        post: UnsyncPost<PathBuf>,
-    ) -> Result<PostId, rusqlite::Error> {
+    pub fn import_post_with_rename_files(&self, post: UnsyncPost<PathBuf>) -> Result<PostId> {
         let (id, _, _, contents) = self.import_post(post, true)?;
 
         for (path, src) in &contents {
-            std::fs::create_dir_all(path.parent().unwrap())
-                .expect("Failed to create directories for post files");
-            std::fs::rename(src, path).expect("Failed to rename file for post content");
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::rename(src, path)?;
         }
 
         Ok(id)
@@ -205,12 +197,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_posts<U>(
         &self,
         posts: impl IntoIterator<Item = UnsyncPost<U>>,
         update_relation: bool,
-    ) -> Result<(Vec<PostId>, Vec<(PathBuf, U)>), rusqlite::Error> {
+    ) -> Result<(Vec<PostId>, Vec<(PathBuf, U)>)> {
         let mut total_author = HashSet::new();
         let mut total_collections = HashSet::new();
         let mut total_files = Vec::new();
@@ -246,18 +238,14 @@ where
     pub fn import_posts_with_files<U: WritableFileMeta>(
         &self,
         posts: impl IntoIterator<Item = UnsyncPost<U>>,
-    ) -> Result<Vec<PostId>, rusqlite::Error> {
+    ) -> Result<Vec<PostId>> {
         let (ids, contents) = self.import_posts(posts, true)?;
 
         for (path, content) in contents {
-            std::fs::create_dir_all(path.parent().unwrap())
-                .expect("Failed to create directories for post files");
+            std::fs::create_dir_all(path.parent().unwrap())?;
 
-            let mut file =
-                File::create(path).expect("Failed to create file for writing post content");
-            content
-                .write_to_file(&mut file)
-                .expect("Failed to write post content to file");
+            let mut file = File::create(path)?;
+            content.write_to_file(&mut file)?;
         }
 
         Ok(ids)
@@ -266,13 +254,12 @@ where
     pub fn import_posts_with_rename_files(
         &self,
         posts: impl IntoIterator<Item = UnsyncPost<PathBuf>>,
-    ) -> Result<Vec<PostId>, rusqlite::Error> {
+    ) -> Result<Vec<PostId>> {
         let (ids, contents) = self.import_posts(posts, true)?;
 
         for (path, src) in contents {
-            std::fs::create_dir_all(path.parent().unwrap())
-                .expect("Failed to create directories for post files");
-            std::fs::rename(src, path).expect("Failed to rename file for post content");
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::rename(src, path)?;
         }
 
         Ok(ids)
@@ -387,11 +374,8 @@ impl<T> UnsyncPost<T> {
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn sync<U>(
-        self,
-        manager: &PostArchiverManager<U>,
-    ) -> Result<(PostId, Vec<(PathBuf, T)>), rusqlite::Error>
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn sync<U>(self, manager: &PostArchiverManager<U>) -> Result<(PostId, Vec<(PathBuf, T)>)>
     where
         U: PostArchiverConnection,
     {

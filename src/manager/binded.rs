@@ -23,7 +23,7 @@ impl BindableId for FileMetaId {}
 /// ```no_run
 /// # use post_archiver::manager::PostArchiverManager;
 /// # use post_archiver::PostId;
-/// # fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), rusqlite::Error> {
+/// # fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), post_archiver::error::Error> {
 /// // Binded<'_, PostId, _> — type inferred from post_id
 /// manager.bind(post_id).delete()?;
 /// # Ok(())

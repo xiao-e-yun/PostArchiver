@@ -1,8 +1,8 @@
 use rusqlite::params;
 
 use crate::{
-    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, Collection,
-    CollectionId, FileMetaId, PostId,
+    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
+    utils::macros::AsTable, Collection, CollectionId, FileMetaId, PostId,
 };
 
 /// Specifies how to update a collection's thumbnail.
@@ -52,17 +52,17 @@ impl UpdateCollection {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
     /// Get this collection's current data from the database.
-    pub fn value(&self) -> Result<Collection, rusqlite::Error> {
+    pub fn value(&self) -> Result<Collection> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM collections WHERE id = ?")?;
-        stmt.query_row([self.id()], Collection::from_row)
+        Ok(stmt.query_row([self.id()], Collection::from_row)?)
     }
 
     /// Remove this collection from the archive.
     ///
     /// Also removes all collection-post relationships.
-    pub fn delete(self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<()> {
         self.conn()
             .execute("DELETE FROM collections WHERE id = ?", [self.id()])?;
         Ok(())
@@ -71,7 +71,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
     /// Apply a batch of field updates to this collection in a single SQL statement.
     ///
     /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
-    pub fn update(&self, update: UpdateCollection) -> Result<(), rusqlite::Error> {
+    pub fn update(&self, update: UpdateCollection) -> Result<()> {
         use rusqlite::types::ToSql;
 
         let id = self.id();
@@ -119,16 +119,17 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
     /// List all post IDs in this collection.
-    pub fn list_posts(&self) -> Result<Vec<PostId>, rusqlite::Error> {
+    pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT post FROM collection_posts WHERE collection = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 
     /// Add posts to this collection.
-    pub fn add_posts(&self, posts: &[PostId]) -> Result<(), rusqlite::Error> {
+    pub fn add_posts(&self, posts: &[PostId]) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
             "INSERT OR IGNORE INTO collection_posts (collection, post) VALUES (?, ?)",
         )?;
@@ -139,7 +140,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
     }
 
     /// Remove posts from this collection.
-    pub fn remove_posts(&self, posts: &[PostId]) -> Result<(), rusqlite::Error> {
+    pub fn remove_posts(&self, posts: &[PostId]) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM collection_posts WHERE collection = ? AND post = ?")?;

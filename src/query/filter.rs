@@ -142,12 +142,25 @@ impl<T> Deref for IdFilter<T> {
     }
 }
 
-impl<T: ToSql + Serialize + Clone + 'static> IdFilter<T> {
+impl<T: ToSql + Serialize + Clone + 'static> IdFilter<T>
+where
+    T: Eq + std::hash::Hash,
+{
     pub fn new(col: &'static str) -> Self {
         IdFilter {
             col,
             ids: HashSet::new(),
         }
+    }
+
+    pub fn insert(&mut self, id: T) -> &mut Self {
+        self.ids.insert(id);
+        self
+    }
+
+    pub fn extend(&mut self, ids: impl IntoIterator<Item = T>) -> &mut Self {
+        self.ids.extend(ids);
+        self
     }
 
     pub fn build_sql<U>(&self, mut sql: RawSql<U>) -> RawSql<U> {
@@ -193,7 +206,10 @@ impl<T> RelationshipsFilter<T> {
     }
 }
 
-impl<T: ToSql + Serialize + Clone + 'static> RelationshipsFilter<T> {
+impl<T: ToSql + Serialize + Clone + 'static> RelationshipsFilter<T>
+where
+    T: Eq + std::hash::Hash,
+{
     pub fn build_sql<U>(&self, mut sql: RawSql<U>) -> RawSql<U> {
         let (wheres, params) = &mut sql.where_clause;
         match self.len() {

@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
+    error::Result,
     manager::{PostArchiverConnection, PostArchiverManager, UpdateAuthor},
     AuthorId, PlatformId,
 };
@@ -16,8 +17,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_author(&self, author: UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_author(&self, author: UnsyncAuthor) -> Result<AuthorId> {
         // find by aliases
         let id = {
             let mut found: Option<AuthorId> = None;
@@ -99,8 +100,8 @@ impl UnsyncAuthor {
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<AuthorId, rusqlite::Error>
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<AuthorId>
     where
         T: PostArchiverConnection,
     {

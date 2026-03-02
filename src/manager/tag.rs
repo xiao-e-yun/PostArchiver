@@ -1,6 +1,6 @@
 use crate::{
-    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, PlatformId,
-    PostId, Tag, TagId,
+    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
+    utils::macros::AsTable, PlatformId, PostId, Tag, TagId,
 };
 
 /// Builder for updating a tag's fields.
@@ -65,17 +65,17 @@ impl FindTag for (&str, Option<PlatformId>) {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
     /// Get this tag's current data from the database.
-    pub fn value(&self) -> Result<Tag, rusqlite::Error> {
+    pub fn value(&self) -> Result<Tag> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM tags WHERE id = ?")?;
-        stmt.query_row([self.id()], Tag::from_row)
+        Ok(stmt.query_row([self.id()], Tag::from_row)?)
     }
 
     /// Remove this tag from the archive.
     ///
     /// This will also remove all post-tag relationships, but will not delete the posts themselves.
-    pub fn delete(self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM tags WHERE id = ?")?;
@@ -86,7 +86,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
     /// Apply a batch of field updates to this tag in a single SQL statement.
     ///
     /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
-    pub fn update(&self, update: UpdateTag) -> Result<(), rusqlite::Error> {
+    pub fn update(&self, update: UpdateTag) -> Result<()> {
         use rusqlite::types::ToSql;
 
         let mut sets: Vec<&str> = Vec::new();
@@ -122,11 +122,12 @@ impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
     /// List all post IDs associated with this tag.
-    pub fn list_posts(&self) -> Result<Vec<PostId>, rusqlite::Error> {
+    pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT post FROM post_tags WHERE tag = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 }

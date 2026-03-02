@@ -70,7 +70,7 @@ impl<C: PostArchiverConnection> Query for AuthorQuery<'_, C> {
         self,
         sql: &str,
         params: Vec<super::Param>,
-    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
         self.queryer().fetch(sql, params)
     }
 }
@@ -84,11 +84,11 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch a single author by primary key.
-    pub fn get_author(&self, id: AuthorId) -> Result<Option<Author>, rusqlite::Error> {
+    pub fn get_author(&self, id: AuthorId) -> crate::error::Result<Option<Author>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM authors WHERE id = ?")?;
-        stmt.query_row([id], Author::from_row).optional()
+        Ok(stmt.query_row([id], Author::from_row).optional()?)
     }
 
     /// Find an author ID by their alias (`source` + `platform`).
@@ -96,20 +96,21 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         &self,
         source: &str,
         platform: PlatformId,
-    ) -> Result<Option<AuthorId>, rusqlite::Error> {
+    ) -> crate::error::Result<Option<AuthorId>> {
         let mut stmt = self.conn().prepare_cached(
             "SELECT target FROM author_aliases WHERE platform = ? AND source = ?",
         )?;
-        stmt.query_row(rusqlite::params![platform, source], |row| row.get(0))
-            .optional()
+        Ok(stmt
+            .query_row(rusqlite::params![platform, source], |row| row.get(0))
+            .optional()?)
     }
 
     /// Fetch all aliases of an author.
-    pub fn list_author_aliases(&self, author: AuthorId) -> Result<Vec<Alias>, rusqlite::Error> {
+    pub fn list_author_aliases(&self, author: AuthorId) -> crate::error::Result<Vec<Alias>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")?;
         let rows = stmt.query_map([author], Alias::from_row)?;
-        rows.collect()
+        rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 }

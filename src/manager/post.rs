@@ -2,8 +2,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, AuthorId,
-    CollectionId, Comment, Content, FileMetaId, PlatformId, Post, PostId, TagId,
+    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
+    utils::macros::AsTable, AuthorId, CollectionId, Comment, Content, FileMetaId, PlatformId, Post,
+    PostId, TagId,
 };
 
 /// Specifies how to update a post's `updated` timestamp.
@@ -84,18 +85,18 @@ impl UpdatePost {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Get this post's current data from the database.
-    pub fn value(&self) -> Result<Post, rusqlite::Error> {
+    pub fn value(&self) -> Result<Post> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM posts WHERE id = ?")?;
-        stmt.query_row([self.id()], Post::from_row)
+        Ok(stmt.query_row([self.id()], Post::from_row)?)
     }
 
     /// Remove this post from the archive.
     ///
     /// This also removes all associated file metadata, author associations,
     /// tag associations, and collection associations.
-    pub fn delete(self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM posts WHERE id = ?")?;
@@ -106,7 +107,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Apply a batch of field updates to this post in a single SQL statement.
     ///
     /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
-    pub fn update(&self, update: UpdatePost) -> Result<(), rusqlite::Error> {
+    pub fn update(&self, update: UpdatePost) -> Result<()> {
         use rusqlite::types::ToSql;
 
         // Pre-serialize JSON fields so they outlive the params slice.
@@ -158,12 +159,13 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     }
 
     /// List all file metadata IDs associated with this post.
-    pub fn list_file_metas(&self) -> Result<Vec<FileMetaId>, rusqlite::Error> {
+    pub fn list_file_metas(&self) -> Result<Vec<FileMetaId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM file_metas WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 }
 
@@ -172,17 +174,18 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// List all author IDs associated with this post.
-    pub fn list_authors(&self) -> Result<Vec<AuthorId>, rusqlite::Error> {
+    pub fn list_authors(&self) -> Result<Vec<AuthorId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT author FROM author_posts WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 
     /// Associate one or more authors with this post.
     /// Duplicate associations are silently ignored.
-    pub fn add_authors(&self, authors: &[AuthorId]) -> Result<(), rusqlite::Error> {
+    pub fn add_authors(&self, authors: &[AuthorId]) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("INSERT OR IGNORE INTO author_posts (author, post) VALUES (?, ?)")?;
@@ -193,7 +196,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     }
 
     /// Remove one or more authors from this post.
-    pub fn remove_authors(&self, authors: &[AuthorId]) -> Result<(), rusqlite::Error> {
+    pub fn remove_authors(&self, authors: &[AuthorId]) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM author_posts WHERE post = ? AND author = ?")?;
@@ -209,17 +212,18 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// List all tag IDs associated with this post.
-    pub fn list_tags(&self) -> Result<Vec<TagId>, rusqlite::Error> {
+    pub fn list_tags(&self) -> Result<Vec<TagId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT tag FROM post_tags WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 
     /// Associate one or more tags with this post.
     /// Duplicate associations are silently ignored.
-    pub fn add_tags(&self, tags: &[TagId]) -> Result<(), rusqlite::Error> {
+    pub fn add_tags(&self, tags: &[TagId]) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("INSERT OR IGNORE INTO post_tags (post, tag) VALUES (?, ?)")?;
@@ -230,7 +234,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     }
 
     /// Remove one or more tags from this post.
-    pub fn remove_tags(&self, tags: &[TagId]) -> Result<(), rusqlite::Error> {
+    pub fn remove_tags(&self, tags: &[TagId]) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM post_tags WHERE post = ? AND tag = ?")?;
@@ -246,17 +250,18 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// List all collection IDs associated with this post.
-    pub fn list_collections(&self) -> Result<Vec<CollectionId>, rusqlite::Error> {
+    pub fn list_collections(&self) -> Result<Vec<CollectionId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT collection FROM collection_posts WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 
     /// Associate one or more collections with this post.
     /// Duplicate associations are silently ignored.
-    pub fn add_collections(&self, collections: &[CollectionId]) -> Result<(), rusqlite::Error> {
+    pub fn add_collections(&self, collections: &[CollectionId]) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
             "INSERT OR IGNORE INTO collection_posts (collection, post) VALUES (?, ?)",
         )?;
@@ -267,7 +272,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     }
 
     /// Remove one or more collections from this post.
-    pub fn remove_collections(&self, collections: &[CollectionId]) -> Result<(), rusqlite::Error> {
+    pub fn remove_collections(&self, collections: &[CollectionId]) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM collection_posts WHERE collection = ? AND post = ?")?;

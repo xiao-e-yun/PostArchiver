@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    manager::binded::Binded, manager::PostArchiverConnection, utils::macros::AsTable, Alias,
-    Author, AuthorId, FileMetaId, PlatformId, PostId,
+    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
+    utils::macros::AsTable, Alias, Author, AuthorId, FileMetaId, PlatformId, PostId,
 };
 
 /// Specifies how to update an author's thumbnail.
@@ -67,17 +67,17 @@ impl UpdateAuthor {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     /// Get this author's current data from the database.
-    pub fn value(&self) -> Result<Author, rusqlite::Error> {
+    pub fn value(&self) -> Result<Author> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM authors WHERE id = ?")?;
-        stmt.query_row([self.id()], Author::from_row)
+        Ok(stmt.query_row([self.id()], Author::from_row)?)
     }
 
     /// Remove this author from the archive.
     ///
     /// This also removes all associated aliases and author-post relationships.
-    pub fn delete(self) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<()> {
         self.conn()
             .execute("DELETE FROM authors WHERE id = ?", [self.id()])?;
         Ok(())
@@ -86,7 +86,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     /// Apply a batch of field updates to this author in a single SQL statement.
     ///
     /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
-    pub fn update(&self, update: UpdateAuthor) -> Result<(), rusqlite::Error> {
+    pub fn update(&self, update: UpdateAuthor) -> Result<()> {
         use rusqlite::types::ToSql;
 
         let id = self.id();
@@ -145,22 +145,20 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     /// List all aliases associated with this author.
-    pub fn list_aliases(&self) -> Result<Vec<Alias>, rusqlite::Error> {
+    pub fn list_aliases(&self) -> Result<Vec<Alias>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")?;
         let rows = stmt.query_map([self.id()], Alias::from_row)?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 
     /// Add or update aliases for this author.
     ///
     /// # Parameters
     /// - aliases: Vec of (source, platform, link)
-    pub fn add_aliases(
-        &self,
-        aliases: Vec<(String, PlatformId, Option<String>)>,
-    ) -> Result<(), rusqlite::Error> {
+    pub fn add_aliases(&self, aliases: Vec<(String, PlatformId, Option<String>)>) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
             "INSERT OR REPLACE INTO author_aliases (target, source, platform, link) VALUES (?, ?, ?, ?)",
         )?;
@@ -174,7 +172,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     ///
     /// # Parameters
     /// - aliases: &[(source, platform)]
-    pub fn remove_aliases(&self, aliases: &[(String, PlatformId)]) -> Result<(), rusqlite::Error> {
+    pub fn remove_aliases(&self, aliases: &[(String, PlatformId)]) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
             "DELETE FROM author_aliases WHERE target = ? AND source = ? AND platform = ?",
         )?;
@@ -185,11 +183,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     }
 
     /// Set an alias's name.
-    pub fn set_alias_name(
-        &self,
-        alias: &(String, PlatformId),
-        name: String,
-    ) -> Result<(), rusqlite::Error> {
+    pub fn set_alias_name(&self, alias: &(String, PlatformId), name: String) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
             "UPDATE author_aliases SET source = ? WHERE target = ? AND source = ? AND platform = ?",
         )?;
@@ -202,7 +196,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
         &self,
         alias: &(String, PlatformId),
         platform: PlatformId,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
             "UPDATE author_aliases SET platform = ? WHERE target = ? AND source = ? AND platform = ?",
         )?;
@@ -211,11 +205,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     }
 
     /// Set an alias's link.
-    pub fn set_alias_link(
-        &self,
-        alias: &(String, PlatformId),
-        link: Option<String>,
-    ) -> Result<(), rusqlite::Error> {
+    pub fn set_alias_link(&self, alias: &(String, PlatformId), link: Option<String>) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
             "UPDATE author_aliases SET link = ? WHERE target = ? AND source = ? AND platform = ?",
         )?;
@@ -229,12 +219,13 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
 //=============================================================
 impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     /// List all post IDs associated with this author.
-    pub fn list_posts(&self) -> Result<Vec<PostId>, rusqlite::Error> {
+    pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT post FROM author_posts WHERE author = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
-        rows.collect()
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 }
 

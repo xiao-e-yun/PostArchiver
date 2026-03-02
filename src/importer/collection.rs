@@ -3,6 +3,7 @@ use std::hash::Hash;
 use rusqlite::params;
 
 use crate::{
+    error::Result,
     manager::{PostArchiverConnection, PostArchiverManager, UpdateCollection},
     CollectionId, FileMetaId,
 };
@@ -17,11 +18,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_collection(
-        &self,
-        collection: UnsyncCollection,
-    ) -> Result<CollectionId, rusqlite::Error> {
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_collection(&self, collection: UnsyncCollection) -> Result<CollectionId> {
         // find by source
         if let Some(id) = self.find_collection_by_source(&collection.source)? {
             self.bind(id)
@@ -50,15 +48,15 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_collections(
         &self,
         collections: impl IntoIterator<Item = UnsyncCollection>,
-    ) -> Result<Vec<CollectionId>, rusqlite::Error> {
+    ) -> Result<Vec<CollectionId>> {
         collections
             .into_iter()
             .map(|collection| self.import_collection(collection))
-            .collect::<Result<Vec<CollectionId>, rusqlite::Error>>()
+            .collect::<Result<Vec<CollectionId>>>()
     }
 }
 

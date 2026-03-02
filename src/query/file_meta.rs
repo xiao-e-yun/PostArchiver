@@ -10,11 +10,11 @@ use crate::{
 
 impl<C: PostArchiverConnection> PostArchiverManager<C> {
     /// Fetch a single [`FileMeta`] by primary key.
-    pub fn get_file_meta(&self, id: FileMetaId) -> Result<Option<FileMeta>, rusqlite::Error> {
+    pub fn get_file_meta(&self, id: FileMetaId) -> crate::error::Result<Option<FileMeta>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
-        stmt.query_row([id], FileMeta::from_row).optional()
+        Ok(stmt.query_row([id], FileMeta::from_row).optional()?)
     }
 
     /// Find a [`FileMetaId`] by owning `post` and `filename`.
@@ -22,11 +22,12 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         &self,
         post: PostId,
         filename: &str,
-    ) -> Result<Option<FileMetaId>, rusqlite::Error> {
+    ) -> crate::error::Result<Option<FileMetaId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
-        stmt.query_row(rusqlite::params![post, filename], |row| row.get(0))
-            .optional()
+        Ok(stmt
+            .query_row(rusqlite::params![post, filename], |row| row.get(0))
+            .optional()?)
     }
 }

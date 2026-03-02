@@ -73,7 +73,7 @@ impl<C: PostArchiverConnection> Query for TagQuery<'_, C> {
         self,
         sql: &str,
         params: Vec<super::Param>,
-    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
         self.queryer().fetch(sql, params)
     }
 }
@@ -85,11 +85,11 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch a single tag by primary key.
-    pub fn get_tag(&self, id: TagId) -> Result<Option<Tag>, rusqlite::Error> {
+    pub fn get_tag(&self, id: TagId) -> crate::error::Result<Option<Tag>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM tags WHERE id = ?")?;
-        stmt.query_row([id], Tag::from_row).optional()
+        Ok(stmt.query_row([id], Tag::from_row).optional()?)
     }
 
     /// Find a tag ID by `name` and optional `platform`.
@@ -97,11 +97,12 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         &self,
         name: &str,
         platform: Option<PlatformId>,
-    ) -> Result<Option<TagId>, rusqlite::Error> {
+    ) -> crate::error::Result<Option<TagId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM tags WHERE platform IS ? AND name = ?")?;
-        stmt.query_row(rusqlite::params![platform, name], |row| row.get(0))
-            .optional()
+        Ok(stmt
+            .query_row(rusqlite::params![platform, name], |row| row.get(0))
+            .optional()?)
     }
 }

@@ -105,7 +105,7 @@ impl<C: PostArchiverConnection> Query for PostQuery<'_, C> {
         self,
         sql: &str,
         params: Vec<Param>,
-    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
         self.queryer().fetch(sql, params)
     }
 }
@@ -117,18 +117,18 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Fetch a single post by primary key. Returns `None` if not found.
-    pub fn get_post(&self, id: PostId) -> Result<Option<Post>, rusqlite::Error> {
+    pub fn get_post(&self, id: PostId) -> crate::error::Result<Option<Post>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM posts WHERE id = ?")?;
-        stmt.query_row([id], Post::from_row).optional()
+        Ok(stmt.query_row([id], Post::from_row).optional()?)
     }
 
     /// Look up a post ID by its `source` field.
-    pub fn find_post_by_source(&self, source: &str) -> Result<Option<PostId>, rusqlite::Error> {
+    pub fn find_post_by_source(&self, source: &str) -> crate::error::Result<Option<PostId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
-        stmt.query_row([source], |row| row.get(0)).optional()
+        Ok(stmt.query_row([source], |row| row.get(0)).optional()?)
     }
 }
