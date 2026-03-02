@@ -2,6 +2,7 @@ pub mod config;
 mod v2;
 mod v3;
 mod v4;
+mod v5;
 
 use std::{fs, io, path::Path, process::exit};
 

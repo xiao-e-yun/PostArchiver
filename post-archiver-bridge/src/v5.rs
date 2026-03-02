@@ -1,7 +1,5 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
-use log::{debug, info};
-use post_archiver_latest::POSTS_PRE_CHUNK;
 use rusqlite::Transaction;
 
 use crate::MigrationDatabase;
@@ -15,4 +13,6 @@ impl MigrationDatabase for Bridge {
     DROP TABLE IF EXISTS features;
     UPDATE post_archiver_meta SET version = '0.5.0';
     ";
+
+    fn upgrade(&mut self, _path: &Path, _tx: &mut Transaction<'_>) {}
 }
