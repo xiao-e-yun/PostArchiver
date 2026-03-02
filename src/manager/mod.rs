@@ -1,10 +1,6 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
-use serde_json::Value;
+use rusqlite::{Connection, Transaction};
 
 use crate::utils::{DATABASE_NAME, VERSION};
 
