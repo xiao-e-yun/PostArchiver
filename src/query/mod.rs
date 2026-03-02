@@ -189,6 +189,7 @@ impl<'a, C: PostArchiverConnection> Queryer<'a, C> {
 }
 
 // ── Paginate ─────────────────────────────────────────────────────────────────
+pub use paginate::*;
 pub mod paginate {
     use crate::{
         manager::PostArchiverConnection,
@@ -246,6 +247,7 @@ pub mod paginate {
     }
 }
 
+pub use countable::*;
 pub mod countable {
     use crate::{
         manager::PostArchiverConnection,
@@ -308,6 +310,7 @@ pub mod countable {
     }
 }
 
+pub use sortable::*;
 pub mod sortable {
     use std::fmt::Display;
 

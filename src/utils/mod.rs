@@ -6,6 +6,7 @@
 
 #[macro_use]
 pub(crate) mod macros;
+pub use macros::AsTable;
 
 /// Default relative path to the SQLite database file
 ///
