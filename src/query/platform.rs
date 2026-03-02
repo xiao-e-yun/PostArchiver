@@ -23,8 +23,8 @@ use super::{
 #[derive(Debug)]
 pub struct PlatformQuery<'a, C> {
     queryer: Queryer<'a, C>,
-    ids: IdFilter<PlatformId>,
-    name: TextFilter,
+    pub ids: IdFilter<PlatformId>,
+    pub name: TextFilter,
 }
 
 impl_sortable!(PlatformQuery(PlatformSort) {

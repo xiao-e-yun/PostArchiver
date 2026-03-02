@@ -23,10 +23,10 @@ use super::{
 #[derive(Debug)]
 pub struct TagQuery<'a, C> {
     queryer: Queryer<'a, C>,
-    ids: IdFilter<TagId>,
-    name: TextFilter,
-    source: TextFilter,
-    platforms: IdFilter<PlatformId>,
+    pub ids: IdFilter<TagId>,
+    pub name: TextFilter,
+    pub source: TextFilter,
+    pub platforms: IdFilter<PlatformId>,
 }
 
 impl<'a, C: PostArchiverConnection> TagQuery<'a, C> {

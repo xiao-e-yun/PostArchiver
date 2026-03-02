@@ -1,6 +1,10 @@
 //! Tests for `src/query/post.rs`
 
-use crate::{manager::PostArchiverManager, query::post::PostSort, query::SortDir, tests::helpers};
+use crate::{
+    manager::PostArchiverManager,
+    query::{post::PostSort, Countable, Paginate, Query, SortDir, Sortable},
+    tests::helpers,
+};
 use chrono::{Duration, Utc};
 
 // ── get_post ──────────────────────────────────────────────────────────────────
@@ -77,7 +81,7 @@ fn test_posts_returns_all() {
     assert!(ids.contains(&id3));
 }
 
-// ── posts().platform() filter ─────────────────────────────────────────────────
+// ── posts().platforms filter ──────────────────────────────────────────────────
 
 #[test]
 fn test_posts_filter_by_platform() {
@@ -89,7 +93,9 @@ fn test_posts_filter_by_platform() {
     let id1 = helpers::add_post(&m, "P1 post".into(), None, Some(p1), Some(now), Some(now));
     let _id2 = helpers::add_post(&m, "P2 post".into(), None, Some(p2), Some(now), Some(now));
 
-    let posts = m.posts().platform(p1).query().unwrap();
+    let mut q = m.posts();
+    q.platforms.insert(p1);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -106,14 +112,16 @@ fn test_posts_filter_by_multiple_platforms_or() {
     let id2 = helpers::add_post(&m, "B".into(), None, Some(p2), Some(now), Some(now));
     let _id3 = helpers::add_post(&m, "C".into(), None, Some(p3), Some(now), Some(now));
 
-    let posts = m.posts().platforms([p1, p2]).query().unwrap();
+    let mut q = m.posts();
+    q.platforms.extend([p1, p2]);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
     assert!(ids.contains(&id2));
 }
 
-// ── posts().tags() filter – AND semantics ────────────────────────────────────
+// ── posts().tags filter – AND semantics ──────────────────────────────────────
 
 #[test]
 fn test_posts_filter_by_single_tag() {
@@ -127,7 +135,9 @@ fn test_posts_filter_by_single_tag() {
     helpers::add_post_tags(&m, id1, &[tag_a]);
     helpers::add_post_tags(&m, id2, &[_tag_b]);
 
-    let posts = m.posts().tags([tag_a]).query().unwrap();
+    let mut q = m.posts();
+    q.tags.insert(tag_a);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -153,12 +163,14 @@ fn test_posts_filter_by_tags_and_semantics() {
     helpers::add_post_tags(&m, _id3, &[tag_c]);
 
     // Filter by both rust AND async → only post1
-    let posts = m.posts().tags([tag_a, tag_b]).query().unwrap();
+    let mut q = m.posts();
+    q.tags.extend([tag_a, tag_b]);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
 
-// ── posts().author() filter ───────────────────────────────────────────────────
+// ── posts().authors filter ────────────────────────────────────────────────────
 
 #[test]
 fn test_posts_filter_by_author() {
@@ -172,12 +184,14 @@ fn test_posts_filter_by_author() {
     helpers::add_post_authors(&m, id1, &[author_a]);
     helpers::add_post_authors(&m, id2, &[author_b]);
 
-    let posts = m.posts().author(author_a).query().unwrap();
+    let mut q = m.posts();
+    q.authors.insert(author_a);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
 
-// ── posts().id() / .ids() filter ─────────────────────────────────────────────
+// ── posts().ids filter ───────────────────────────────────────────────────────
 
 #[test]
 fn test_posts_filter_by_single_id() {
@@ -186,7 +200,9 @@ fn test_posts_filter_by_single_id() {
     let id1 = helpers::add_post(&m, "One".into(), None, None, Some(now), Some(now));
     let _id2 = helpers::add_post(&m, "Two".into(), None, None, Some(now), Some(now));
 
-    let posts = m.posts().id(id1).query().unwrap();
+    let mut q = m.posts();
+    q.ids.insert(id1);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -199,7 +215,9 @@ fn test_posts_filter_by_multiple_ids() {
     let id2 = helpers::add_post(&m, "Two".into(), None, None, Some(now), Some(now));
     let _id3 = helpers::add_post(&m, "Three".into(), None, None, Some(now), Some(now));
 
-    let posts = m.posts().ids([id1, id2]).query().unwrap();
+    let mut q = m.posts();
+    q.ids.extend([id1, id2]);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -321,12 +339,14 @@ fn test_posts_with_total_filtered() {
         helpers::add_post(&m, "no plt".into(), None, None, Some(now), Some(now));
     }
 
-    let result = m.posts().platform(p).with_total().query().unwrap();
+    let mut q = m.posts();
+    q.platforms.insert(p);
+    let result = q.with_total().query().unwrap();
     assert_eq!(result.total, 4);
     assert_eq!(result.items.len(), 4);
 }
 
-// ── posts().relations() ───────────────────────────────────────────────────────
+// ── posts relations via bind() ────────────────────────────────────────────────
 
 #[test]
 fn test_posts_with_relations_empty_associations() {
@@ -334,14 +354,17 @@ fn test_posts_with_relations_empty_associations() {
     let now = Utc::now();
     let id = helpers::add_post(&m, "Solo".into(), None, None, Some(now), Some(now));
 
-    let result = m.posts().id(id).relations().query().unwrap();
-    assert_eq!(result.len(), 1);
-    let wr = &result[0];
-    assert_eq!(wr.post.id, id);
-    assert!(wr.authors.is_empty());
-    assert!(wr.tags.is_empty());
-    assert!(wr.file_metas.is_empty());
-    assert!(wr.collections.is_empty());
+    let mut q = m.posts();
+    q.ids.insert(id);
+    let posts = q.query().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0].id, id);
+
+    let bound = m.bind(id);
+    assert!(bound.list_authors().unwrap().is_empty());
+    assert!(bound.list_tags().unwrap().is_empty());
+    assert!(bound.list_file_metas().unwrap().is_empty());
+    assert!(bound.list_collections().unwrap().is_empty());
 }
 
 #[test]
@@ -364,19 +387,25 @@ fn test_posts_with_relations_loaded() {
     helpers::add_post_tags(&m, post_id, &[tag_id]);
     helpers::add_post_collections(&m, post_id, &[coll_id]);
 
-    let result = m.posts().id(post_id).relations().query().unwrap();
-    let wr = &result[0];
-    assert_eq!(wr.authors.len(), 1);
-    assert_eq!(wr.authors[0].id, author_id);
-    assert_eq!(wr.tags.len(), 1);
-    assert_eq!(wr.tags[0].id, tag_id);
-    assert_eq!(wr.file_metas.len(), 1);
-    assert_eq!(wr.file_metas[0].id, file_id);
-    assert_eq!(wr.collections.len(), 1);
-    assert_eq!(wr.collections[0].id, coll_id);
+    let bound = m.bind(post_id);
+    let authors = bound.list_authors().unwrap();
+    assert_eq!(authors.len(), 1);
+    assert_eq!(authors[0], author_id);
+
+    let tags = bound.list_tags().unwrap();
+    assert_eq!(tags.len(), 1);
+    assert_eq!(tags[0], tag_id);
+
+    let file_metas = bound.list_file_metas().unwrap();
+    assert_eq!(file_metas.len(), 1);
+    assert_eq!(file_metas[0], file_id);
+
+    let collections = bound.list_collections().unwrap();
+    assert_eq!(collections.len(), 1);
+    assert_eq!(collections[0], coll_id);
 }
 
-// ── posts().relations().with_total() ─────────────────────────────────────────
+// ── posts pagination with tag filter ─────────────────────────────────────────
 
 #[test]
 fn test_posts_relations_with_total() {
@@ -392,25 +421,20 @@ fn test_posts_relations_with_total() {
         helpers::add_post(&m, format!("Q{i}"), None, None, Some(now), Some(now));
     }
 
-    let result = m
-        .posts()
-        .tags([tag])
-        .pagination(2, 0)
-        .relations()
-        .with_total()
-        .query()
-        .unwrap();
+    let mut q = m.posts();
+    q.tags.insert(tag);
+    let result = q.pagination(2, 0).with_total().query().unwrap();
     assert_eq!(result.total, 5);
     assert_eq!(result.items.len(), 2);
 }
 
-// ── get_post_with_relations ───────────────────────────────────────────────────
+// ── get_post not found ───────────────────────────────────────────────────────
 
 #[test]
-fn test_get_post_with_relations_not_found() {
+fn test_get_post_not_found_for_relations() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     use crate::PostId;
-    let result = m.get_post_with_relations(PostId::from(999u32)).unwrap();
+    let result = m.get_post(PostId::from(999u32)).unwrap();
     assert!(result.is_none());
 }
 
@@ -422,12 +446,14 @@ fn test_get_post_with_relations_found() {
     let author_id = helpers::add_author(&m, "Author".into(), Some(now));
     helpers::add_post_authors(&m, post_id, &[author_id]);
 
-    let wr = m.get_post_with_relations(post_id).unwrap().unwrap();
-    assert_eq!(wr.post.id, post_id);
-    assert_eq!(wr.authors.len(), 1);
+    let post = m.get_post(post_id).unwrap().unwrap();
+    assert_eq!(post.id, post_id);
+
+    let authors = m.bind(post_id).list_authors().unwrap();
+    assert_eq!(authors.len(), 1);
 }
 
-// ── posts().collection() filter ───────────────────────────────────────────────
+// ── posts().collections filter ────────────────────────────────────────────────
 
 #[test]
 fn test_posts_filter_by_collection() {
@@ -440,7 +466,9 @@ fn test_posts_filter_by_collection() {
     helpers::add_post_collections(&m, id1, &[col]);
     helpers::add_post_collections(&m, id2, &[col]);
 
-    let posts = m.posts().collection(col).query().unwrap();
+    let mut q = m.posts();
+    q.collections.insert(col);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -452,7 +480,9 @@ fn test_posts_filter_by_collection_empty() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let col = helpers::add_collection(&m, "Empty".into(), None, None);
 
-    let posts = m.posts().collection(col).query().unwrap();
+    let mut q = m.posts();
+    q.collections.insert(col);
+    let posts = q.query().unwrap();
     assert!(posts.is_empty());
 }
 
@@ -469,10 +499,16 @@ fn test_posts_filter_by_collection_isolates_correctly() {
     helpers::add_post_collections(&m, id2, &[col_b]);
     helpers::add_post_collections(&m, id3, &[col_a, col_b]);
 
-    let posts_a = m.posts().collection(col_a).query().unwrap();
+    let mut q_a = m.posts();
+    q_a.collections.insert(col_a);
+    let posts_a = q_a.query().unwrap();
     assert_eq!(posts_a.len(), 2);
-    let posts_b = m.posts().collection(col_b).query().unwrap();
+
+    let mut q_b = m.posts();
+    q_b.collections.insert(col_b);
+    let posts_b = q_b.query().unwrap();
     assert_eq!(posts_b.len(), 2);
+
     let ids_a: Vec<_> = posts_a.iter().map(|p| p.id).collect();
     assert!(ids_a.contains(&id1));
     assert!(ids_a.contains(&id3));
@@ -502,13 +538,11 @@ fn test_posts_filter_platform_and_author_and_tag() {
     let id_na = helpers::add_post(&m, "NoAuthor".into(), None, Some(plt), Some(now), Some(now));
     helpers::add_post_tags(&m, id_na, &[tag]);
 
-    let posts = m
-        .posts()
-        .platform(plt)
-        .author(author)
-        .tags([tag])
-        .query()
-        .unwrap();
+    let mut q = m.posts();
+    q.platforms.insert(plt);
+    q.authors.insert(author);
+    q.tags.insert(tag);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id_match);
 }

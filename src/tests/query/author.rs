@@ -1,7 +1,9 @@
 //! Tests for `src/query/author.rs`
 
 use crate::{
-    manager::PostArchiverManager, query::author::AuthorSort, query::SortDir, tests::helpers,
+    manager::PostArchiverManager,
+    query::{author::AuthorSort, Countable, Paginate, Query, SortDir, Sortable},
+    tests::helpers,
 };
 use chrono::Utc;
 
@@ -86,7 +88,7 @@ fn test_authors_returns_all() {
     assert!(ids.contains(&id2));
 }
 
-// ── authors().name_contains() ────────────────────────────────────────────────
+// ── authors().name.contains() ────────────────────────────────────────────────
 
 #[test]
 fn test_authors_name_contains() {
@@ -96,7 +98,9 @@ fn test_authors_name_contains() {
     helpers::add_author(&m, "Bob Jones".into(), Some(now));
     helpers::add_author(&m, "Alice Wonderland".into(), Some(now));
 
-    let results = m.authors().name_contains("Alice").query().unwrap();
+    let mut q = m.authors();
+    q.name.contains("Alice");
+    let results = q.query().unwrap();
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|a| a.name.contains("Alice")));
 }
@@ -109,7 +113,9 @@ fn test_authors_name_contains_case_insensitive() {
     helpers::add_author(&m, "ALICE".into(), Some(now));
 
     // LIKE '%alice%' is case-insensitive for ASCII in SQLite
-    let results = m.authors().name_contains("alice").query().unwrap();
+    let mut q = m.authors();
+    q.name.contains("alice");
+    let results = q.query().unwrap();
     assert_eq!(results.len(), 2);
 }
 
@@ -119,7 +125,9 @@ fn test_authors_name_contains_no_match() {
     let now = Utc::now();
     helpers::add_author(&m, "Alice".into(), Some(now));
 
-    let results = m.authors().name_contains("xyz").query().unwrap();
+    let mut q = m.authors();
+    q.name.contains("xyz");
+    let results = q.query().unwrap();
     assert!(results.is_empty());
 }
 
@@ -213,17 +221,14 @@ fn test_authors_with_total_filtered() {
     helpers::add_author(&m, "Alice B".into(), Some(now));
     helpers::add_author(&m, "Bob C".into(), Some(now));
 
-    let result = m
-        .authors()
-        .name_contains("Alice")
-        .with_total()
-        .query()
-        .unwrap();
+    let mut q = m.authors();
+    q.name.contains("Alice");
+    let result = q.with_total().query().unwrap();
     assert_eq!(result.total, 2);
     assert_eq!(result.items.len(), 2);
 }
 
-// ── authors().relations() ────────────────────────────────────────────────────
+// ── author relations via bind() ──────────────────────────────────────────────
 
 #[test]
 fn test_authors_with_relations() {
@@ -235,13 +240,16 @@ fn test_authors_with_relations() {
     let post_id = helpers::add_post(&m, "Post".into(), None, None, Some(now), Some(now));
     helpers::add_post_authors(&m, post_id, &[author_id]);
 
-    let result = m.authors().relations().query().unwrap();
-    assert_eq!(result.len(), 1);
-    let wr = &result[0];
-    assert_eq!(wr.author.id, author_id);
-    assert_eq!(wr.aliases.len(), 1);
-    assert_eq!(wr.posts.len(), 1);
-    assert_eq!(wr.posts[0].id, post_id);
+    let authors = m.authors().query().unwrap();
+    assert_eq!(authors.len(), 1);
+    assert_eq!(authors[0].id, author_id);
+
+    let aliases = m.bind(author_id).list_aliases().unwrap();
+    assert_eq!(aliases.len(), 1);
+
+    let posts = m.bind(author_id).list_posts().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0], post_id);
 }
 
 #[test]
@@ -252,21 +260,15 @@ fn test_authors_relations_with_total() {
         helpers::add_author(&m, format!("A{i}"), Some(now));
     }
 
-    let result = m
-        .authors()
-        .pagination(2, 0)
-        .relations()
-        .with_total()
-        .query()
-        .unwrap();
+    let result = m.authors().pagination(2, 0).with_total().query().unwrap();
     assert_eq!(result.total, 4);
     assert_eq!(result.items.len(), 2);
 }
 
-// ── author aliases via relations ────────────────────────────────────────────
+// ── author aliases via bind() ───────────────────────────────────────────────
 
 #[test]
-fn test_author_aliases_via_relations() {
+fn test_author_aliases_via_bind() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let plt1 = helpers::add_platform(&m, "github".into());
@@ -285,23 +287,21 @@ fn test_author_aliases_via_relations() {
         ],
     );
 
-    let result = m.authors().relations().query().unwrap();
-    let wr = result.iter().find(|a| a.author.id == id).unwrap();
-    assert_eq!(wr.aliases.len(), 2);
-    let sources: Vec<_> = wr.aliases.iter().map(|a| a.source.as_str()).collect();
+    let aliases = m.bind(id).list_aliases().unwrap();
+    assert_eq!(aliases.len(), 2);
+    let sources: Vec<_> = aliases.iter().map(|a| a.source.as_str()).collect();
     assert!(sources.contains(&"dev-gh"));
     assert!(sources.contains(&"dev-tw"));
 }
 
 #[test]
-fn test_author_aliases_empty_via_relations() {
+fn test_author_aliases_empty_via_bind() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let id = helpers::add_author(&m, "NoAlias".into(), Some(now));
 
-    let result = m.authors().relations().query().unwrap();
-    let wr = result.iter().find(|a| a.author.id == id).unwrap();
-    assert!(wr.aliases.is_empty());
+    let aliases = m.bind(id).list_aliases().unwrap();
+    assert!(aliases.is_empty());
 }
 
 // ── author posts via posts() builder ────────────────────────────────────────
@@ -317,7 +317,9 @@ fn test_author_posts_via_builder() {
     helpers::add_post_authors(&m, id1, &[author]);
     helpers::add_post_authors(&m, id2, &[author]);
 
-    let posts = m.posts().author(author).query().unwrap();
+    let mut q = m.posts();
+    q.authors.insert(author);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -330,6 +332,8 @@ fn test_author_posts_empty_via_builder() {
     let now = Utc::now();
     let author = helpers::add_author(&m, "Silent".into(), Some(now));
 
-    let posts = m.posts().author(author).query().unwrap();
+    let mut q = m.posts();
+    q.authors.insert(author);
+    let posts = q.query().unwrap();
     assert!(posts.is_empty());
 }

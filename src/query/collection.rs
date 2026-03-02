@@ -23,9 +23,9 @@ use super::{
 #[derive(Debug)]
 pub struct CollectionQuery<'a, C> {
     queryer: Queryer<'a, C>,
-    ids: IdFilter<CollectionId>,
-    name: TextFilter,
-    source: TextFilter,
+    pub ids: IdFilter<CollectionId>,
+    pub name: TextFilter,
+    pub source: TextFilter,
 }
 
 impl<'a, C: PostArchiverConnection> CollectionQuery<'a, C> {

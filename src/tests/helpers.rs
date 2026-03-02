@@ -7,8 +7,8 @@ use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
-    manager::PostArchiverManager, Alias, Author, AuthorId, Collection, CollectionId, FileMeta,
-    FileMetaId, Platform, PlatformId, Post, PostId, Tag, TagId,
+    manager::PostArchiverManager, query::Query, Alias, Author, AuthorId, Collection, CollectionId,
+    FileMeta, FileMetaId, Platform, PlatformId, Post, PostId, Tag, TagId,
 };
 
 // ── Post helpers ──────────────────────────────────────────────
@@ -120,15 +120,25 @@ pub fn add_author_aliases(
 }
 
 pub fn list_author_aliases(m: &PostArchiverManager, author: AuthorId) -> Vec<Alias> {
-    m.list_author_aliases(author).unwrap()
+    m.bind(author).list_aliases().unwrap()
 }
 
 pub fn list_author_posts(m: &PostArchiverManager, author: AuthorId) -> Vec<Post> {
-    m.list_author_posts(author).unwrap()
+    m.bind(author)
+        .list_posts()
+        .unwrap()
+        .into_iter()
+        .filter_map(|id| m.get_post(id).unwrap())
+        .collect()
 }
 
 pub fn list_post_authors(m: &PostArchiverManager, post: PostId) -> Vec<Author> {
-    m.list_post_authors(post).unwrap()
+    m.bind(post)
+        .list_authors()
+        .unwrap()
+        .into_iter()
+        .filter_map(|id| m.get_author(id).unwrap())
+        .collect()
 }
 
 // ── Platform helpers ──────────────────────────────────────────
@@ -181,11 +191,18 @@ pub fn list_tags(m: &PostArchiverManager) -> Vec<Tag> {
 }
 
 pub fn list_post_tags(m: &PostArchiverManager, post: PostId) -> Vec<Tag> {
-    m.list_post_tags(post).unwrap()
+    m.bind(post)
+        .list_tags()
+        .unwrap()
+        .into_iter()
+        .filter_map(|id| m.get_tag(id).unwrap())
+        .collect()
 }
 
 pub fn list_tag_posts(m: &PostArchiverManager, tag: TagId) -> Vec<Post> {
-    m.posts().tags([tag]).query().unwrap()
+    let mut q = m.posts();
+    q.tags.insert(tag);
+    q.query().unwrap()
 }
 
 // ── Collection helpers ────────────────────────────────────────
@@ -219,11 +236,18 @@ pub fn list_collections(m: &PostArchiverManager) -> Vec<Collection> {
 }
 
 pub fn list_post_collections(m: &PostArchiverManager, post: PostId) -> Vec<Collection> {
-    m.list_post_collections(post).unwrap()
+    m.bind(post)
+        .list_collections()
+        .unwrap()
+        .into_iter()
+        .filter_map(|id| m.get_collection(id).unwrap())
+        .collect()
 }
 
 pub fn list_collection_posts(m: &PostArchiverManager, collection: CollectionId) -> Vec<Post> {
-    m.posts().collection(collection).query().unwrap()
+    let mut q = m.posts();
+    q.collections.insert(collection);
+    q.query().unwrap()
 }
 
 // ── FileMeta helpers ──────────────────────────────────────────

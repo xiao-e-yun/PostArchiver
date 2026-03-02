@@ -1,6 +1,10 @@
 //! Tests for `src/query/platform.rs`
 
-use crate::{manager::PostArchiverManager, tests::helpers};
+use crate::{
+    manager::PostArchiverManager,
+    query::{platform::PlatformSort, Query, SortDir, Sortable},
+    tests::helpers,
+};
 use chrono::Utc;
 
 // ── get_platform ──────────────────────────────────────────────────────────────
@@ -71,7 +75,11 @@ fn test_platforms_sorted_by_name() {
     helpers::add_platform(&m, "aaa".into());
     helpers::add_platform(&m, "mmm".into());
 
-    let platforms = m.platforms().query().unwrap();
+    let platforms = m
+        .platforms()
+        .sort(PlatformSort::Name, SortDir::Asc)
+        .query()
+        .unwrap();
     // filter user-added (exclude the built-in "unknown")
     let user: Vec<_> = platforms
         .iter()
@@ -93,7 +101,9 @@ fn test_platform_posts_via_builder() {
     let id2 = helpers::add_post(&m, "B".into(), None, Some(plt), Some(now), Some(now));
     helpers::add_post(&m, "C".into(), None, None, Some(now), Some(now)); // different platform
 
-    let posts = m.posts().platform(plt).query().unwrap();
+    let mut q = m.posts();
+    q.platforms.insert(plt);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -105,7 +115,9 @@ fn test_platform_posts_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let plt = helpers::add_platform(&m, "empty".into());
 
-    let posts = m.posts().platform(plt).query().unwrap();
+    let mut q = m.posts();
+    q.platforms.insert(plt);
+    let posts = q.query().unwrap();
     assert!(posts.is_empty());
 }
 
@@ -117,7 +129,9 @@ fn test_platform_tags_via_builder() {
     let t2 = helpers::add_tag(&m, "tag-two".into(), Some(plt));
     helpers::add_tag(&m, "global".into(), None); // no platform
 
-    let tags = m.tags().platform(Some(plt)).query().unwrap();
+    let mut q = m.tags();
+    q.platforms.insert(plt);
+    let tags = q.query().unwrap();
     assert_eq!(tags.len(), 2);
     let ids: Vec<_> = tags.iter().map(|t| t.id).collect();
     assert!(ids.contains(&t1));
@@ -129,7 +143,9 @@ fn test_platform_tags_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let plt = helpers::add_platform(&m, "empty".into());
 
-    let tags = m.tags().platform(Some(plt)).query().unwrap();
+    let mut q = m.tags();
+    q.platforms.insert(plt);
+    let tags = q.query().unwrap();
     assert!(tags.is_empty());
 }
 
@@ -141,7 +157,9 @@ fn test_platform_tags_isolates_correctly() {
     helpers::add_tag(&m, "ta".into(), Some(plt_a));
     let tb = helpers::add_tag(&m, "tb".into(), Some(plt_b));
 
-    let tags = m.tags().platform(Some(plt_b)).query().unwrap();
+    let mut q = m.tags();
+    q.platforms.insert(plt_b);
+    let tags = q.query().unwrap();
     assert_eq!(tags.len(), 1);
     assert_eq!(tags[0].id, tb);
 }

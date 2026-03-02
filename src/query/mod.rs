@@ -38,6 +38,10 @@ pub mod platform;
 pub mod post;
 pub mod tag;
 
+pub use countable::{Countable, PageResult};
+pub use paginate::Paginate;
+pub use sortable::{SortDir, Sortable};
+
 use std::{fmt::Debug, rc::Rc};
 
 use rusqlite::ToSql;

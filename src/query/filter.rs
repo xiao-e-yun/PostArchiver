@@ -206,6 +206,18 @@ impl<T> RelationshipsFilter<T> {
     }
 }
 
+impl<T: Eq + std::hash::Hash> RelationshipsFilter<T> {
+    pub fn insert(&mut self, id: T) -> &mut Self {
+        self.ids.insert(id);
+        self
+    }
+
+    pub fn extend(&mut self, ids: impl IntoIterator<Item = T>) -> &mut Self {
+        self.ids.extend(ids);
+        self
+    }
+}
+
 impl<T: ToSql + Serialize + Clone + 'static> RelationshipsFilter<T>
 where
     T: Eq + std::hash::Hash,

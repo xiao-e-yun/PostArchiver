@@ -1,6 +1,10 @@
 //! Tests for `src/query/collection.rs`
 
-use crate::{manager::PostArchiverManager, query::SortDir, tests::helpers};
+use crate::{
+    manager::PostArchiverManager,
+    query::{collection::CollectionSort, Countable, Paginate, Query, SortDir, Sortable},
+    tests::helpers,
+};
 use chrono::Utc;
 
 // ── get_collection ────────────────────────────────────────────────────────────
@@ -74,7 +78,7 @@ fn test_collections_returns_all() {
     assert!(ids.contains(&id2));
 }
 
-// ── collections().name_contains() ────────────────────────────────────────────
+// ── collections().name.contains() ────────────────────────────────────────────
 
 #[test]
 fn test_collections_name_contains() {
@@ -83,7 +87,9 @@ fn test_collections_name_contains() {
     helpers::add_collection(&m, "Rust Tutorials".into(), None, None);
     helpers::add_collection(&m, "Python Book".into(), None, None);
 
-    let cols = m.collections().name_contains("Rust").query().unwrap();
+    let mut q = m.collections();
+    q.name.contains("Rust");
+    let cols = q.query().unwrap();
     assert_eq!(cols.len(), 2);
     assert!(cols.iter().all(|c| c.name.contains("Rust")));
 }
@@ -93,11 +99,13 @@ fn test_collections_name_contains_no_match() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     helpers::add_collection(&m, "Something".into(), None, None);
 
-    let cols = m.collections().name_contains("xyz").query().unwrap();
+    let mut q = m.collections();
+    q.name.contains("xyz");
+    let cols = q.query().unwrap();
     assert!(cols.is_empty());
 }
 
-// ── collections().sort_dir() ─────────────────────────────────────────────────
+// ── collections().sort() ─────────────────────────────────────────────────────
 
 #[test]
 fn test_collections_sort_asc() {
@@ -106,7 +114,11 @@ fn test_collections_sort_asc() {
     helpers::add_collection(&m, "Apple".into(), None, None);
     helpers::add_collection(&m, "Mango".into(), None, None);
 
-    let cols = m.collections().sort_dir(SortDir::Asc).query().unwrap();
+    let cols = m
+        .collections()
+        .sort(CollectionSort::Name, SortDir::Asc)
+        .query()
+        .unwrap();
     let names: Vec<_> = cols.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, vec!["Apple", "Mango", "Zebra"]);
 }
@@ -118,7 +130,11 @@ fn test_collections_sort_desc() {
     helpers::add_collection(&m, "Apple".into(), None, None);
     helpers::add_collection(&m, "Mango".into(), None, None);
 
-    let cols = m.collections().sort_dir(SortDir::Desc).query().unwrap();
+    let cols = m
+        .collections()
+        .sort(CollectionSort::Name, SortDir::Desc)
+        .query()
+        .unwrap();
     let names: Vec<_> = cols.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, vec!["Zebra", "Mango", "Apple"]);
 }
@@ -134,13 +150,13 @@ fn test_collections_pagination() {
 
     let page1 = m
         .collections()
-        .sort_dir(SortDir::Asc)
+        .sort(CollectionSort::Name, SortDir::Asc)
         .pagination(2, 0)
         .query()
         .unwrap();
     let page2 = m
         .collections()
-        .sort_dir(SortDir::Asc)
+        .sort(CollectionSort::Name, SortDir::Asc)
         .pagination(2, 1)
         .query()
         .unwrap();
@@ -179,12 +195,9 @@ fn test_collections_with_total_filtered() {
     helpers::add_collection(&m, "Rust vol.2".into(), None, None);
     helpers::add_collection(&m, "Python vol.1".into(), None, None);
 
-    let result = m
-        .collections()
-        .name_contains("Rust")
-        .with_total()
-        .query()
-        .unwrap();
+    let mut q = m.collections();
+    q.name.contains("Rust");
+    let result = q.with_total().query().unwrap();
     assert_eq!(result.total, 2);
 }
 
@@ -201,7 +214,9 @@ fn test_collection_posts_via_builder() {
     helpers::add_post_collections(&m, id1, &[col]);
     helpers::add_post_collections(&m, id2, &[col]);
 
-    let posts = m.posts().collection(col).query().unwrap();
+    let mut q = m.posts();
+    q.collections.insert(col);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -213,7 +228,9 @@ fn test_collection_posts_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let col = helpers::add_collection(&m, "Empty".into(), None, None);
 
-    let posts = m.posts().collection(col).query().unwrap();
+    let mut q = m.posts();
+    q.collections.insert(col);
+    let posts = q.query().unwrap();
     assert!(posts.is_empty());
 }
 
@@ -230,10 +247,16 @@ fn test_collection_posts_multiple_via_builder() {
     helpers::add_post_collections(&m, id2, &[col_b]);
     helpers::add_post_collections(&m, id3, &[col_a, col_b]);
 
-    let posts_a = m.posts().collection(col_a).query().unwrap();
+    let mut q_a = m.posts();
+    q_a.collections.insert(col_a);
+    let posts_a = q_a.query().unwrap();
     assert_eq!(posts_a.len(), 2);
-    let posts_b = m.posts().collection(col_b).query().unwrap();
+
+    let mut q_b = m.posts();
+    q_b.collections.insert(col_b);
+    let posts_b = q_b.query().unwrap();
     assert_eq!(posts_b.len(), 2);
+
     let ids_a: Vec<_> = posts_a.iter().map(|p| p.id).collect();
     assert!(ids_a.contains(&id1));
     assert!(ids_a.contains(&id3));

@@ -1,6 +1,10 @@
 //! Tests for `src/query/tag.rs`
 
-use crate::{manager::PostArchiverManager, query::SortDir, tests::helpers};
+use crate::{
+    manager::PostArchiverManager,
+    query::{tag::TagSort, Countable, Paginate, Query, SortDir, Sortable},
+    tests::helpers,
+};
 use chrono::Utc;
 
 // ── get_tag ───────────────────────────────────────────────────────────────────
@@ -95,7 +99,7 @@ fn test_tags_returns_all() {
     assert!(ids.contains(&id2));
 }
 
-// ── tags().platform() filter ─────────────────────────────────────────────────
+// ── tags().platforms filter ──────────────────────────────────────────────────
 
 #[test]
 fn test_tags_filter_by_platform() {
@@ -107,22 +111,11 @@ fn test_tags_filter_by_platform() {
     let _id2 = helpers::add_tag(&m, "tagB".into(), Some(plt_b));
     let _id3 = helpers::add_tag(&m, "tagNone".into(), None);
 
-    let tags = m.tags().platform(Some(plt_a)).query().unwrap();
+    let mut q = m.tags();
+    q.platforms.insert(plt_a);
+    let tags = q.query().unwrap();
     assert_eq!(tags.len(), 1);
     assert_eq!(tags[0].id, id1);
-}
-
-#[test]
-fn test_tags_filter_by_no_platform() {
-    let m = PostArchiverManager::open_in_memory().unwrap();
-    let plt = helpers::add_platform(&m, "p".into());
-
-    let _id1 = helpers::add_tag(&m, "withPlt".into(), Some(plt));
-    let id2 = helpers::add_tag(&m, "noPlt".into(), None);
-
-    let tags = m.tags().platform(None).query().unwrap();
-    assert_eq!(tags.len(), 1);
-    assert_eq!(tags[0].id, id2);
 }
 
 #[test]
@@ -136,19 +129,17 @@ fn test_tags_filter_by_multiple_platforms_or() {
     let id2 = helpers::add_tag(&m, "tb".into(), Some(plt_b));
     let _id3 = helpers::add_tag(&m, "tc".into(), Some(plt_c));
 
-    let tags = m
-        .tags()
-        .platform(Some(plt_a))
-        .platform(Some(plt_b))
-        .query()
-        .unwrap();
+    let mut q = m.tags();
+    q.platforms.insert(plt_a);
+    q.platforms.insert(plt_b);
+    let tags = q.query().unwrap();
     assert_eq!(tags.len(), 2);
     let ids: Vec<_> = tags.iter().map(|t| t.id).collect();
     assert!(ids.contains(&id1));
     assert!(ids.contains(&id2));
 }
 
-// ── tags().name_contains() ───────────────────────────────────────────────────
+// ── tags().name.contains() ───────────────────────────────────────────────────
 
 #[test]
 fn test_tags_name_contains() {
@@ -157,12 +148,14 @@ fn test_tags_name_contains() {
     helpers::add_tag(&m, "rust-async".into(), None);
     helpers::add_tag(&m, "python".into(), None);
 
-    let tags = m.tags().name_contains("rust").query().unwrap();
+    let mut q = m.tags();
+    q.name.contains("rust");
+    let tags = q.query().unwrap();
     assert_eq!(tags.len(), 2);
     assert!(tags.iter().all(|t| t.name.contains("rust")));
 }
 
-// ── tags().sort_dir() ────────────────────────────────────────────────────────
+// ── tags().sort() ────────────────────────────────────────────────────────────
 
 #[test]
 fn test_tags_sort_by_name_asc() {
@@ -171,7 +164,7 @@ fn test_tags_sort_by_name_asc() {
     helpers::add_tag(&m, "apple".into(), None);
     helpers::add_tag(&m, "mango".into(), None);
 
-    let tags = m.tags().sort_dir(SortDir::Asc).query().unwrap();
+    let tags = m.tags().sort(TagSort::Name, SortDir::Asc).query().unwrap();
     let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, vec!["apple", "mango", "zebra"]);
 }
@@ -183,7 +176,7 @@ fn test_tags_sort_by_name_desc() {
     helpers::add_tag(&m, "apple".into(), None);
     helpers::add_tag(&m, "mango".into(), None);
 
-    let tags = m.tags().sort_dir(SortDir::Desc).query().unwrap();
+    let tags = m.tags().sort(TagSort::Name, SortDir::Desc).query().unwrap();
     let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, vec!["zebra", "mango", "apple"]);
 }
@@ -199,13 +192,13 @@ fn test_tags_pagination() {
 
     let page1 = m
         .tags()
-        .sort_dir(SortDir::Asc)
+        .sort(TagSort::Name, SortDir::Asc)
         .pagination(2, 0)
         .query()
         .unwrap();
     let page2 = m
         .tags()
-        .sort_dir(SortDir::Asc)
+        .sort(TagSort::Name, SortDir::Asc)
         .pagination(2, 1)
         .query()
         .unwrap();
@@ -245,7 +238,9 @@ fn test_tag_posts_via_builder() {
     helpers::add_post_tags(&m, id1, &[t]);
     helpers::add_post_tags(&m, id2, &[t]);
 
-    let posts = m.posts().tags([t]).query().unwrap();
+    let mut q = m.posts();
+    q.tags.insert(t);
+    let posts = q.query().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -257,6 +252,8 @@ fn test_tag_posts_empty_via_builder() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let t = helpers::add_tag(&m, "unused".into(), None);
 
-    let posts = m.posts().tags([t]).query().unwrap();
+    let mut q = m.posts();
+    q.tags.insert(t);
+    let posts = q.query().unwrap();
     assert!(posts.is_empty());
 }

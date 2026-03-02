@@ -30,7 +30,7 @@ impl_sortable!(PostQuery(PostSort) {
 /// # Example
 /// ```no_run
 /// # use post_archiver::manager::PostArchiverManager;
-/// # use post_archiver::query::{SortDir, Countable, Paginate, Query};
+/// # use post_archiver::query::{SortDir, Sortable, Countable, Paginate, Query};
 /// # use post_archiver::query::post::PostSort;
 /// # let manager = PostArchiverManager::open_in_memory().unwrap();
 /// let posts = manager.posts()
