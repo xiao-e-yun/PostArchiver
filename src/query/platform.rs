@@ -8,32 +8,66 @@ use crate::{
     Platform, PlatformId,
 };
 
+use super::{
+    filter::{IdFilter, TextFilter},
+    sortable::impl_sortable,
+    Query, Queryer, RawQuery, RawSql,
+};
+
 // ── Builder ───────────────────────────────────────────────────────────────────
 
 /// Query builder for platforms.  Obtained via [`PostArchiverManager::platforms()`].
 ///
 /// Platforms are few, so this builder is intentionally simple — no pagination or
-/// typestate is provided.  `.query()` always returns `Vec<Platform>`.
+/// count is provided.  `.query()` always returns `Vec<Platform>`.
 #[derive(Debug)]
 pub struct PlatformQuery<'a, C> {
-    manager: &'a PostArchiverManager<C>,
+    queryer: Queryer<'a, C>,
+    ids: IdFilter<PlatformId>,
+    name: TextFilter,
 }
 
-impl<'a, C> PlatformQuery<'a, C> {
+impl_sortable!(PlatformQuery(PlatformSort) {
+    Id: "id",
+    Name: "name"
+});
+
+impl<'a, C: PostArchiverConnection> PlatformQuery<'a, C> {
     pub(crate) fn new(manager: &'a PostArchiverManager<C>) -> Self {
-        PlatformQuery { manager }
+        PlatformQuery {
+            queryer: Queryer::new(manager),
+            ids: IdFilter::new("id"),
+            name: TextFilter::new("name"),
+        }
     }
 }
 
-impl<C: PostArchiverConnection> PlatformQuery<'_, C> {
-    /// Return all platforms ordered by name.
-    pub fn query(self) -> Result<Vec<Platform>, rusqlite::Error> {
-        let mut stmt = self
-            .manager
-            .conn()
-            .prepare_cached("SELECT * FROM platforms ORDER BY name ASC")?;
-        let rows = stmt.query_map([], Platform::from_row)?;
-        rows.collect()
+impl<C: PostArchiverConnection> RawQuery for PlatformQuery<'_, C> {
+    type Item = Platform;
+
+    fn sql(&self) -> RawSql<Self::Item> {
+        let mut sql = RawSql::new();
+
+        sql = self.ids.build_sql(sql);
+        sql = self.name.build_sql(sql);
+
+        sql
+    }
+
+    fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection> {
+        &self.queryer
+    }
+}
+
+impl<C: PostArchiverConnection> Query for PlatformQuery<'_, C> {
+    type Wrapper<T> = Vec<T>;
+
+    fn query_with_context(
+        self,
+        sql: &str,
+        params: Vec<super::Param>,
+    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+        self.queryer().fetch(&sql, params)
     }
 }
 

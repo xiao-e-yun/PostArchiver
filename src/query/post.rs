@@ -1,51 +1,25 @@
 //! Post query builder and related point-query helpers.
 
-use std::marker::PhantomData;
-
 use rusqlite::OptionalExtension;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     utils::macros::AsTable,
-    Author, AuthorId, Collection, CollectionId, FileMeta, Platform, PlatformId, Post, PostId, Tag,
-    TagId,
+    AuthorId, CollectionId, PlatformId, Post, PostId, TagId,
 };
 
-use super::{NoRelations, NoTotal, PageResult, SortDir, WithRelations, WithTotal};
+use super::{
+    filter::{DateFilter, IdFilter, RelationshipsFilter, TextFilter},
+    sortable::impl_sortable,
+    Param, Query, Queryer, RawQuery, RawSql,
+};
 
-// ── Supporting types ──────────────────────────────────────────────────────────
-
-/// Sort field for [`PostQuery`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PostSort {
-    #[default]
-    Updated,
-    Published,
-    Title,
-    Id,
-}
-
-impl PostSort {
-    fn as_col(self) -> &'static str {
-        match self {
-            PostSort::Updated => "updated",
-            PostSort::Published => "published",
-            PostSort::Title => "title",
-            PostSort::Id => "id",
-        }
-    }
-}
-
-/// A [`Post`] with all of its relations eagerly loaded.
-#[derive(Debug, Clone)]
-pub struct PostWithRelations {
-    pub post: Post,
-    pub authors: Vec<Author>,
-    pub tags: Vec<Tag>,
-    pub file_metas: Vec<FileMeta>,
-    pub collections: Vec<Collection>,
-    pub platforms: Vec<Platform>,
-}
+impl_sortable!(PostQuery(PostSort) {
+    Id: "id",
+    Updated: "updated",
+    Published: "published",
+    Title: "title"
+});
 
 // ── Builder ───────────────────────────────────────────────────────────────────
 
@@ -53,346 +27,88 @@ pub struct PostWithRelations {
 ///
 /// Obtained via [`PostArchiverManager::posts()`].
 ///
-/// The type parameters `R` and `T` are [typestate] markers:
-/// - `R ∈ {NoRelations, WithRelations}` — controls whether `.query()` loads relations
-/// - `T ∈ {NoTotal, WithTotal}` — controls whether `.query()` wraps results in [`PageResult`]
-///
-/// [typestate]: https://docs.rust-embedded.org/book/static-guarantees/typestate-programming.html
-///
 /// # Example
 /// ```no_run
 /// # use post_archiver::manager::PostArchiverManager;
-/// # use post_archiver::query::{SortDir};
+/// # use post_archiver::query::{SortDir, Countable, Paginate, Query};
 /// # use post_archiver::query::post::PostSort;
 /// # let manager = PostArchiverManager::open_in_memory().unwrap();
 /// let posts = manager.posts()
-///     .pagination(20, 0)
 ///     .sort(PostSort::Updated, SortDir::Desc)
+///     .pagination(20, 0)
 ///     .query()
 ///     .unwrap();
 /// ```
 #[derive(Debug)]
-pub struct PostQuery<'a, C, R = NoRelations, T = NoTotal> {
-    manager: &'a PostArchiverManager<C>,
-    platforms: Vec<PlatformId>,
-    tags: Vec<TagId>,
-    collections: Vec<CollectionId>,
-    authors: Vec<AuthorId>,
-    ids: Vec<PostId>,
-    limit: u64,
-    page: u64,
-    sort: PostSort,
-    sort_dir: SortDir,
-    _r: PhantomData<R>,
-    _t: PhantomData<T>,
+pub struct PostQuery<'a, C> {
+    queryer: Queryer<'a, C>,
+    pub ids: IdFilter<PostId>,
+    pub title: TextFilter,
+    pub source: TextFilter,
+    pub updated: DateFilter,
+    pub published: DateFilter,
+    pub platforms: IdFilter<PlatformId>,
+    pub tags: RelationshipsFilter<TagId>,
+    pub authors: RelationshipsFilter<AuthorId>,
+    pub collections: RelationshipsFilter<CollectionId>,
 }
 
-// ── Builder methods (generic over R and T) ────────────────────────────────────
+// ── Builder methods ───────────────────────────────────────────────────────────
 
-impl<'a, C, R, T> PostQuery<'a, C, R, T> {
+impl<'a, C: PostArchiverConnection> PostQuery<'a, C> {
     pub(crate) fn new(manager: &'a PostArchiverManager<C>) -> Self {
         PostQuery {
-            manager,
-            platforms: Vec::new(),
-            tags: Vec::new(),
-            collections: Vec::new(),
-            authors: Vec::new(),
-            ids: Vec::new(),
-            limit: 50,
-            page: 0,
-            sort: PostSort::default(),
-            sort_dir: SortDir::default(),
-            _r: PhantomData,
-            _t: PhantomData,
-        }
-    }
-
-    /// Filter posts by a single platform (additive, OR semantics with other `platform` calls).
-    pub fn platform(mut self, id: PlatformId) -> Self {
-        self.platforms.push(id);
-        self
-    }
-
-    /// Filter posts by multiple platforms (OR semantics).
-    pub fn platforms(mut self, ids: impl IntoIterator<Item = PlatformId>) -> Self {
-        self.platforms.extend(ids);
-        self
-    }
-
-    /// Filter posts belonging to a specific collection.
-    pub fn collection(mut self, id: CollectionId) -> Self {
-        self.collections.push(id);
-        self
-    }
-
-    pub fn collections(mut self, ids: impl IntoIterator<Item = CollectionId>) -> Self {
-        self.collections.extend(ids);
-        self
-    }
-
-    pub fn tag(mut self, id: TagId) -> Self {
-        self.tags.push(id);
-        self
-    }
-
-    /// Filter posts that belong to **all** of the given tags (AND semantics).
-    pub fn tags(mut self, ids: impl IntoIterator<Item = TagId>) -> Self {
-        self.tags.extend(ids);
-        self
-    }
-
-    /// Filter posts by author.
-    pub fn author(mut self, id: AuthorId) -> Self {
-        self.authors.push(id);
-        self
-    }
-
-    pub fn authors(mut self, ids: impl IntoIterator<Item = AuthorId>) -> Self {
-        self.authors.extend(ids);
-        self
-    }
-
-    /// Filter to a single post id (additive, IN semantics with other `id` calls).
-    pub fn id(mut self, id: PostId) -> Self {
-        self.ids.push(id);
-        self
-    }
-
-    /// Filter to multiple post ids (IN semantics).
-    pub fn ids(mut self, ids: impl IntoIterator<Item = PostId>) -> Self {
-        self.ids.extend(ids);
-        self
-    }
-
-    /// Set pagination (`limit` rows per page, 0-based `page` number).
-    pub fn pagination(mut self, limit: u64, page: u64) -> Self {
-        self.limit = limit;
-        self.page = page;
-        self
-    }
-
-    /// Set sort field and direction.
-    pub fn sort(mut self, sort: PostSort, dir: SortDir) -> Self {
-        self.sort = sort;
-        self.sort_dir = dir;
-        self
-    }
-
-    /// Transition: load all relations (authors, tags, files, collections) alongside each post.
-    pub fn relations(self) -> PostQuery<'a, C, WithRelations, T> {
-        PostQuery {
-            manager: self.manager,
-            platforms: self.platforms,
-            tags: self.tags,
-            collections: self.collections,
-            authors: self.authors,
-            ids: self.ids,
-            limit: self.limit,
-            page: self.page,
-            sort: self.sort,
-            sort_dir: self.sort_dir,
-            _r: PhantomData,
-            _t: self._t,
-        }
-    }
-
-    /// Transition: include total row count in the result ([`PageResult`]).
-    pub fn with_total(self) -> PostQuery<'a, C, R, WithTotal> {
-        PostQuery {
-            manager: self.manager,
-            platforms: self.platforms,
-            tags: self.tags,
-            collections: self.collections,
-            authors: self.authors,
-            ids: self.ids,
-            limit: self.limit,
-            page: self.page,
-            sort: self.sort,
-            sort_dir: self.sort_dir,
-            _r: self._r,
-            _t: PhantomData,
+            queryer: Queryer::new(manager),
+            ids: IdFilter::new("id"),
+            title: TextFilter::new("title"),
+            source: TextFilter::new("source"),
+            updated: DateFilter::new("updated"),
+            published: DateFilter::new("published"),
+            platforms: IdFilter::new("platform"),
+            tags: RelationshipsFilter::new("post_tags", "tag"),
+            authors: RelationshipsFilter::new("author_posts", "author"),
+            collections: RelationshipsFilter::new("collection_posts", "collection"),
         }
     }
 }
 
-// ── Internal SQL helpers ──────────────────────────────────────────────────────
+// ── Trait impls ───────────────────────────────────────────────────────────────
 
-type BoxParam = Box<dyn rusqlite::types::ToSql>;
+impl<C: PostArchiverConnection> RawQuery for PostQuery<'_, C> {
+    type Item = Post;
 
-impl<C: PostArchiverConnection, R, T> PostQuery<'_, C, R, T> {
-    /// Builds `(WHERE …, params)` from the current filter state.
-    fn build_where(&self) -> (String, Vec<BoxParam>) {
-        let mut wheres: Vec<String> = Vec::new();
-        let mut params: Vec<BoxParam> = Vec::new();
+    fn sql(&self) -> RawSql<Self::Item> {
+        let mut sql = RawSql::new();
 
-        match self.ids.len() {
-            0 => {}
-            1 => {
-                wheres.push("id = ?".to_string());
-                params.push(Box::new(self.ids[0]));
-            }
-            _ => {
-                wheres.push("id IN (SELECT value FROM json_each(?))".to_string());
-                let json_array = serde_json::to_string(&self.ids).unwrap();
-                params.push(Box::new(json_array));
-            }
-        }
+        sql = self.ids.build_sql(sql);
+        sql = self.title.build_sql(sql);
+        sql = self.source.build_sql(sql);
+        sql = self.updated.build_sql(sql);
+        sql = self.published.build_sql(sql);
+        sql = self.platforms.build_sql(sql);
+        sql = self.authors.build_sql(sql);
+        sql = self.tags.build_sql(sql);
+        sql = self.collections.build_sql(sql);
 
-        match self.platforms.len() {
-            0 => {}
-            1 => {
-                wheres.push("platform = ?".to_string());
-                params.push(Box::new(self.platforms[0]));
-            }
-            _ => {
-                wheres.push("platform IN (SELECT value FROM json_each(?))".to_string());
-                let json_array = serde_json::to_string(&self.platforms).unwrap();
-                params.push(Box::new(json_array));
-            }
-        }
-
-        macro_rules! add_relation_filter {
-            ($ty:ident $field:ident, $table:ident, $col:ident) => {
-                match self.$field.len() {
-                    0 => {}
-                    1 => {
-                        wheres.push(format!(
-                                "EXISTS (SELECT 1 FROM {} WHERE post = posts.id AND {} = ?)",
-                                stringify!($table), stringify!($col)
-                        ));
-                        params.push(Box::new(self.$field[0]));
-                    }
-                    #[allow(unused_variables)]
-                    n => {
-                        add_relation_filter!($ty(n) => $field, $table, $col);
-                    }
-                }
-            };
-            (AND($count:expr) => $field:ident, $table:ident, $col:ident) => {
-                wheres.push(format!(
-                    "? == (SELECT COUNT(*) FROM {} WHERE post = posts.id AND {} IN (SELECT value FROM json_each(?)))",
-                    stringify!($table), stringify!($col)
-                ));
-                params.push(Box::new(self.$field.len() as u64));
-                let json_array = serde_json::to_string(&self.$field).unwrap();
-                params.push(Box::new(json_array));
-            };
-            (OR($count: expr) => $field:ident, $table:ident, $col:ident) => {
-                wheres.push(format!(
-                    "EXISTS (SELECT 1 FROM {} WHERE post = posts.id AND {} IN (SELECT value FROM json_each(?)))",
-                    stringify!($table), stringify!($col)
-                ));
-
-                let json_array = serde_json::to_string(&self.$field).unwrap();
-                params.push(Box::new(json_array));
-            };
-        }
-
-        add_relation_filter!(AND authors, author_posts, author);
-        add_relation_filter!(AND tags, post_tags, tag);
-        add_relation_filter!(AND collections, collection_posts, collection);
-
-        let clause = if wheres.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", wheres.join(" AND "))
-        };
-
-        (clause, params)
+        sql
     }
 
-    fn order_clause(&self) -> String {
-        format!("ORDER BY {} {}", self.sort.as_col(), self.sort_dir.as_sql())
-    }
-
-    /// Execute into a plain `Vec<Post>`.
-    fn fetch_posts(&self) -> Result<Vec<Post>, rusqlite::Error> {
-        let (where_clause, mut params) = self.build_where();
-        let order = self.order_clause();
-        let sql = format!("SELECT * FROM posts {where_clause} {order} LIMIT ? OFFSET ?");
-        let offset = self.page * self.limit;
-        params.push(Box::new(self.limit));
-        params.push(Box::new(offset));
-        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|b| b.as_ref()).collect();
-        let mut stmt = self.manager.conn().prepare(&sql)?;
-        let rows = stmt.query_map(refs.as_slice(), Post::from_row)?;
-        rows.collect()
-    }
-
-    /// Count total matching rows (ignores pagination).
-    fn count_posts(&self) -> Result<u64, rusqlite::Error> {
-        let (where_clause, params) = self.build_where();
-        let sql = format!("SELECT COUNT(*) FROM posts {where_clause}");
-        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|b| b.as_ref()).collect();
-        self.manager
-            .conn()
-            .query_row(&sql, refs.as_slice(), |row| row.get(0))
+    fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection> {
+        &self.queryer
     }
 }
 
-// ── query() impls — 4 typestate combinations ──────────────────────────────────
+impl<C: PostArchiverConnection> Query for PostQuery<'_, C> {
+    type Wrapper<T> = Vec<T>;
 
-impl<C: PostArchiverConnection> PostQuery<'_, C, NoRelations, NoTotal> {
-    /// Execute and return matching posts.
-    pub fn query(self) -> Result<Vec<Post>, rusqlite::Error> {
-        self.fetch_posts()
+    fn query_with_context(
+        self,
+        sql: &str,
+        params: Vec<Param>,
+    ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
+        self.queryer().fetch(sql, params)
     }
 }
-
-impl<C: PostArchiverConnection> PostQuery<'_, C, NoRelations, WithTotal> {
-    /// Execute and return matching posts with total count.
-    pub fn query(self) -> Result<PageResult<Post>, rusqlite::Error> {
-        let total = self.count_posts()?;
-        let items = self.fetch_posts()?;
-        Ok(PageResult { items, total })
-    }
-}
-
-impl<C: PostArchiverConnection> PostQuery<'_, C, WithRelations, NoTotal> {
-    /// Execute and return posts with all relations loaded.
-    pub fn query(self) -> Result<Vec<PostWithRelations>, rusqlite::Error> {
-        let posts = self.fetch_posts()?;
-        posts
-            .into_iter()
-            .map(|post| {
-                let id = post.id;
-                Ok(PostWithRelations {
-                    platforms: self.manager.list_post_platforms(id)?,
-                    post,
-                    authors: self.manager.list_post_authors(id)?,
-                    tags: self.manager.list_post_tags(id)?,
-                    file_metas: self.manager.list_post_files(id)?,
-                    collections: self.manager.list_post_collections(id)?,
-                })
-            })
-            .collect()
-    }
-}
-
-impl<C: PostArchiverConnection> PostQuery<'_, C, WithRelations, WithTotal> {
-    /// Execute and return posts with all relations loaded, plus total count.
-    pub fn query(self) -> Result<PageResult<PostWithRelations>, rusqlite::Error> {
-        let total = self.count_posts()?;
-        let posts = self.fetch_posts()?;
-        let items = posts
-            .into_iter()
-            .map(|post| {
-                let id = post.id;
-                Ok(PostWithRelations {
-                    platforms: self.manager.list_post_platforms(id)?,
-                    post,
-                    authors: self.manager.list_post_authors(id)?,
-                    tags: self.manager.list_post_tags(id)?,
-                    file_metas: self.manager.list_post_files(id)?,
-                    collections: self.manager.list_post_collections(id)?,
-                })
-            })
-            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
-        Ok(PageResult { items, total })
-    }
-}
-
-// ── Point-query helpers on PostArchiverManager ────────────────────────────────
 
 impl<C: PostArchiverConnection> PostArchiverManager<C> {
     /// Entry point for the post query builder.
@@ -415,89 +131,46 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
         stmt.query_row([source], |row| row.get(0)).optional()
     }
+}
 
-    /// Fetch a post together with all of its relations in one call.
-    pub fn get_post_with_relations(
-        &self,
-        id: PostId,
-    ) -> Result<Option<PostWithRelations>, rusqlite::Error> {
-        let Some(post) = self.get_post(id)? else {
-            return Ok(None);
-        };
-        Ok(Some(PostWithRelations {
-            platforms: self.list_post_platforms(id)?,
-            authors: self.list_post_authors(id)?,
-            tags: self.list_post_tags(id)?,
-            file_metas: self.list_post_files(id)?,
-            collections: self.list_post_collections(id)?,
-            post,
-        }))
-    }
+mod a {
+    use chrono::{DateTime, Utc};
 
-    /// Fetch all distinct platforms associated with a post.
-    ///
-    /// This includes the post's own platform and the platforms of all tags
-    /// associated with the post. The UNKNOWN platform (id = 0) is excluded.
-    pub(crate) fn list_post_platforms(
-        &self,
-        post: PostId,
-    ) -> Result<Vec<Platform>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "SELECT DISTINCT platforms.* FROM platforms \
-             WHERE platforms.id != 0 AND platforms.id IN ( \
-                 SELECT platform FROM posts WHERE id = ? \
-                 UNION \
-                 SELECT tags.platform FROM tags \
-                 INNER JOIN post_tags ON post_tags.tag = tags.id \
-                 WHERE post_tags.post = ? AND tags.platform IS NOT NULL \
-             )",
-        )?;
-        let rows = stmt.query_map([post, post], Platform::from_row)?;
-        rows.collect()
-    }
+    use crate::{
+        manager::PostArchiverManager,
+        query::{
+            countable::Countable,
+            paginate::Paginate,
+            sortable::{SortDir, Sortable},
+            Query, RawQuery,
+        },
+    };
 
-    /// Fetch all authors of a post (full entities).
-    pub(crate) fn list_post_authors(&self, post: PostId) -> Result<Vec<Author>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "SELECT authors.* FROM authors \
-             INNER JOIN author_posts ON author_posts.author = authors.id \
-             WHERE author_posts.post = ?",
-        )?;
-        let rows = stmt.query_map([post], Author::from_row)?;
-        rows.collect()
-    }
+    use super::PostSort;
 
-    /// Fetch all tags of a post (full entities).
-    pub(crate) fn list_post_tags(&self, post: PostId) -> Result<Vec<Tag>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "SELECT tags.* FROM tags \
-             INNER JOIN post_tags ON post_tags.tag = tags.id \
-             WHERE post_tags.post = ?",
-        )?;
-        let rows = stmt.query_map([post], Tag::from_row)?;
-        rows.collect()
-    }
+    #[test]
+    fn main() {
+        let manager = PostArchiverManager::open_uncheck("/data/archiver")
+            .unwrap()
+            .unwrap();
+        let mut posts = manager.posts();
 
-    /// Fetch all file metas of a post.
-    pub(crate) fn list_post_files(&self, post: PostId) -> Result<Vec<FileMeta>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM file_metas WHERE post = ?")?;
-        let rows = stmt.query_map([post], FileMeta::from_row)?;
-        rows.collect()
-    }
+        posts.updated.after(
+            DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap()
+                .to_utc(),
+        );
 
-    /// Fetch all collections a post belongs to.
-    pub(crate) fn list_post_collections(
-        &self,
-        post: PostId,
-    ) -> Result<Vec<Collection>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "SELECT collections.* FROM collections \
-             INNER JOIN collection_posts ON collection_posts.collection = collections.id \
-             WHERE collection_posts.post = ?",
-        )?;
-        let rows = stmt.query_map([post], Collection::from_row)?;
-        rows.collect()
+        let posts = posts
+            .sort_random()
+            .with_total()
+            .sort(PostSort::Updated, SortDir::Asc);
+
+        let posts = posts.pagination(2, 0);
+
+        let sql = posts.sql().build_sql().0;
+        let posts = posts.query().unwrap();
+
+        panic!("posts: {posts:#?} {} {}", sql, posts.items.len());
     }
 }
