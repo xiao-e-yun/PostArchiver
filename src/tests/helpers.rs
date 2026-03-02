@@ -46,7 +46,7 @@ pub fn get_post(m: &PostArchiverManager, id: PostId) -> Post {
 }
 
 pub fn find_post(m: &PostArchiverManager, source: &str) -> Option<PostId> {
-    m.find_post_by_source(source).unwrap()
+    m.find_post(source).unwrap()
 }
 
 pub fn find_post_with_updated(

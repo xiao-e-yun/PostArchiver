@@ -1,6 +1,7 @@
 //! Post query builder and related point-query helpers.
 
-use rusqlite::OptionalExtension;
+use chrono::{DateTime, Utc};
+use rusqlite::{params, OptionalExtension};
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
@@ -125,10 +126,25 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
     }
 
     /// Look up a post ID by its `source` field.
-    pub fn find_post_by_source(&self, source: &str) -> crate::error::Result<Option<PostId>> {
+    pub fn find_post(&self, source: &str) -> crate::error::Result<Option<PostId>> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
         Ok(stmt.query_row([source], |row| row.get(0)).optional()?)
+    }
+
+    /// Look up a post ID by its `source` field, but only if its `updated` timestamp is newer than
+    /// the given value.
+    pub fn find_post_with_updated(
+        &self,
+        source: &str,
+        updated: &DateTime<Utc>,
+    ) -> crate::error::Result<Option<PostId>> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT id FROM posts WHERE source = ? AND updated >= ?")?;
+        Ok(stmt
+            .query_row(params![source, updated], |row| row.get(0))
+            .optional()?)
     }
 }

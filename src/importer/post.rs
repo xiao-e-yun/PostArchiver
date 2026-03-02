@@ -48,7 +48,7 @@ where
         }
 
         // find post by source
-        let existing: Option<PostId> = self.find_post_by_source(&post.source)?;
+        let existing: Option<PostId> = self.find_post(&post.source)?;
 
         let id = match existing {
             Some(id) => {

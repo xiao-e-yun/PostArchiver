@@ -28,10 +28,10 @@ fn test_get_post_not_found() {
     assert!(result.is_none());
 }
 
-// ── find_post_by_source ───────────────────────────────────────────────────────
+// ── find_post ───────────────────────────────────────────────────────
 
 #[test]
-fn test_find_post_by_source_found() {
+fn test_find_post_found() {
     let m = PostArchiverManager::open_in_memory().unwrap();
     let now = Utc::now();
     let id = helpers::add_post(
@@ -43,15 +43,53 @@ fn test_find_post_by_source_found() {
         Some(now),
     );
 
-    let found = m.find_post_by_source("https://example.com/1").unwrap();
+    let found = m.find_post("https://example.com/1").unwrap();
     assert_eq!(found, Some(id));
 }
 
 #[test]
-fn test_find_post_by_source_not_found() {
+fn test_find_post_not_found() {
     let m = PostArchiverManager::open_in_memory().unwrap();
+    let result = m.find_post("https://nonexistent.example").unwrap();
+    assert!(result.is_none());
+}
+
+// ── find_post_with_updated ─────────────────────────────────────────────────
+
+#[test]
+fn test_find_post_with_updated_found() {
+    let m = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let id = helpers::add_post(
+        &m,
+        "Up-to-date Post".into(),
+        Some("https://example.com/2".into()),
+        None,
+        Some(now),
+        Some(now),
+    );
+
+    let found = m
+        .find_post_with_updated("https://example.com/2", &now)
+        .unwrap();
+    assert_eq!(found, Some(id));
+}
+
+#[test]
+fn test_find_post_with_updated_not_found_due_to_timestamp() {
+    let m = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    helpers::add_post(
+        &m,
+        "Old Post".into(),
+        Some("https://example.com/3".into()),
+        None,
+        Some(now - Duration::seconds(60)),
+        Some(now - Duration::seconds(60)),
+    );
+
     let result = m
-        .find_post_by_source("https://nonexistent.example")
+        .find_post_with_updated("https://example.com/3", &now)
         .unwrap();
     assert!(result.is_none());
 }
