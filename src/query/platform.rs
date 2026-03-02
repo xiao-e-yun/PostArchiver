@@ -11,7 +11,7 @@ use crate::{
 use super::{
     filter::{IdFilter, TextFilter},
     sortable::impl_sortable,
-    Query, Queryer, RawQuery, RawSql,
+    BaseQuery, Query, Queryer, RawSql,
 };
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ impl<'a, C: PostArchiverConnection> PlatformQuery<'a, C> {
     }
 }
 
-impl<C: PostArchiverConnection> RawQuery for PlatformQuery<'_, C> {
+impl<C: PostArchiverConnection> BaseQuery for PlatformQuery<'_, C> {
     type Item = Platform;
 
     fn sql(&self) -> RawSql<Self::Item> {
@@ -67,7 +67,7 @@ impl<C: PostArchiverConnection> Query for PlatformQuery<'_, C> {
         sql: &str,
         params: Vec<super::Param>,
     ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
-        self.queryer().fetch(&sql, params)
+        self.queryer().fetch(sql, params)
     }
 }
 

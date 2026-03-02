@@ -11,7 +11,7 @@ use crate::{
 use super::{
     filter::{DateFilter, IdFilter, RelationshipsFilter, TextFilter},
     sortable::impl_sortable,
-    Param, Query, Queryer, RawQuery, RawSql,
+    BaseQuery, Param, Query, Queryer, RawSql,
 };
 
 impl_sortable!(PostQuery(PostSort) {
@@ -74,7 +74,7 @@ impl<'a, C: PostArchiverConnection> PostQuery<'a, C> {
 
 // ── Trait impls ───────────────────────────────────────────────────────────────
 
-impl<C: PostArchiverConnection> RawQuery for PostQuery<'_, C> {
+impl<C: PostArchiverConnection> BaseQuery for PostQuery<'_, C> {
     type Item = Post;
 
     fn sql(&self) -> RawSql<Self::Item> {
@@ -130,47 +130,5 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             .conn()
             .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
         stmt.query_row([source], |row| row.get(0)).optional()
-    }
-}
-
-mod a {
-    use chrono::{DateTime, Utc};
-
-    use crate::{
-        manager::PostArchiverManager,
-        query::{
-            countable::Countable,
-            paginate::Paginate,
-            sortable::{SortDir, Sortable},
-            Query, RawQuery,
-        },
-    };
-
-    use super::PostSort;
-
-    #[test]
-    fn main() {
-        let manager = PostArchiverManager::open_uncheck("/data/archiver")
-            .unwrap()
-            .unwrap();
-        let mut posts = manager.posts();
-
-        posts.updated.after(
-            DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                .unwrap()
-                .to_utc(),
-        );
-
-        let posts = posts
-            .sort_random()
-            .with_total()
-            .sort(PostSort::Updated, SortDir::Asc);
-
-        let posts = posts.pagination(2, 0);
-
-        let sql = posts.sql().build_sql().0;
-        let posts = posts.query().unwrap();
-
-        panic!("posts: {posts:#?} {} {}", sql, posts.items.len());
     }
 }

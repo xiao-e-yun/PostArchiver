@@ -11,7 +11,7 @@ use crate::{
 use super::{
     filter::{DateFilter, IdFilter, TextFilter},
     sortable::impl_sortable,
-    Query, Queryer, RawQuery, RawSql,
+    BaseQuery, Query, Queryer, RawSql,
 };
 
 /// Fluent query builder for authors.  Obtained via [`PostArchiverManager::authors()`].
@@ -45,7 +45,7 @@ impl_sortable!(AuthorQuery(AuthorSort) {
     Updated: "updated"
 });
 
-impl<C: PostArchiverConnection> RawQuery for AuthorQuery<'_, C> {
+impl<C: PostArchiverConnection> BaseQuery for AuthorQuery<'_, C> {
     type Item = Author;
 
     fn sql(&self) -> RawSql<Self::Item> {
@@ -71,7 +71,7 @@ impl<C: PostArchiverConnection> Query for AuthorQuery<'_, C> {
         sql: &str,
         params: Vec<super::Param>,
     ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
-        self.queryer().fetch(&sql, params)
+        self.queryer().fetch(sql, params)
     }
 }
 

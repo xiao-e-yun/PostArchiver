@@ -201,15 +201,14 @@ impl<T: ToSql + Serialize + Clone + 'static> RelationshipsFilter<T> {
             1 => {
                 wheres.push(format!(
                     "EXISTS (SELECT 1 FROM {} WHERE post = posts.id AND {} = ?)",
-                    stringify!($table),
-                    stringify!($col)
+                    self.table, self.col
                 ));
                 params.push(Rc::new(self.iter().next().unwrap().clone()));
             }
             n => {
                 wheres.push(format!(
                   "? == (SELECT COUNT(*) FROM {} WHERE post = posts.id AND {} IN (SELECT value FROM json_each(?)))",
-                  stringify!($table), stringify!($col)
+                  self.table, self.col
                 ));
                 params.push(Rc::new(n));
                 let json_array = serde_json::to_string(&self.ids).unwrap();

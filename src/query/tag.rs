@@ -5,13 +5,13 @@ use rusqlite::OptionalExtension;
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
     utils::macros::AsTable,
-    PlatformId, Post, Tag, TagId,
+    PlatformId, Tag, TagId,
 };
 
 use super::{
     filter::{IdFilter, TextFilter},
     sortable::impl_sortable,
-    Query, Queryer, RawQuery, RawSql,
+    BaseQuery, Query, Queryer, RawSql,
 };
 
 /// Fluent query builder for tags.  Obtained via [`PostArchiverManager::tags()`].
@@ -47,13 +47,14 @@ impl_sortable!(TagQuery(TagSort) {
     Source: "source"
 });
 
-impl<C: PostArchiverConnection> RawQuery for TagQuery<'_, C> {
+impl<C: PostArchiverConnection> BaseQuery for TagQuery<'_, C> {
     type Item = Tag;
 
     fn sql(&self) -> RawSql<Self::Item> {
         let mut sql = RawSql::new();
 
         sql = self.ids.build_sql(sql);
+        sql = self.name.build_sql(sql);
         sql = self.source.build_sql(sql);
         sql = self.platforms.build_sql(sql);
 
@@ -73,7 +74,7 @@ impl<C: PostArchiverConnection> Query for TagQuery<'_, C> {
         sql: &str,
         params: Vec<super::Param>,
     ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
-        self.queryer().fetch(&sql, params)
+        self.queryer().fetch(sql, params)
     }
 }
 

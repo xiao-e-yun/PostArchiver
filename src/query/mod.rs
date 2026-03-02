@@ -50,7 +50,7 @@ use crate::{
 // ── Query Trait ───────────────────────────────────────────────────────────────
 
 /// Core query execution trait. Implementors provide `.query()` to fetch results.
-pub trait Query: Sized + RawQuery {
+pub trait Query: Sized + BaseQuery {
     type Wrapper<T>;
     /// Execute the query, returning matching items.
     fn query_with_context(
@@ -68,9 +68,7 @@ pub trait Query: Sized + RawQuery {
 // ── RawQuery (sealed) ────────────────────────────────────────────────────────
 
 /// Low-level SQL builder trait used by [`Paginated`].
-///
-/// **Sealed** — cannot be implemented outside this crate.
-pub(crate) trait RawQuery: Sized {
+pub trait BaseQuery: Sized {
     /// Output item type.
     type Item: AsTable;
     /// Build the raw SQL query.
@@ -194,7 +192,7 @@ impl<'a, C: PostArchiverConnection> Queryer<'a, C> {
 pub mod paginate {
     use crate::{
         manager::PostArchiverConnection,
-        query::{Query, RawQuery, RawSql},
+        query::{BaseQuery, Query, RawSql},
     };
 
     use super::Queryer;
@@ -203,7 +201,7 @@ pub mod paginate {
         fn pagination(self, limit: u64, page: u64) -> Paginated<Self>;
     }
 
-    impl<T: RawQuery> Paginate for T {
+    impl<T: BaseQuery> Paginate for T {
         fn pagination(self, limit: u64, page: u64) -> Paginated<Self> {
             Paginated {
                 inner: self,
@@ -223,7 +221,7 @@ pub mod paginate {
         page: u64,
     }
 
-    impl<Q: RawQuery> RawQuery for Paginated<Q> {
+    impl<Q: BaseQuery> BaseQuery for Paginated<Q> {
         type Item = Q::Item;
         fn sql(&self) -> RawSql<Self::Item> {
             let mut raw_sql = self.inner.sql();
@@ -253,7 +251,7 @@ pub mod paginate {
 pub mod countable {
     use crate::{
         manager::PostArchiverConnection,
-        query::{Query, RawQuery, RawSql},
+        query::{BaseQuery, Query, RawSql},
     };
 
     use super::Queryer;
@@ -268,7 +266,7 @@ pub mod countable {
         }
     }
 
-    impl<T: RawQuery> Countable for T {
+    impl<T: BaseQuery> Countable for T {
         fn count(&self) -> Result<u64, rusqlite::Error> {
             let (sql, params) = self.sql().build_count_sql();
             self.queryer().count(&sql, params)
@@ -280,7 +278,7 @@ pub mod countable {
     #[derive(Debug)]
     pub struct WithTotal<Q>(Q);
 
-    impl<Q: RawQuery> RawQuery for WithTotal<Q> {
+    impl<Q: BaseQuery> BaseQuery for WithTotal<Q> {
         type Item = Q::Item;
         fn sql(&self) -> RawSql<Self::Item> {
             self.0.sql()
@@ -317,7 +315,7 @@ pub mod sortable {
 
     use crate::{
         manager::PostArchiverConnection,
-        query::{Query, RawQuery, RawSql},
+        query::{BaseQuery, Query, RawSql},
     };
 
     pub trait Sortable: Sized {
@@ -365,7 +363,7 @@ pub mod sortable {
         }
     }
 
-    impl<Q: RawQuery, U: Display> RawQuery for Sorted<Q, U> {
+    impl<Q: BaseQuery, U: Display> BaseQuery for Sorted<Q, U> {
         type Item = Q::Item;
         fn sql(&self) -> RawSql<Self::Item> {
             let mut raw_sql = self.inner.sql();
@@ -379,7 +377,7 @@ pub mod sortable {
         }
     }
 
-    impl<Q: RawQuery> RawQuery for Sorted<Q, Random> {
+    impl<Q: BaseQuery> BaseQuery for Sorted<Q, Random> {
         type Item = Q::Item;
         fn sql(&self) -> RawSql<Self::Item> {
             let mut raw_sql = self.inner.sql();

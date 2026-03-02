@@ -11,7 +11,7 @@ use crate::{
 use super::{
     filter::{IdFilter, TextFilter},
     sortable::impl_sortable,
-    Query, Queryer, RawQuery, RawSql,
+    BaseQuery, Query, Queryer, RawSql,
 };
 
 /// Fluent query builder for collections.  Obtained via [`PostArchiverManager::collections()`].
@@ -45,7 +45,7 @@ impl_sortable!(CollectionQuery(CollectionSort) {
     Source: "source"
 });
 
-impl<C: PostArchiverConnection> RawQuery for CollectionQuery<'_, C> {
+impl<C: PostArchiverConnection> BaseQuery for CollectionQuery<'_, C> {
     type Item = Collection;
 
     fn sql(&self) -> RawSql<Self::Item> {
@@ -71,7 +71,7 @@ impl<C: PostArchiverConnection> Query for CollectionQuery<'_, C> {
         sql: &str,
         params: Vec<super::Param>,
     ) -> Result<Self::Wrapper<Self::Item>, rusqlite::Error> {
-        self.queryer().fetch(&sql, params)
+        self.queryer().fetch(sql, params)
     }
 }
 
