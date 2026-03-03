@@ -70,7 +70,7 @@ macro_rules! impl_from_query {
         impl $crate::query::FromQuery for $name {
             type Based = $based;
             fn select_sql() -> String {
-                format!("SELECT {:?} FROM {}", [$($col),*].join(","), <$based as $crate::utils::macros::AsTable>::TABLE_NAME)
+                format!("SELECT {} FROM {}", [$($col),*].join(","), <$based as $crate::utils::macros::AsTable>::TABLE_NAME)
             }
             fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
                 Ok(Self {
