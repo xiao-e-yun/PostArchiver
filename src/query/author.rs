@@ -4,14 +4,13 @@ use rusqlite::OptionalExtension;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    utils::macros::AsTable,
     Alias, Author, AuthorId, PlatformId,
 };
 
 use super::{
     filter::{DateFilter, IdFilter, TextFilter},
     sortable::impl_sortable,
-    BaseQuery, Query, Queryer, RawSql,
+    BaseFilter, FromQuery, Query, Queryer, RawSql,
 };
 
 /// Fluent query builder for authors.  Obtained via [`PostArchiverManager::authors()`].
@@ -29,7 +28,7 @@ pub struct AuthorQuery<'a, C> {
 }
 
 impl<'a, C: PostArchiverConnection> AuthorQuery<'a, C> {
-    pub(crate) fn new(manager: &'a PostArchiverManager<C>) -> Self {
+    pub fn new(manager: &'a PostArchiverManager<C>) -> Self {
         AuthorQuery {
             queryer: Queryer::new(manager),
             ids: IdFilter::new("id"),
@@ -45,12 +44,10 @@ impl_sortable!(AuthorQuery(AuthorSort) {
     Updated: "updated"
 });
 
-impl<C: PostArchiverConnection> BaseQuery for AuthorQuery<'_, C> {
-    type Item = Author;
+impl<C: PostArchiverConnection> BaseFilter for AuthorQuery<'_, C> {
+    type Based = Author;
 
-    fn sql(&self) -> RawSql<Self::Item> {
-        let mut sql = RawSql::new();
-
+    fn update_sql<T: FromQuery<Based = Self::Based>>(&self, mut sql: RawSql<T>) -> RawSql<T> {
         sql = self.ids.build_sql(sql);
         sql = self.name.build_sql(sql);
         sql = self.updated.build_sql(sql);
@@ -64,14 +61,15 @@ impl<C: PostArchiverConnection> BaseQuery for AuthorQuery<'_, C> {
 }
 
 impl<C: PostArchiverConnection> Query for AuthorQuery<'_, C> {
-    type Wrapper<T> = Vec<T>;
+    type Wrapper<U> = Vec<U>;
+    type Based = Author;
 
-    fn query_with_context(
+    fn query_with_context<T: FromQuery<Based = Self::Based>>(
         self,
-        sql: &str,
-        params: Vec<super::Param>,
-    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-        self.queryer().fetch(sql, params)
+        sql: RawSql<T>,
+    ) -> crate::error::Result<Self::Wrapper<T>> {
+        let (sql, params) = sql.build_sql();
+        self.queryer.fetch(&sql, params)
     }
 }
 

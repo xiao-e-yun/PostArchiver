@@ -4,14 +4,13 @@ use rusqlite::OptionalExtension;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    utils::macros::AsTable,
     PlatformId, Tag, TagId,
 };
 
 use super::{
     filter::{IdFilter, TextFilter},
     sortable::impl_sortable,
-    BaseQuery, Query, Queryer, RawSql,
+    BaseFilter, FromQuery, Query, Queryer, RawSql,
 };
 
 /// Fluent query builder for tags.  Obtained via [`PostArchiverManager::tags()`].
@@ -30,7 +29,7 @@ pub struct TagQuery<'a, C> {
 }
 
 impl<'a, C: PostArchiverConnection> TagQuery<'a, C> {
-    pub(crate) fn new(manager: &'a PostArchiverManager<C>) -> Self {
+    pub fn new(manager: &'a PostArchiverManager<C>) -> Self {
         TagQuery {
             queryer: Queryer::new(manager),
             ids: IdFilter::new("id"),
@@ -47,12 +46,10 @@ impl_sortable!(TagQuery(TagSort) {
     Source: "source"
 });
 
-impl<C: PostArchiverConnection> BaseQuery for TagQuery<'_, C> {
-    type Item = Tag;
+impl<C: PostArchiverConnection> BaseFilter for TagQuery<'_, C> {
+    type Based = Tag;
 
-    fn sql(&self) -> RawSql<Self::Item> {
-        let mut sql = RawSql::new();
-
+    fn update_sql<T: FromQuery<Based = Self::Based>>(&self, mut sql: RawSql<T>) -> RawSql<T> {
         sql = self.ids.build_sql(sql);
         sql = self.name.build_sql(sql);
         sql = self.source.build_sql(sql);
@@ -68,13 +65,14 @@ impl<C: PostArchiverConnection> BaseQuery for TagQuery<'_, C> {
 
 impl<C: PostArchiverConnection> Query for TagQuery<'_, C> {
     type Wrapper<T> = Vec<T>;
+    type Based = Tag;
 
-    fn query_with_context(
+    fn query_with_context<T: FromQuery<Based = Self::Based>>(
         self,
-        sql: &str,
-        params: Vec<super::Param>,
-    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-        self.queryer().fetch(sql, params)
+        sql: RawSql<T>,
+    ) -> crate::error::Result<Self::Wrapper<T>> {
+        let (sql, params) = sql.build_sql();
+        self.queryer.fetch(&sql, params)
     }
 }
 

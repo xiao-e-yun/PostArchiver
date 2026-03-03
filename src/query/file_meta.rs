@@ -4,9 +4,10 @@ use rusqlite::OptionalExtension;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    utils::macros::AsTable,
     FileMeta, FileMetaId, PostId,
 };
+
+use super::FromQuery;
 
 impl<C: PostArchiverConnection> PostArchiverManager<C> {
     /// Fetch a single [`FileMeta`] by primary key.

@@ -2,9 +2,10 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
-    utils::macros::AsTable, AuthorId, CollectionId, Comment, Content, FileMetaId, PlatformId, Post,
-    PostId, TagId,
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    AuthorId, CollectionId, Comment, Content, FileMetaId, PlatformId, Post, PostId, TagId,
 };
 
 /// Specifies how to update a post's `updated` timestamp.

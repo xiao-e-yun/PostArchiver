@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::{
     error::Result,
     manager::{binded::Binded, PostArchiverConnection},
-    utils::macros::AsTable,
+    query::FromQuery,
     FileMeta, FileMetaId, Post, PostId,
 };
 

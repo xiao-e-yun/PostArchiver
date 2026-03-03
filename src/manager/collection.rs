@@ -1,8 +1,10 @@
 use rusqlite::params;
 
 use crate::{
-    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
-    utils::macros::AsTable, Collection, CollectionId, FileMetaId, PostId,
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    Collection, CollectionId, FileMetaId, PostId,
 };
 
 /// Specifies how to update a collection's thumbnail.

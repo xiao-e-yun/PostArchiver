@@ -5,14 +5,13 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    utils::macros::AsTable,
     AuthorId, CollectionId, PlatformId, Post, PostId, TagId,
 };
 
 use super::{
     filter::{DateFilter, IdFilter, RelationshipsFilter, TextFilter},
     sortable::impl_sortable,
-    BaseQuery, Param, Query, Queryer, RawSql,
+    BaseFilter, FromQuery, Query, Queryer, RawSql,
 };
 
 impl_sortable!(PostQuery(PostSort) {
@@ -57,7 +56,7 @@ pub struct PostQuery<'a, C> {
 // ── Builder methods ───────────────────────────────────────────────────────────
 
 impl<'a, C: PostArchiverConnection> PostQuery<'a, C> {
-    pub(crate) fn new(manager: &'a PostArchiverManager<C>) -> Self {
+    pub fn new(manager: &'a PostArchiverManager<C>) -> Self {
         PostQuery {
             queryer: Queryer::new(manager),
             ids: IdFilter::new("id"),
@@ -75,12 +74,10 @@ impl<'a, C: PostArchiverConnection> PostQuery<'a, C> {
 
 // ── Trait impls ───────────────────────────────────────────────────────────────
 
-impl<C: PostArchiverConnection> BaseQuery for PostQuery<'_, C> {
-    type Item = Post;
+impl<C: PostArchiverConnection> BaseFilter for PostQuery<'_, C> {
+    type Based = Post;
 
-    fn sql(&self) -> RawSql<Self::Item> {
-        let mut sql = RawSql::new();
-
+    fn update_sql<T: FromQuery<Based = Self::Based>>(&self, mut sql: RawSql<T>) -> RawSql<T> {
         sql = self.ids.build_sql(sql);
         sql = self.title.build_sql(sql);
         sql = self.source.build_sql(sql);
@@ -100,14 +97,15 @@ impl<C: PostArchiverConnection> BaseQuery for PostQuery<'_, C> {
 }
 
 impl<C: PostArchiverConnection> Query for PostQuery<'_, C> {
-    type Wrapper<T> = Vec<T>;
+    type Wrapper<U> = Vec<U>;
+    type Based = Post;
 
-    fn query_with_context(
+    fn query_with_context<T: FromQuery<Based = Self::Based>>(
         self,
-        sql: &str,
-        params: Vec<Param>,
-    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-        self.queryer().fetch(sql, params)
+        sql: RawSql<T>,
+    ) -> crate::error::Result<Self::Wrapper<T>> {
+        let (sql, params) = sql.build_sql();
+        self.queryer.fetch(&sql, params)
     }
 }
 

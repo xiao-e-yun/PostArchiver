@@ -1,6 +1,8 @@
 use crate::{
-    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
-    utils::macros::AsTable, PlatformId, PostId, Tag, TagId,
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    PlatformId, PostId, Tag, TagId,
 };
 
 /// Builder for updating a tag's fields.

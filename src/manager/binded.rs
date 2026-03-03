@@ -36,7 +36,7 @@ pub struct Binded<'a, Id: BindableId, C: PostArchiverConnection = rusqlite::Conn
 }
 
 impl<'a, Id: BindableId, C: PostArchiverConnection> Binded<'a, Id, C> {
-    pub(crate) fn new(manager: &'a PostArchiverManager<C>, id: Id) -> Self {
+    pub fn new(manager: &'a PostArchiverManager<C>, id: Id) -> Self {
         Self { manager, id }
     }
 
@@ -51,7 +51,7 @@ impl<'a, Id: BindableId, C: PostArchiverConnection> Binded<'a, Id, C> {
     }
 
     /// Shortcut: returns a reference to the database connection.
-    pub(crate) fn conn(&self) -> &rusqlite::Connection {
+    pub fn conn(&self) -> &rusqlite::Connection {
         self.manager.conn()
     }
 }

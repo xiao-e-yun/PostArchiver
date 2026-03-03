@@ -4,14 +4,13 @@ use rusqlite::OptionalExtension;
 
 use crate::{
     manager::{PostArchiverConnection, PostArchiverManager},
-    utils::macros::AsTable,
     Platform, PlatformId,
 };
 
 use super::{
     filter::{IdFilter, TextFilter},
     sortable::impl_sortable,
-    BaseQuery, Query, Queryer, RawSql,
+    BaseFilter, FromQuery, Query, Queryer, RawSql,
 };
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -33,7 +32,7 @@ impl_sortable!(PlatformQuery(PlatformSort) {
 });
 
 impl<'a, C: PostArchiverConnection> PlatformQuery<'a, C> {
-    pub(crate) fn new(manager: &'a PostArchiverManager<C>) -> Self {
+    pub fn new(manager: &'a PostArchiverManager<C>) -> Self {
         PlatformQuery {
             queryer: Queryer::new(manager),
             ids: IdFilter::new("id"),
@@ -42,12 +41,10 @@ impl<'a, C: PostArchiverConnection> PlatformQuery<'a, C> {
     }
 }
 
-impl<C: PostArchiverConnection> BaseQuery for PlatformQuery<'_, C> {
-    type Item = Platform;
+impl<C: PostArchiverConnection> BaseFilter for PlatformQuery<'_, C> {
+    type Based = Platform;
 
-    fn sql(&self) -> RawSql<Self::Item> {
-        let mut sql = RawSql::new();
-
+    fn update_sql<T: FromQuery<Based = Self::Based>>(&self, mut sql: RawSql<T>) -> RawSql<T> {
         sql = self.ids.build_sql(sql);
         sql = self.name.build_sql(sql);
 
@@ -61,13 +58,14 @@ impl<C: PostArchiverConnection> BaseQuery for PlatformQuery<'_, C> {
 
 impl<C: PostArchiverConnection> Query for PlatformQuery<'_, C> {
     type Wrapper<T> = Vec<T>;
+    type Based = Platform;
 
-    fn query_with_context(
+    fn query_with_context<T: FromQuery<Based = Self::Based>>(
         self,
-        sql: &str,
-        params: Vec<super::Param>,
-    ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-        self.queryer().fetch(sql, params)
+        sql: RawSql<T>,
+    ) -> crate::error::Result<Self::Wrapper<T>> {
+        let (sql, params) = sql.build_sql();
+        self.queryer.fetch(&sql, params)
     }
 }
 

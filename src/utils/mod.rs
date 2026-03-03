@@ -5,7 +5,7 @@
 //! throughout the post archiver system. It includes database configuration,
 
 #[macro_use]
-pub(crate) mod macros;
+pub mod macros;
 pub use macros::AsTable;
 
 /// Default relative path to the SQLite database file

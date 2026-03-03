@@ -1,6 +1,8 @@
 use crate::{
-    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
-    utils::macros::AsTable, Platform, PlatformId, PostId, TagId,
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    Platform, PlatformId, PostId, TagId,
 };
 
 /// Builder for updating a platform's fields.

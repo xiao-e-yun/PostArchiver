@@ -2,8 +2,10 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    error::Result, manager::binded::Binded, manager::PostArchiverConnection,
-    utils::macros::AsTable, Alias, Author, AuthorId, FileMetaId, PlatformId, PostId,
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    Alias, Author, AuthorId, FileMetaId, PlatformId, PostId,
 };
 
 /// Specifies how to update an author's thumbnail.

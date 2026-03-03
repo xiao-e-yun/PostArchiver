@@ -51,37 +51,44 @@ use crate::{
     utils::macros::AsTable,
 };
 
+pub trait FromQuery: Sized {
+    type Based: AsTable;
+    fn select_sql() -> String;
+    fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error>;
+}
+
 // ── Query Trait ───────────────────────────────────────────────────────────────
 
 /// Core query execution trait. Implementors provide `.query()` to fetch results.
-pub trait Query: Sized + BaseQuery {
+pub trait Query: Sized {
     type Wrapper<T>;
+    type Based: AsTable;
     /// Execute the query, returning matching items.
-    fn query_with_context(
+    fn query_with_context<T: FromQuery<Based = Self::Based>>(
         self,
-        sql: &str,
-        params: Vec<Param>,
-    ) -> crate::error::Result<Self::Wrapper<Self::Item>>;
+        sql: RawSql<T>,
+    ) -> crate::error::Result<Self::Wrapper<T>>;
 
-    fn query(self) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-        let (sql, params) = self.sql().build_sql();
-        self.query_with_context(&sql, params)
+    fn query<T: FromQuery<Based = Self::Based>>(self) -> crate::error::Result<Self::Wrapper<T>> {
+        let sql: RawSql<T> = RawSql::new();
+        self.query_with_context(sql)
     }
 }
 
-// ── RawQuery (sealed) ────────────────────────────────────────────────────────
-
-/// Low-level SQL builder trait used by [`Paginated`].
-pub trait BaseQuery: Sized {
-    /// Output item type.
-    type Item: AsTable;
-    /// Build the raw SQL query.
-    #[doc(hidden)]
-    fn sql(&self) -> RawSql<Self::Item>;
+pub trait BaseFilter: Sized {
+    type Based: AsTable;
+    fn update_sql<T: FromQuery<Based = Self::Based>>(&self, sql: RawSql<T>) -> RawSql<T>;
     fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection>;
+
+    fn count(&self) -> crate::error::Result<u64> {
+        let sql = RawSql::<Self::Based>::new();
+        let sql = self.update_sql(sql);
+        let (sql, params) = sql.build_count_sql();
+        self.queryer().count(&sql, params)
+    }
 }
 
-type Param = Rc<dyn ToSql>;
+pub type Param = Rc<dyn ToSql>;
 
 #[derive(Default, Clone)]
 pub struct RawSql<T> {
@@ -110,10 +117,8 @@ impl<T> RawSql<T> {
             _phantom: std::marker::PhantomData,
         }
     }
-}
 
-impl<T: AsTable> RawSql<T> {
-    pub fn build_sql(&self) -> (String, Vec<Param>) {
+    pub fn build_generic_sql(&self) -> (String, Vec<Param>) {
         let mut params = self.where_clause.1.clone();
         let where_sql = if self.where_clause.0.is_empty() {
             "".to_string()
@@ -132,13 +137,14 @@ impl<T: AsTable> RawSql<T> {
         } else {
             "".to_string()
         };
-        let sql = format!(
-            "SELECT * FROM {} {} {} {}",
-            T::TABLE_NAME,
-            where_sql,
-            order_sql,
-            limit_sql
-        );
+        (format!("{} {} {}", where_sql, order_sql, limit_sql), params)
+    }
+}
+
+impl<T: FromQuery> RawSql<T> {
+    pub fn build_sql(&self) -> (String, Vec<Param>) {
+        let (clause, params) = self.build_generic_sql();
+        let sql = format!("{} {}", T::select_sql(), clause);
         (sql, params)
     }
 
@@ -148,13 +154,17 @@ impl<T: AsTable> RawSql<T> {
         } else {
             format!("WHERE {}", self.where_clause.0.join(" AND "))
         };
-        let sql = format!("SELECT COUNT(*) FROM {} {}", T::TABLE_NAME, where_sql);
+        let sql = format!(
+            "SELECT COUNT(*) FROM {} {}",
+            T::Based::TABLE_NAME,
+            where_sql
+        );
         (sql, self.where_clause.1.clone())
     }
 }
 
 pub struct Queryer<'a, C> {
-    pub(crate) manager: &'a PostArchiverManager<C>,
+    pub manager: &'a PostArchiverManager<C>,
 }
 
 impl<T> Debug for Queryer<'_, T> {
@@ -164,11 +174,15 @@ impl<T> Debug for Queryer<'_, T> {
 }
 
 impl<'a, C: PostArchiverConnection> Queryer<'a, C> {
-    pub(crate) fn new(manager: &'a PostArchiverManager<C>) -> Self {
+    pub fn new(manager: &'a PostArchiverManager<C>) -> Self {
         Self { manager }
     }
 
-    pub fn fetch<Q: AsTable>(&self, sql: &str, params: Vec<Param>) -> crate::error::Result<Vec<Q>> {
+    pub fn fetch<Q: FromQuery>(
+        &self,
+        sql: &str,
+        params: Vec<Param>,
+    ) -> crate::error::Result<Vec<Q>> {
         let mut stmt = self.manager.conn().prepare_cached(sql)?;
         let params = params
             .iter()
@@ -193,16 +207,16 @@ pub use paginate::*;
 pub mod paginate {
     use crate::{
         manager::PostArchiverConnection,
-        query::{BaseQuery, Query, RawSql},
+        query::{Query, RawSql},
     };
 
-    use super::Queryer;
+    use super::{BaseFilter, FromQuery};
 
     pub trait Paginate: Sized {
         fn pagination(self, limit: u64, page: u64) -> Paginated<Self>;
     }
 
-    impl<T: BaseQuery> Paginate for T {
+    impl<T: Query> Paginate for T {
         fn pagination(self, limit: u64, page: u64) -> Paginated<Self> {
             Paginated {
                 inner: self,
@@ -222,27 +236,28 @@ pub mod paginate {
         page: u64,
     }
 
-    impl<Q: BaseQuery> BaseQuery for Paginated<Q> {
-        type Item = Q::Item;
-        fn sql(&self) -> RawSql<Self::Item> {
-            let mut raw_sql = self.inner.sql();
-            raw_sql.limit_clause = Some([self.limit, (self.page * self.limit)]);
-            raw_sql
-        }
+    impl<Q: Query> Query for Paginated<Q> {
+        type Wrapper<T> = Q::Wrapper<T>;
+        type Based = Q::Based;
 
-        fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection> {
-            self.inner.queryer()
+        fn query_with_context<T: FromQuery<Based = Self::Based>>(
+            self,
+            mut sql: RawSql<T>,
+        ) -> crate::error::Result<Self::Wrapper<T>> {
+            sql.limit_clause = Some([self.limit, self.limit * self.page]);
+            self.inner.query_with_context(sql)
         }
     }
 
-    impl<Q: Query> Query for Paginated<Q> {
-        type Wrapper<T> = Q::Wrapper<T>;
-        fn query_with_context(
-            self,
-            sql: &str,
-            params: Vec<super::Param>,
-        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-            self.inner.query_with_context(sql, params)
+    impl<Q: BaseFilter> BaseFilter for Paginated<Q> {
+        type Based = Q::Based;
+
+        fn update_sql<T: FromQuery<Based = Self::Based>>(&self, sql: RawSql<T>) -> RawSql<T> {
+            self.inner.update_sql(sql)
+        }
+
+        fn queryer(&self) -> &crate::query::Queryer<'_, impl PostArchiverConnection> {
+            self.inner.queryer()
         }
     }
 }
@@ -251,53 +266,48 @@ pub use countable::*;
 pub mod countable {
     use crate::{
         manager::PostArchiverConnection,
-        query::{BaseQuery, Query, RawSql},
+        query::{Query, RawSql},
     };
 
-    use super::Queryer;
+    use super::{BaseFilter, FromQuery};
 
     pub trait Countable: Sized {
-        /// Count total matching rows (ignoring pagination).
-        fn count(&self) -> crate::error::Result<u64>;
-
         /// Chain: wrap result in [`PageResult`] including total count.
         fn with_total(self) -> WithTotal<Self> {
-            WithTotal(self)
+            WithTotal { inner: self }
         }
     }
 
-    impl<T: BaseQuery> Countable for T {
-        fn count(&self) -> crate::error::Result<u64> {
-            let (sql, params) = self.sql().build_count_sql();
-            self.queryer().count(&sql, params)
-        }
-    }
-
-    // ── WithTotal wrapper ─────────────────────────────────────────────────────────
+    impl<T: Query> Countable for T {}
 
     #[derive(Debug)]
-    pub struct WithTotal<Q>(Q);
+    pub struct WithTotal<Q> {
+        inner: Q,
+    }
 
-    impl<Q: BaseQuery> BaseQuery for WithTotal<Q> {
-        type Item = Q::Item;
-        fn sql(&self) -> RawSql<Self::Item> {
-            self.0.sql()
-        }
-        fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection> {
-            self.0.queryer()
+    impl<Q: Query + BaseFilter> Query for WithTotal<Q> {
+        type Wrapper<T> = PageResult<Q::Wrapper<T>>;
+        type Based = <Q as Query>::Based;
+
+        fn query_with_context<T: FromQuery<Based = Self::Based>>(
+            self,
+            sql: RawSql<T>,
+        ) -> crate::error::Result<Self::Wrapper<T>> {
+            let total = self.inner.count()?;
+            let items = self.inner.query_with_context(sql)?;
+            Ok(PageResult { items, total })
         }
     }
 
-    impl<Q: Query + Countable> Query for WithTotal<Q> {
-        type Wrapper<T> = PageResult<Q::Wrapper<T>>;
-        fn query_with_context(
-            self,
-            sql: &str,
-            params: Vec<super::Param>,
-        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-            let total = self.0.count()?;
-            let items = self.0.query_with_context(sql, params)?;
-            Ok(PageResult { items, total })
+    impl<T: BaseFilter> BaseFilter for WithTotal<T> {
+        type Based = T::Based;
+
+        fn update_sql<U: FromQuery<Based = Self::Based>>(&self, sql: RawSql<U>) -> RawSql<U> {
+            self.inner.update_sql(sql)
+        }
+
+        fn queryer(&self) -> &crate::query::Queryer<'_, impl PostArchiverConnection> {
+            self.inner.queryer()
         }
     }
 
@@ -316,7 +326,7 @@ pub mod sortable {
 
     use crate::{
         manager::PostArchiverConnection,
-        query::{BaseQuery, Query, RawSql},
+        query::{Query, RawSql},
     };
 
     pub trait Sortable: Sized {
@@ -356,7 +366,7 @@ pub mod sortable {
     }
 
     impl SortDir {
-        pub(crate) fn as_sql(self) -> &'static str {
+        pub fn as_sql(self) -> &'static str {
             match self {
                 SortDir::Asc => "ASC",
                 SortDir::Desc => "DESC",
@@ -364,51 +374,40 @@ pub mod sortable {
         }
     }
 
-    impl<Q: BaseQuery, U: Display> BaseQuery for Sorted<Q, U> {
-        type Item = Q::Item;
-        fn sql(&self) -> RawSql<Self::Item> {
-            let mut raw_sql = self.inner.sql();
-            raw_sql
-                .order_clause
-                .push(format!("{} {}", self.field, self.dir.as_sql()));
-            raw_sql
-        }
-        fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection> {
-            self.inner.queryer()
-        }
-    }
-
-    impl<Q: BaseQuery> BaseQuery for Sorted<Q, Random> {
-        type Item = Q::Item;
-        fn sql(&self) -> RawSql<Self::Item> {
-            let mut raw_sql = self.inner.sql();
-            raw_sql.order_clause.push("RANDOM()".to_string());
-            raw_sql
-        }
-        fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection> {
-            self.inner.queryer()
-        }
-    }
-
     impl<Q: Query, U: Display> Query for Sorted<Q, U> {
         type Wrapper<T> = Q::Wrapper<T>;
-        fn query_with_context(
+        type Based = Q::Based;
+        fn query_with_context<T: FromQuery<Based = Self::Based>>(
             self,
-            sql: &str,
-            params: Vec<super::Param>,
-        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-            self.inner.query_with_context(sql, params)
+            mut sql: RawSql<T>,
+        ) -> crate::error::Result<Self::Wrapper<T>> {
+            sql.order_clause
+                .push(format!("{} {}", self.field, self.dir.as_sql()));
+            self.inner.query_with_context(sql)
         }
     }
 
     impl<Q: Query> Query for Sorted<Q, Random> {
         type Wrapper<T> = Q::Wrapper<T>;
-        fn query_with_context(
+        type Based = Q::Based;
+        fn query_with_context<T: FromQuery<Based = Self::Based>>(
             self,
-            sql: &str,
-            params: Vec<super::Param>,
-        ) -> crate::error::Result<Self::Wrapper<Self::Item>> {
-            self.inner.query_with_context(sql, params)
+            mut sql: RawSql<T>,
+        ) -> crate::error::Result<Self::Wrapper<T>> {
+            sql.order_clause.push("RANDOM()".to_string());
+            self.inner.query_with_context(sql)
+        }
+    }
+
+    impl<Q: BaseFilter, U> BaseFilter for Sorted<Q, U> {
+        type Based = Q::Based;
+
+        fn update_sql<T: FromQuery<Based = Self::Based>>(&self, sql: RawSql<T>) -> RawSql<T> {
+            self.inner.update_sql(sql)
+        }
+
+        fn queryer(&self) -> &super::Queryer<'_, impl PostArchiverConnection> {
+            self.inner.queryer()
         }
     }
 
@@ -422,6 +421,7 @@ pub mod sortable {
         type SortField = T::SortField;
     }
 
+    #[macro_export]
     macro_rules! impl_sortable {
         ($query_type:ident ($sort_field_enum:ident) {
             $($field:ident: $column:expr),*
@@ -443,7 +443,7 @@ pub mod sortable {
             }
         };
     }
-    pub(crate) use impl_sortable;
+    pub use impl_sortable;
 
-    use super::{countable::WithTotal, paginate::Paginated, Queryer};
+    use super::{countable::WithTotal, paginate::Paginated, BaseFilter, FromQuery};
 }
