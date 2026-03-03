@@ -71,6 +71,7 @@ impl<C: PostArchiverConnection> Query for TagQuery<'_, C> {
         self,
         sql: RawSql<T>,
     ) -> crate::error::Result<Self::Wrapper<T>> {
+        let sql = self.update_sql(sql);
         let (sql, params) = sql.build_sql();
         self.queryer.fetch(&sql, params)
     }

@@ -20,13 +20,13 @@
 //! # use post_archiver::query::{Countable, Paginate, Query};
 //! # let manager = PostArchiverManager::open_in_memory().unwrap();
 //! // Vec<Post>  (all matching, no LIMIT)
-//! let v = manager.posts().query().unwrap();
+//! let v = manager.posts().query::<post_archiver::Post>().unwrap();
 //!
 //! // Vec<Post>  (paginated)
-//! let v = manager.posts().pagination(20, 0).query().unwrap();
+//! let v = manager.posts().pagination(20, 0).query::<post_archiver::Post>().unwrap();
 //!
 //! // PageResult<Post>  (paginated + total count)
-//! let p = manager.posts().pagination(20, 0).with_total().query().unwrap();
+//! let p = manager.posts().pagination(20, 0).with_total().query::<post_archiver::Post>().unwrap();
 //! println!("{} total posts", p.total);
 //! ```
 
