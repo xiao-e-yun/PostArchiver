@@ -4,6 +4,7 @@ use crate::{
     manager::PostArchiverManager,
     query::{platform::PlatformSort, Query, SortDir, Sortable},
     tests::helpers,
+    Platform, Post, Tag,
 };
 use chrono::Utc;
 
@@ -50,7 +51,7 @@ fn test_find_platform_not_found() {
 #[test]
 fn test_platforms_empty() {
     let m = PostArchiverManager::open_in_memory().unwrap();
-    let platforms = m.platforms().query().unwrap();
+    let platforms = m.platforms().query::<Platform>().unwrap();
     // may include the built-in "unknown" platform (id=1 / id=0)
     // but user-added ones should be absent
     assert!(!platforms.iter().any(|p| p.name == "userPlatform"));
@@ -62,7 +63,7 @@ fn test_platforms_returns_added() {
     let id1 = helpers::add_platform(&m, "github".into());
     let id2 = helpers::add_platform(&m, "twitter".into());
 
-    let platforms = m.platforms().query().unwrap();
+    let platforms = m.platforms().query::<Platform>().unwrap();
     let ids: Vec<_> = platforms.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
     assert!(ids.contains(&id2));
@@ -78,7 +79,7 @@ fn test_platforms_sorted_by_name() {
     let platforms = m
         .platforms()
         .sort(PlatformSort::Name, SortDir::Asc)
-        .query()
+        .query::<Platform>()
         .unwrap();
     // filter user-added (exclude the built-in "unknown")
     let user: Vec<_> = platforms
@@ -103,7 +104,7 @@ fn test_platform_posts_via_builder() {
 
     let mut q = m.posts();
     q.platforms.insert(plt);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -117,7 +118,7 @@ fn test_platform_posts_empty_via_builder() {
 
     let mut q = m.posts();
     q.platforms.insert(plt);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert!(posts.is_empty());
 }
 
@@ -131,7 +132,7 @@ fn test_platform_tags_via_builder() {
 
     let mut q = m.tags();
     q.platforms.insert(plt);
-    let tags = q.query().unwrap();
+    let tags = q.query::<Tag>().unwrap();
     assert_eq!(tags.len(), 2);
     let ids: Vec<_> = tags.iter().map(|t| t.id).collect();
     assert!(ids.contains(&t1));
@@ -145,7 +146,7 @@ fn test_platform_tags_empty_via_builder() {
 
     let mut q = m.tags();
     q.platforms.insert(plt);
-    let tags = q.query().unwrap();
+    let tags = q.query::<Tag>().unwrap();
     assert!(tags.is_empty());
 }
 
@@ -159,7 +160,7 @@ fn test_platform_tags_isolates_correctly() {
 
     let mut q = m.tags();
     q.platforms.insert(plt_b);
-    let tags = q.query().unwrap();
+    let tags = q.query::<Tag>().unwrap();
     assert_eq!(tags.len(), 1);
     assert_eq!(tags[0].id, tb);
 }

@@ -4,6 +4,7 @@ use crate::{
     manager::PostArchiverManager,
     query::{post::PostSort, Countable, Paginate, Query, SortDir, Sortable},
     tests::helpers,
+    Post,
 };
 use chrono::{Duration, Utc};
 
@@ -99,7 +100,7 @@ fn test_find_post_with_updated_not_found_due_to_timestamp() {
 #[test]
 fn test_posts_empty() {
     let m = PostArchiverManager::open_in_memory().unwrap();
-    let posts = m.posts().query().unwrap();
+    let posts = m.posts().query::<Post>().unwrap();
     assert!(posts.is_empty());
 }
 
@@ -111,7 +112,7 @@ fn test_posts_returns_all() {
     let id2 = helpers::add_post(&m, "B".into(), None, None, Some(now), Some(now));
     let id3 = helpers::add_post(&m, "C".into(), None, None, Some(now), Some(now));
 
-    let posts = m.posts().query().unwrap();
+    let posts = m.posts().query::<Post>().unwrap();
     assert_eq!(posts.len(), 3);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -133,7 +134,7 @@ fn test_posts_filter_by_platform() {
 
     let mut q = m.posts();
     q.platforms.insert(p1);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -152,7 +153,7 @@ fn test_posts_filter_by_multiple_platforms_or() {
 
     let mut q = m.posts();
     q.platforms.extend([p1, p2]);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -175,7 +176,7 @@ fn test_posts_filter_by_single_tag() {
 
     let mut q = m.posts();
     q.tags.insert(tag_a);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -203,7 +204,7 @@ fn test_posts_filter_by_tags_and_semantics() {
     // Filter by both rust AND async → only post1
     let mut q = m.posts();
     q.tags.extend([tag_a, tag_b]);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -224,7 +225,7 @@ fn test_posts_filter_by_author() {
 
     let mut q = m.posts();
     q.authors.insert(author_a);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -240,7 +241,7 @@ fn test_posts_filter_by_single_id() {
 
     let mut q = m.posts();
     q.ids.insert(id1);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id1);
 }
@@ -255,7 +256,7 @@ fn test_posts_filter_by_multiple_ids() {
 
     let mut q = m.posts();
     q.ids.extend([id1, id2]);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -272,9 +273,9 @@ fn test_posts_pagination() {
         helpers::add_post(&m, format!("Post {i}"), None, None, Some(now), Some(now));
     }
 
-    let page1 = m.posts().pagination(3, 0).query().unwrap();
-    let page2 = m.posts().pagination(3, 1).query().unwrap();
-    let page4 = m.posts().pagination(3, 3).query().unwrap();
+    let page1 = m.posts().pagination(3, 0).query::<Post>().unwrap();
+    let page2 = m.posts().pagination(3, 1).query::<Post>().unwrap();
+    let page4 = m.posts().pagination(3, 3).query::<Post>().unwrap();
 
     assert_eq!(page1.len(), 3);
     assert_eq!(page2.len(), 3);
@@ -299,7 +300,7 @@ fn test_posts_sort_by_title_asc() {
     let posts = m
         .posts()
         .sort(PostSort::Title, SortDir::Asc)
-        .query()
+        .query::<Post>()
         .unwrap();
     let titles: Vec<_> = posts.iter().map(|p| p.title.as_str()).collect();
     assert_eq!(titles, vec!["Apple", "Mango", "Zebra"]);
@@ -316,7 +317,7 @@ fn test_posts_sort_by_title_desc() {
     let posts = m
         .posts()
         .sort(PostSort::Title, SortDir::Desc)
-        .query()
+        .query::<Post>()
         .unwrap();
     let titles: Vec<_> = posts.iter().map(|p| p.title.as_str()).collect();
     assert_eq!(titles, vec!["Zebra", "Mango", "Apple"]);
@@ -336,7 +337,7 @@ fn test_posts_sort_by_updated_desc() {
     let posts = m
         .posts()
         .sort(PostSort::Updated, SortDir::Desc)
-        .query()
+        .query::<Post>()
         .unwrap();
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert_eq!(ids, vec![id_new, id_mid, id_old]);
@@ -347,7 +348,7 @@ fn test_posts_sort_by_updated_desc() {
 #[test]
 fn test_posts_with_total_empty() {
     let m = PostArchiverManager::open_in_memory().unwrap();
-    let result = m.posts().with_total().query().unwrap();
+    let result = m.posts().with_total().query::<Post>().unwrap();
     assert_eq!(result.total, 0);
     assert!(result.items.is_empty());
 }
@@ -360,7 +361,12 @@ fn test_posts_with_total_counts_all() {
         helpers::add_post(&m, format!("Post {i}"), None, None, Some(now), Some(now));
     }
 
-    let result = m.posts().pagination(3, 0).with_total().query().unwrap();
+    let result = m
+        .posts()
+        .pagination(3, 0)
+        .with_total()
+        .query::<Post>()
+        .unwrap();
     assert_eq!(result.total, 7); // total is 7 regardless of page
     assert_eq!(result.items.len(), 3); // page 0 has 3 items
 }
@@ -379,7 +385,7 @@ fn test_posts_with_total_filtered() {
 
     let mut q = m.posts();
     q.platforms.insert(p);
-    let result = q.with_total().query().unwrap();
+    let result = q.with_total().query::<Post>().unwrap();
     assert_eq!(result.total, 4);
     assert_eq!(result.items.len(), 4);
 }
@@ -394,7 +400,7 @@ fn test_posts_with_relations_empty_associations() {
 
     let mut q = m.posts();
     q.ids.insert(id);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id);
 
@@ -461,7 +467,7 @@ fn test_posts_relations_with_total() {
 
     let mut q = m.posts();
     q.tags.insert(tag);
-    let result = q.pagination(2, 0).with_total().query().unwrap();
+    let result = q.pagination(2, 0).with_total().query::<Post>().unwrap();
     assert_eq!(result.total, 5);
     assert_eq!(result.items.len(), 2);
 }
@@ -506,7 +512,7 @@ fn test_posts_filter_by_collection() {
 
     let mut q = m.posts();
     q.collections.insert(col);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -520,7 +526,7 @@ fn test_posts_filter_by_collection_empty() {
 
     let mut q = m.posts();
     q.collections.insert(col);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert!(posts.is_empty());
 }
 
@@ -539,12 +545,12 @@ fn test_posts_filter_by_collection_isolates_correctly() {
 
     let mut q_a = m.posts();
     q_a.collections.insert(col_a);
-    let posts_a = q_a.query().unwrap();
+    let posts_a = q_a.query::<Post>().unwrap();
     assert_eq!(posts_a.len(), 2);
 
     let mut q_b = m.posts();
     q_b.collections.insert(col_b);
-    let posts_b = q_b.query().unwrap();
+    let posts_b = q_b.query::<Post>().unwrap();
     assert_eq!(posts_b.len(), 2);
 
     let ids_a: Vec<_> = posts_a.iter().map(|p| p.id).collect();
@@ -580,7 +586,7 @@ fn test_posts_filter_platform_and_author_and_tag() {
     q.platforms.insert(plt);
     q.authors.insert(author);
     q.tags.insert(tag);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].id, id_match);
 }

@@ -4,6 +4,7 @@ use crate::{
     manager::PostArchiverManager,
     query::{collection::CollectionSort, Countable, Paginate, Query, SortDir, Sortable},
     tests::helpers,
+    Collection, Post,
 };
 use chrono::Utc;
 
@@ -61,7 +62,7 @@ fn test_find_collection_no_source() {
 #[test]
 fn test_collections_empty() {
     let m = PostArchiverManager::open_in_memory().unwrap();
-    let cols = m.collections().query().unwrap();
+    let cols = m.collections().query::<Collection>().unwrap();
     assert!(cols.is_empty());
 }
 
@@ -71,7 +72,7 @@ fn test_collections_returns_all() {
     let id1 = helpers::add_collection(&m, "A".into(), None, None);
     let id2 = helpers::add_collection(&m, "B".into(), None, None);
 
-    let cols = m.collections().query().unwrap();
+    let cols = m.collections().query::<Collection>().unwrap();
     assert_eq!(cols.len(), 2);
     let ids: Vec<_> = cols.iter().map(|c| c.id).collect();
     assert!(ids.contains(&id1));
@@ -89,7 +90,7 @@ fn test_collections_name_contains() {
 
     let mut q = m.collections();
     q.name.contains("Rust");
-    let cols = q.query().unwrap();
+    let cols = q.query::<Collection>().unwrap();
     assert_eq!(cols.len(), 2);
     assert!(cols.iter().all(|c| c.name.contains("Rust")));
 }
@@ -101,7 +102,7 @@ fn test_collections_name_contains_no_match() {
 
     let mut q = m.collections();
     q.name.contains("xyz");
-    let cols = q.query().unwrap();
+    let cols = q.query::<Collection>().unwrap();
     assert!(cols.is_empty());
 }
 
@@ -117,7 +118,7 @@ fn test_collections_sort_asc() {
     let cols = m
         .collections()
         .sort(CollectionSort::Name, SortDir::Asc)
-        .query()
+        .query::<Collection>()
         .unwrap();
     let names: Vec<_> = cols.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, vec!["Apple", "Mango", "Zebra"]);
@@ -133,7 +134,7 @@ fn test_collections_sort_desc() {
     let cols = m
         .collections()
         .sort(CollectionSort::Name, SortDir::Desc)
-        .query()
+        .query::<Collection>()
         .unwrap();
     let names: Vec<_> = cols.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, vec!["Zebra", "Mango", "Apple"]);
@@ -152,13 +153,13 @@ fn test_collections_pagination() {
         .collections()
         .sort(CollectionSort::Name, SortDir::Asc)
         .pagination(2, 0)
-        .query()
+        .query::<Collection>()
         .unwrap();
     let page2 = m
         .collections()
         .sort(CollectionSort::Name, SortDir::Asc)
         .pagination(2, 1)
-        .query()
+        .query::<Collection>()
         .unwrap();
 
     assert_eq!(page1.len(), 2);
@@ -182,7 +183,7 @@ fn test_collections_with_total() {
         .collections()
         .pagination(2, 0)
         .with_total()
-        .query()
+        .query::<Collection>()
         .unwrap();
     assert_eq!(result.total, 5);
     assert_eq!(result.items.len(), 2);
@@ -197,7 +198,7 @@ fn test_collections_with_total_filtered() {
 
     let mut q = m.collections();
     q.name.contains("Rust");
-    let result = q.with_total().query().unwrap();
+    let result = q.with_total().query::<Collection>().unwrap();
     assert_eq!(result.total, 2);
 }
 
@@ -216,7 +217,7 @@ fn test_collection_posts_via_builder() {
 
     let mut q = m.posts();
     q.collections.insert(col);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -230,7 +231,7 @@ fn test_collection_posts_empty_via_builder() {
 
     let mut q = m.posts();
     q.collections.insert(col);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert!(posts.is_empty());
 }
 
@@ -249,12 +250,12 @@ fn test_collection_posts_multiple_via_builder() {
 
     let mut q_a = m.posts();
     q_a.collections.insert(col_a);
-    let posts_a = q_a.query().unwrap();
+    let posts_a = q_a.query::<Post>().unwrap();
     assert_eq!(posts_a.len(), 2);
 
     let mut q_b = m.posts();
     q_b.collections.insert(col_b);
-    let posts_b = q_b.query().unwrap();
+    let posts_b = q_b.query::<Post>().unwrap();
     assert_eq!(posts_b.len(), 2);
 
     let ids_a: Vec<_> = posts_a.iter().map(|p| p.id).collect();

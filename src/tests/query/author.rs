@@ -4,6 +4,7 @@ use crate::{
     manager::PostArchiverManager,
     query::{author::AuthorSort, Countable, Paginate, Query, SortDir, Sortable},
     tests::helpers,
+    Author, Post,
 };
 use chrono::Utc;
 
@@ -70,7 +71,7 @@ fn test_find_author_by_alias_wrong_platform() {
 #[test]
 fn test_authors_empty() {
     let m = PostArchiverManager::open_in_memory().unwrap();
-    let authors = m.authors().query().unwrap();
+    let authors = m.authors().query::<Author>().unwrap();
     assert!(authors.is_empty());
 }
 
@@ -81,7 +82,7 @@ fn test_authors_returns_all() {
     let id1 = helpers::add_author(&m, "Alice".into(), Some(now));
     let id2 = helpers::add_author(&m, "Bob".into(), Some(now));
 
-    let authors = m.authors().query().unwrap();
+    let authors = m.authors().query::<Author>().unwrap();
     assert_eq!(authors.len(), 2);
     let ids: Vec<_> = authors.iter().map(|a| a.id).collect();
     assert!(ids.contains(&id1));
@@ -100,7 +101,7 @@ fn test_authors_name_contains() {
 
     let mut q = m.authors();
     q.name.contains("Alice");
-    let results = q.query().unwrap();
+    let results = q.query::<Author>().unwrap();
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|a| a.name.contains("Alice")));
 }
@@ -115,7 +116,7 @@ fn test_authors_name_contains_case_insensitive() {
     // LIKE '%alice%' is case-insensitive for ASCII in SQLite
     let mut q = m.authors();
     q.name.contains("alice");
-    let results = q.query().unwrap();
+    let results = q.query::<Author>().unwrap();
     assert_eq!(results.len(), 2);
 }
 
@@ -127,7 +128,7 @@ fn test_authors_name_contains_no_match() {
 
     let mut q = m.authors();
     q.name.contains("xyz");
-    let results = q.query().unwrap();
+    let results = q.query::<Author>().unwrap();
     assert!(results.is_empty());
 }
 
@@ -144,7 +145,7 @@ fn test_authors_sort_by_name_asc() {
     let authors = m
         .authors()
         .sort(AuthorSort::Name, SortDir::Asc)
-        .query()
+        .query::<Author>()
         .unwrap();
     let names: Vec<_> = authors.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, vec!["Anna", "Mike", "Zara"]);
@@ -161,7 +162,7 @@ fn test_authors_sort_by_name_desc() {
     let authors = m
         .authors()
         .sort(AuthorSort::Name, SortDir::Desc)
-        .query()
+        .query::<Author>()
         .unwrap();
     let names: Vec<_> = authors.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, vec!["Zara", "Mike", "Anna"]);
@@ -181,13 +182,13 @@ fn test_authors_pagination() {
         .authors()
         .sort(AuthorSort::Name, SortDir::Asc)
         .pagination(2, 0)
-        .query()
+        .query::<Author>()
         .unwrap();
     let page2 = m
         .authors()
         .sort(AuthorSort::Name, SortDir::Asc)
         .pagination(2, 1)
-        .query()
+        .query::<Author>()
         .unwrap();
 
     assert_eq!(page1.len(), 2);
@@ -208,7 +209,12 @@ fn test_authors_with_total() {
         helpers::add_author(&m, format!("A{i}"), Some(now));
     }
 
-    let result = m.authors().pagination(2, 0).with_total().query().unwrap();
+    let result = m
+        .authors()
+        .pagination(2, 0)
+        .with_total()
+        .query::<Author>()
+        .unwrap();
     assert_eq!(result.total, 6);
     assert_eq!(result.items.len(), 2);
 }
@@ -223,7 +229,7 @@ fn test_authors_with_total_filtered() {
 
     let mut q = m.authors();
     q.name.contains("Alice");
-    let result = q.with_total().query().unwrap();
+    let result = q.with_total().query::<Author>().unwrap();
     assert_eq!(result.total, 2);
     assert_eq!(result.items.len(), 2);
 }
@@ -240,7 +246,7 @@ fn test_authors_with_relations() {
     let post_id = helpers::add_post(&m, "Post".into(), None, None, Some(now), Some(now));
     helpers::add_post_authors(&m, post_id, &[author_id]);
 
-    let authors = m.authors().query().unwrap();
+    let authors = m.authors().query::<Author>().unwrap();
     assert_eq!(authors.len(), 1);
     assert_eq!(authors[0].id, author_id);
 
@@ -260,7 +266,12 @@ fn test_authors_relations_with_total() {
         helpers::add_author(&m, format!("A{i}"), Some(now));
     }
 
-    let result = m.authors().pagination(2, 0).with_total().query().unwrap();
+    let result = m
+        .authors()
+        .pagination(2, 0)
+        .with_total()
+        .query::<Author>()
+        .unwrap();
     assert_eq!(result.total, 4);
     assert_eq!(result.items.len(), 2);
 }
@@ -319,7 +330,7 @@ fn test_author_posts_via_builder() {
 
     let mut q = m.posts();
     q.authors.insert(author);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert_eq!(posts.len(), 2);
     let ids: Vec<_> = posts.iter().map(|p| p.id).collect();
     assert!(ids.contains(&id1));
@@ -334,6 +345,6 @@ fn test_author_posts_empty_via_builder() {
 
     let mut q = m.posts();
     q.authors.insert(author);
-    let posts = q.query().unwrap();
+    let posts = q.query::<Post>().unwrap();
     assert!(posts.is_empty());
 }
