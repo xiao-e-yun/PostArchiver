@@ -1,4 +1,4 @@
-//! FileMeta point-query helpers (no builder — use direct methods).
+//! FileMeta point-query helpers (no builder — use the direct methods below).
 
 use rusqlite::OptionalExtension;
 
@@ -10,7 +10,7 @@ use crate::{
 use super::FromQuery;
 
 impl<C: PostArchiverConnection> PostArchiverManager<C> {
-    /// Fetch a single [`FileMeta`] by primary key.
+    /// Fetch a single [`FileMeta`] by primary key. Returns `None` if not found.
     pub fn get_file_meta(&self, id: FileMetaId) -> crate::error::Result<Option<FileMeta>> {
         let mut stmt = self
             .conn()

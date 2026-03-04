@@ -15,10 +15,11 @@ use super::{
 
 /// Fluent query builder for tags.  Obtained via [`PostArchiverManager::tags()`].
 ///
-/// The `platform` filter accepts `Option<PlatformId>`:
-/// - `Some(id)` filters tags belonging to that platform.
-/// - `None` filters tags with no platform (`platform IS NULL`).
-/// Multiple calls are combined with OR.
+/// # Available filter fields
+/// - `ids`: filter by a set of [`TagId`] values.
+/// - `name`: `LIKE` fuzzy match on the tag name.
+/// - `source`: `LIKE` fuzzy match on the source field.
+/// - `platforms`: filter by a set of [`PlatformId`] values.
 #[derive(Debug)]
 pub struct TagQuery<'a, C> {
     queryer: Queryer<'a, C>,
@@ -83,7 +84,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         TagQuery::new(self)
     }
 
-    /// Fetch a single tag by primary key.
+    /// Fetch a single tag by primary key. Returns `None` if not found.
     pub fn get_tag(&self, id: TagId) -> crate::error::Result<Option<Tag>> {
         let mut stmt = self
             .conn()
@@ -91,7 +92,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         Ok(stmt.query_row([id], Tag::from_row).optional()?)
     }
 
-    /// Find a tag ID by `name` and optional `platform`.
+    /// Find a tag ID by `name` and optional `platform` (exact match).
     pub fn find_tag(
         &self,
         name: &str,

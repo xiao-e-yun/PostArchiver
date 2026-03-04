@@ -23,11 +23,22 @@ impl_sortable!(PostQuery(PostSort) {
 
 // ── Builder ───────────────────────────────────────────────────────────────────
 
-/// Fluent query builder for posts.
+/// 貼文的流式查詢構建器。
 ///
-/// Obtained via [`PostArchiverManager::posts()`].
+/// 透過 [`PostArchiverManager::posts()`] 取得。
 ///
-/// # Example
+/// # 可用過濾欄位
+/// - `ids`：依 `PostId` 陸列過濾。
+/// - `title`：依標題進行 `LIKE` 模糊匹配。
+/// - `source`：依來源字串進行 `LIKE` 模糊匹配。
+/// - `updated`：依最後更新時間進行範圍過濾。
+/// - `published`：依發布時間進行範圍過濾。
+/// - `platforms`：依所屬平台的 `PlatformId` 陸列過濾。
+/// - `tags`：展性匹配標籤，最小定包含透過 `post_tags` 關聯表指定的所有 `TagId`。
+/// - `authors`：展性匹配作者，結構同上，透過 `author_posts` 關聯表。
+/// - `collections`：展性匹配收藏集，結構同上，透過 `collection_posts` 關聯表。
+///
+/// # 範例
 /// ```no_run
 /// # use post_archiver::manager::PostArchiverManager;
 /// # use post_archiver::query::{SortDir, Sortable, Countable, Paginate, Query};
@@ -132,8 +143,8 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         Ok(stmt.query_row([source], |row| row.get(0)).optional()?)
     }
 
-    /// Look up a post ID by its `source` field, but only if its `updated` timestamp is newer than
-    /// the given value.
+    /// Look up a post ID by its `source` field, but only if its `updated` timestamp
+    /// is not earlier than the given value.
     pub fn find_post_with_updated(
         &self,
         source: &str,

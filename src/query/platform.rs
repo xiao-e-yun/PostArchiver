@@ -17,8 +17,12 @@ use super::{
 
 /// Query builder for platforms.  Obtained via [`PostArchiverManager::platforms()`].
 ///
-/// Platforms are few, so this builder is intentionally simple — no pagination or
-/// count is provided.  `.query()` always returns `Vec<Platform>`.
+/// Platforms are typically few in number, so this builder is intentionally simple—no
+/// pagination or total-count is provided.  `.query()` always returns `Vec<Platform>`.
+///
+/// # Available filter fields
+/// - `ids`: filter by a set of [`PlatformId`] values.
+/// - `name`: `LIKE` fuzzy match on the platform name.
 #[derive(Debug)]
 pub struct PlatformQuery<'a, C> {
     queryer: Queryer<'a, C>,
@@ -78,7 +82,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         PlatformQuery::new(self)
     }
 
-    /// Fetch a single platform by primary key.
+    /// Fetch a single platform by primary key. Returns `None` if not found.
     pub fn get_platform(&self, id: PlatformId) -> crate::error::Result<Option<Platform>> {
         let mut stmt = self
             .conn()

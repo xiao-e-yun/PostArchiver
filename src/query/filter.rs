@@ -1,3 +1,17 @@
+//! Query filters: reusable SQL WHERE condition builder stamps.
+//!
+//! Each query builder (e.g. [`PostQuery`](super::post::PostQuery)) exposes its filters
+//! as public fields. Callers invoke methods on those fields; the filters write their
+//! conditions into [`RawSql`](super::RawSql) via [`build_sql()`] when
+//! [`BaseFilter::update_sql()`](super::BaseFilter::update_sql) is called.
+//!
+//! | Filter | Use case |
+//! |--------|----------|
+//! | [`TextFilter`] | `LIKE` fuzzy matching on string columns |
+//! | [`DateFilter`] | Date range filtering on `DateTime<Utc>` columns |
+//! | [`IdFilter`] | Exact ID matching (`= ?` or `IN (…)`) |
+//! | [`RelationshipsFilter`] | All-of matching across a many-to-many join table |
+
 use std::{collections::HashSet, fmt::Display, hash::Hash, ops::Deref, rc::Rc};
 
 use chrono::{DateTime, Utc};
@@ -6,6 +20,14 @@ use serde::Serialize;
 
 use crate::query::RawSql;
 
+/// SQL `LIKE` filter for string columns.
+///
+/// After specifying the target column, set the match pattern via one of the methods below.
+/// Special characters `%` and `_` are auto-escaped unless you use
+/// [`like()`](TextFilter::like) to supply a raw pattern.
+///
+/// [`deref()`](Deref::deref) exposes the inner pattern string, useful for checking
+/// whether the filter has been set.
 #[derive(Debug)]
 pub struct TextFilter {
     col: &'static str,
@@ -21,6 +43,7 @@ impl Deref for TextFilter {
 }
 
 impl TextFilter {
+    /// Create an empty filter for the given column (no match pattern — generates no WHERE clause).
     pub fn new(col: &'static str) -> Self {
         TextFilter {
             col,
@@ -28,26 +51,32 @@ impl TextFilter {
         }
     }
 
+    /// Match rows where the column contains `text` (`%text%`). Special chars are auto-escaped.
     pub fn contains(&mut self, text: &str) -> &mut Self {
         self.text = format!("%{}%", Self::safe_escape(text));
         self
     }
 
+    /// Match rows where the column starts with `text` (`text%`). Special chars are auto-escaped.
     pub fn starts_with(&mut self, text: &str) -> &mut Self {
         self.text = format!("{}%", Self::safe_escape(text));
         self
     }
 
+    /// Match rows where the column ends with `text` (`%text`). Special chars are auto-escaped.
     pub fn ends_with(&mut self, text: &str) -> &mut Self {
         self.text = format!("%{}", Self::safe_escape(text));
         self
     }
 
+    /// Exact equality match (equivalent to `LIKE 'text'` with no wildcards).
     pub fn equals(&mut self, text: &str) -> &mut Self {
         self.text = Self::safe_escape(text);
         self
     }
 
+    /// Set the raw `LIKE` pattern directly (`%` / `_` are **not** escaped).
+    /// Use this when you need manual control over wildcards.
     pub fn like(&mut self, t: &str) -> &mut Self {
         self.text = t.to_string();
         self
@@ -69,6 +98,10 @@ impl TextFilter {
     }
 }
 
+/// Date range filter for `DateTime<Utc>` columns.
+///
+/// Supports setting an upper bound, a lower bound, or both (which collapses to an
+/// equality check when the two values are equal). Unset bounds are silently ignored.
 #[derive(Debug)]
 pub struct DateFilter {
     col: &'static str,
@@ -77,6 +110,7 @@ pub struct DateFilter {
 }
 
 impl DateFilter {
+    /// Create an empty filter for the given column (no bounds — generates no WHERE clause).
     pub fn new(col: &'static str) -> Self {
         DateFilter {
             col,
@@ -85,16 +119,19 @@ impl DateFilter {
         }
     }
 
+    /// Set the upper bound: equivalent to `col <= date`.
     pub fn before(&mut self, date: DateTime<Utc>) -> &mut Self {
         self.before = Some(date);
         self
     }
 
+    /// Set the lower bound: equivalent to `col >= date`.
     pub fn after(&mut self, date: DateTime<Utc>) -> &mut Self {
         self.after = Some(date);
         self
     }
 
+    /// Set both bounds to the same date, collapsing to an equality check `col = date`.
     pub fn equals(&mut self, date: DateTime<Utc>) -> &mut Self {
         self.before = Some(date);
         self.after = Some(date);
@@ -128,6 +165,13 @@ impl DateFilter {
     }
 }
 
+/// Exact-match filter for ID columns.
+///
+/// - Empty set: generates no WHERE clause.
+/// - Single ID: generates `col = ?`.
+/// - Multiple IDs: generates `col IN (SELECT value FROM json_each(?))` with a JSON array parameter.
+///
+/// [`deref()`](Deref::deref) exposes the inner `HashSet<T>`, useful for inspecting added IDs.
 #[derive(Debug)]
 pub struct IdFilter<T> {
     col: &'static str,
@@ -146,6 +190,7 @@ impl<T> IdFilter<T>
 where
     T: Hash + PartialEq + Eq + ToSql + Serialize + Display + Clone + 'static,
 {
+    /// Create an empty filter for the given column.
     pub fn new(col: &'static str) -> Self {
         IdFilter {
             col,
@@ -153,16 +198,19 @@ where
         }
     }
 
+    /// Add a single ID to the match set.
     pub fn insert(&mut self, id: T) -> &mut Self {
         self.ids.insert(id);
         self
     }
 
+    /// Add multiple IDs to the match set.
     pub fn extend(&mut self, ids: impl IntoIterator<Item = T>) -> &mut Self {
         self.ids.extend(ids);
         self
     }
 
+    /// Translate the current ID set into a SQL WHERE condition and write it into `sql`.
     pub fn build_sql<U>(&self, mut sql: RawSql<U>) -> RawSql<U> {
         let (wheres, params) = &mut sql.where_clause;
         match self.ids.len() {
@@ -181,6 +229,16 @@ where
     }
 }
 
+/// All-of relational filter that works through a many-to-many join table.
+///
+/// Designed for filtering posts by their associated tags, authors, or collections.
+///
+/// - Empty set: generates no WHERE clause.
+/// - Single ID: uses `EXISTS (SELECT 1 FROM <table> WHERE post = posts.id AND <col> = ?)`.
+/// - Multiple IDs: ensures **all** specified IDs are present (intersection match)
+///   via a count sub-query.
+///
+/// [`deref()`](Deref::deref) exposes the inner `HashSet<T>`.
 #[derive(Debug)]
 pub struct RelationshipsFilter<T> {
     table: &'static str,
@@ -197,6 +255,7 @@ impl<T> Deref for RelationshipsFilter<T> {
 }
 
 impl<T> RelationshipsFilter<T> {
+    /// Create an empty filter specifying the join table name (`table`) and the related ID column (`col`).
     pub fn new(table: &'static str, col: &'static str) -> Self {
         RelationshipsFilter {
             table,
@@ -207,11 +266,13 @@ impl<T> RelationshipsFilter<T> {
 }
 
 impl<T: Eq + std::hash::Hash> RelationshipsFilter<T> {
+    /// Add a single related ID to the match set.
     pub fn insert(&mut self, id: T) -> &mut Self {
         self.ids.insert(id);
         self
     }
 
+    /// Add multiple related IDs to the match set.
     pub fn extend(&mut self, ids: impl IntoIterator<Item = T>) -> &mut Self {
         self.ids.extend(ids);
         self

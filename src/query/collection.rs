@@ -15,10 +15,10 @@ use super::{
 
 /// Fluent query builder for collections.  Obtained via [`PostArchiverManager::collections()`].
 ///
-/// The `platform` filter accepts `Option<PlatformId>`:
-/// - `Some(id)` filters collections belonging to that platform.
-/// - `None` filters collections with no platform (`platform IS NULL`).
-/// Multiple calls are combined with OR.
+/// # Available filter fields
+/// - `ids`: filter by a set of [`CollectionId`] values.
+/// - `name`: `LIKE` fuzzy match on the collection name.
+/// - `source`: `LIKE` fuzzy match on the source field.
 #[derive(Debug)]
 pub struct CollectionQuery<'a, C> {
     queryer: Queryer<'a, C>,
@@ -80,7 +80,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         CollectionQuery::new(self)
     }
 
-    /// Fetch a single collection by primary key.
+    /// Fetch a single collection by primary key. Returns `None` if not found.
     pub fn get_collection(&self, id: CollectionId) -> crate::error::Result<Option<Collection>> {
         let mut stmt = self
             .conn()
@@ -88,7 +88,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         Ok(stmt.query_row([id], Collection::from_row).optional()?)
     }
 
-    /// Find a collection ID by `name` and optional `platform`.
+    /// Find a collection ID by `name` (exact match).
     pub fn find_collection(&self, name: &str) -> crate::error::Result<Option<CollectionId>> {
         let mut stmt = self
             .conn()
@@ -98,6 +98,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             .optional()?)
     }
 
+    /// Find a collection ID by its `source` field.
     pub fn find_collection_by_source(
         &self,
         source: &str,

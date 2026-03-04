@@ -1,31 +1,41 @@
-//! Query builder module providing fluent read operations for all entities.
+//! Query builder module providing fluent read-only operations for all entities.
+//!
+//! # Architecture
+//!
+//! Each query builder (e.g. [`PostQuery`](post::PostQuery)) exposes a set of public filter
+//! fields (from the [`filter`] module: `IdFilter`, `TextFilter`, `DateFilter`,
+//! `RelationshipsFilter`). Callers mutate those fields directly, then call
+//! [`Query::query()`] to execute the SQL and retrieve results.
+//!
+//! Builders can be composed via decorator wrappers:
+//! - [`Paginate::pagination(limit, page)`](Paginate::pagination) → [`Paginated<Q>`](Paginated): appends `LIMIT … OFFSET …`
+//! - [`Sortable::sort(field, dir)`](Sortable::sort) → [`Sorted<Q, F>`](sortable::Sorted): appends `ORDER BY …`
+//! - [`Sortable::sort_random()`](Sortable::sort_random): appends `ORDER BY RANDOM()`
+//! - [`Countable::with_total()`](Countable::with_total) → [`WithTotal<Q>`](countable::WithTotal): also returns the total row count
 //!
 //! # Entry points on [`PostArchiverManager`](crate::manager::PostArchiverManager)
 //!
 //! | Method | Builder | Returns |
-//! |--------|---------|---------|
-//! | `manager.posts()` | [`PostQuery`](post::PostQuery) | `Vec<Post>` / `PageResult<Post>` |
-//! | `manager.authors()` | [`AuthorQuery`](author::AuthorQuery) | `Vec<Author>` / `PageResult<Author>` |
-//! | `manager.tags()` | [`TagQuery`](tag::TagQuery) | `Vec<Tag>` / `PageResult<Tag>` |
+//! |--------|---------|----------|
+//! | `manager.posts()` | [`PostQuery`](post::PostQuery) | `Vec<Post>` / `Totalled<Vec<Post>>` |
+//! | `manager.authors()` | [`AuthorQuery`](author::AuthorQuery) | `Vec<Author>` / `Totalled<Vec<Author>>` |
+//! | `manager.tags()` | [`TagQuery`](tag::TagQuery) | `Vec<Tag>` / `Totalled<Vec<Tag>>` |
 //! | `manager.platforms()` | [`PlatformQuery`](platform::PlatformQuery) | `Vec<Platform>` |
-//! | `manager.collections()` | [`CollectionQuery`](collection::CollectionQuery) | `Vec<Collection>` / `PageResult<Collection>` |
+//! | `manager.collections()` | [`CollectionQuery`](collection::CollectionQuery) | `Vec<Collection>` / `Totalled<Vec<Collection>>` |
 //!
-//! # Chain Style
-//!
-//! `.pagination()` wraps the builder in [`Paginated`], and `.with_total()` further
-//! wraps it to include the total count.
+//! # Examples
 //!
 //! ```no_run
 //! # use post_archiver::manager::PostArchiverManager;
 //! # use post_archiver::query::{Countable, Paginate, Query};
 //! # let manager = PostArchiverManager::open_in_memory().unwrap();
-//! // Vec<Post>  (all matching, no LIMIT)
+//! // All matching posts (no LIMIT)
 //! let v = manager.posts().query::<post_archiver::Post>().unwrap();
 //!
-//! // Vec<Post>  (paginated)
+//! // Paginated — page 0, 20 items per page
 //! let v = manager.posts().pagination(20, 0).query::<post_archiver::Post>().unwrap();
 //!
-//! // PageResult<Post>  (paginated + total count)
+//! // Paginated + total count
 //! let p = manager.posts().pagination(20, 0).with_total().query::<post_archiver::Post>().unwrap();
 //! println!("{} total posts", p.total);
 //! ```
@@ -55,33 +65,61 @@ use crate::{
     utils::macros::AsTable,
 };
 
+/// Trait for types that can be deserialized from a SQL row.
+///
+/// Implement this trait to make a type queryable as a generic parameter of [`Query::query()`].
+/// Typically implemented via `#[derive]` macros or manually on entity structs
+/// (e.g. [`Post`](crate::Post), [`Author`](crate::Author)).
+///
+/// # Associated types
+/// - `Based`: the corresponding database table type, must implement [`AsTable`].
 pub trait FromQuery: Sized {
     type Based: AsTable;
+    /// Returns the `SELECT …` SQL fragment used to query this type (without WHERE/ORDER/LIMIT).
     fn select_sql() -> String;
+    /// Deserializes one instance of this type from a rusqlite `Row`.
     fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error>;
 }
 
 // ── Query Trait ───────────────────────────────────────────────────────────────
 
-/// Core query execution trait. Implementors provide `.query()` to fetch results.
+/// Core query execution trait. Implementors can call `.query()` to run SQL and retrieve results.
+///
+/// You generally do not implement this trait directly; use the concrete query builders
+/// (e.g. [`PostQuery`](post::PostQuery), [`AuthorQuery`](author::AuthorQuery)).
+///
+/// The decorator wrappers [`Paginated`], [`WithTotal`](countable::WithTotal), and
+/// [`Sorted`](sortable::Sorted) all implement this trait by wrapping and delegating.
 pub trait Query: Sized {
+    /// The wrapper type for query results. For most builders this is `Vec<T>`;
+    /// when wrapped by [`WithTotal`](countable::WithTotal) it becomes [`Totalled<Vec<T>>`](Totalled).
     type Wrapper<T>;
+    /// The database table type this query targets.
     type Based: AsTable;
-    /// Execute the query, returning matching items.
+    /// Execute the query with an externally supplied [`RawSql`] context
+    /// (typically threaded through decorator layers).
     fn query_with_context<T: FromQuery<Based = Self::Based>>(
         self,
         sql: RawSql<T>,
     ) -> crate::error::Result<Self::Wrapper<T>>;
 
+    /// Execute the query with a default empty [`RawSql`] context, returning all matching results.
     fn query<T: FromQuery<Based = Self::Based>>(self) -> crate::error::Result<Self::Wrapper<T>> {
         let sql: RawSql<T> = RawSql::new();
         self.query_with_context(sql)
     }
 }
 
+/// Trait for types that hold filter conditions and can write them into a [`RawSql`].
+///
+/// Query builders (e.g. [`PostQuery`](post::PostQuery)) and decorator wrappers (e.g. [`Paginated`])
+/// implement this trait so that [`BaseFilter::count()`] can compute the total matching row count.
+/// The default `count()` implementation caches its result to avoid redundant queries.
 pub trait BaseFilter: Sized {
     type Based: AsTable;
+    /// Append all filter conditions held by this builder into `sql` and return the updated [`RawSql`].
     fn update_sql<T: FromQuery<Based = Self::Based>>(&self, sql: RawSql<T>) -> RawSql<T>;
+    /// Return a reference to the [`Queryer`] owned by this builder, used by the default `count()` impl.
     fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection>;
 
     fn count(&self) -> crate::error::Result<u64> {
@@ -129,10 +167,19 @@ impl<T: ToSql + Display> ToSqlAndEq for T {}
 
 pub type Param = Rc<dyn ToSqlAndEq>;
 
+/// Intermediate SQL representation passed through the decorator chain and filled layer by layer.
+///
+/// Received by [`Query::query_with_context()`]; filters append WHERE conditions via
+/// [`BaseFilter::update_sql()`]; [`Paginated`] sets `limit_clause`;
+/// [`Sorted`](sortable::Sorted) appends to `order_clause`. Finally assembled into a
+/// complete SQL string by [`RawSql::build_sql()`].
 #[derive(Default, Clone)]
 pub struct RawSql<T> {
+    /// WHERE clause: `(list of condition strings, list of bound parameters)`, joined with `AND`.
     pub where_clause: (Vec<String>, Vec<Param>),
+    /// ORDER BY expressions accumulated in append order.
     pub order_clause: Vec<String>,
+    /// `[limit, offset]` corresponding to `LIMIT ? OFFSET ?`. `None` means no pagination.
     pub limit_clause: Option<[u64; 2]>,
     _phantom: std::marker::PhantomData<T>,
 }
@@ -148,6 +195,7 @@ impl<T> Debug for RawSql<T> {
 }
 
 impl<T> RawSql<T> {
+    /// Create an empty [`RawSql`] with all fields at their defaults (no WHERE / ORDER / LIMIT).
     pub fn new() -> Self {
         Self {
             where_clause: (Vec::new(), Vec::new()),
@@ -157,6 +205,7 @@ impl<T> RawSql<T> {
         }
     }
 
+    /// Build the `WHERE … ORDER BY … LIMIT ? OFFSET ?` fragment (without the SELECT prefix).
     pub fn build_generic_sql(&self) -> (String, Vec<Param>) {
         let mut params = self.where_clause.1.clone();
         let where_sql = if self.where_clause.0.is_empty() {
@@ -181,12 +230,14 @@ impl<T> RawSql<T> {
 }
 
 impl<T: FromQuery> RawSql<T> {
+    /// Build the full `SELECT … WHERE … ORDER BY … LIMIT ? OFFSET ?` SQL string.
     pub fn build_sql(&self) -> (String, Vec<Param>) {
         let (clause, params) = self.build_generic_sql();
         let sql = format!("{} {}", T::select_sql(), clause);
         (sql, params)
     }
 
+    /// Build a `SELECT COUNT(*) FROM <table> WHERE …` SQL string (ORDER/LIMIT are ignored).
     pub fn build_count_sql(&self) -> (String, Vec<Param>) {
         let where_sql = if self.where_clause.0.is_empty() {
             "".to_string()
@@ -202,6 +253,10 @@ impl<T: FromQuery> RawSql<T> {
     }
 }
 
+/// Helper that wraps a [`PostArchiverManager`] reference and provides low-level SQL execution.
+///
+/// Each query builder owns a `Queryer` at construction time and uses it to
+/// access the database connection and result cache.
 pub struct Queryer<'a, C> {
     pub manager: &'a PostArchiverManager<C>,
 }
@@ -217,6 +272,7 @@ impl<'a, C: PostArchiverConnection> Queryer<'a, C> {
         Self { manager }
     }
 
+    /// Execute a SELECT query and deserialize all result rows into `Vec<Q>`.
     pub fn fetch<Q: FromQuery>(
         &self,
         sql: &str,
@@ -231,6 +287,7 @@ impl<'a, C: PostArchiverConnection> Queryer<'a, C> {
         rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 
+    /// Execute a `SELECT COUNT(*)` query and return the number of matching rows.
     pub fn count(&self, sql: &str, params: Vec<Param>) -> crate::error::Result<u64> {
         let mut stmt = self.manager.conn().prepare_cached(sql)?;
         let params = params
@@ -251,7 +308,12 @@ pub mod paginate {
 
     use super::{BaseFilter, FromQuery};
 
+    /// Trait that adds pagination support to query builders.
+    ///
+    /// Automatically implemented for all types that implement [`Query`](crate::query::Query).
     pub trait Paginate: Sized {
+        /// Wrap this builder with `limit` (items per page) and `page` (0-based page index),
+        /// returning [`Paginated<Self>`] which appends `LIMIT limit OFFSET limit*page` on execution.
         fn pagination(self, limit: u64, page: u64) -> Paginated<Self>;
     }
 
@@ -267,7 +329,7 @@ pub mod paginate {
 
     /// Paginated wrapper produced by [`.pagination()`](Paginate::pagination).
     ///
-    /// Appends `LIMIT … OFFSET …` to the inner builder's SQL.
+    /// Appends `LIMIT … OFFSET …` to the inner builder's SQL on execution.
     #[derive(Debug)]
     pub struct Paginated<Q> {
         inner: Q,
@@ -312,8 +374,13 @@ pub mod countable {
 
     use super::{BaseFilter, FromQuery};
 
+    /// Trait that adds total-count support to query builders.
+    ///
+    /// Automatically implemented for all types that implement [`Query`](crate::query::Query).
     pub trait Countable: Sized {
-        /// Chain: wrap result in [`PageResult`] including total count.
+        /// Wrap this builder in [`WithTotal<Self>`]. When [`Query::query()`] is called,
+        /// an additional `COUNT(*)` query is executed and the result is placed in
+        /// the `total` field of the returned [`Totalled`].
         fn with_total(self) -> WithTotal<Self> {
             WithTotal { inner: self }
         }
@@ -321,6 +388,8 @@ pub mod countable {
 
     impl<T: Query> Countable for T {}
 
+    /// Wrapper produced by [`.with_total()`](Countable::with_total).
+    /// Executes an additional `COUNT(*)` query and places the result in [`Totalled::total`].
     #[derive(Debug)]
     pub struct WithTotal<Q> {
         inner: Q,
@@ -352,9 +421,11 @@ pub mod countable {
         }
     }
 
-    /// Result container for paginated queries (produced by `.with_total().query()`).
+    /// Result container produced by `.with_total().query()`, holding both the query results
+    /// and the total count of rows matching the filter.
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Totalled<T> {
+        /// The results retrieved by this query (respecting any LIMIT/OFFSET).
         pub items: T,
         /// Total number of rows matching the filter, ignoring pagination.
         pub total: u64,
@@ -370,8 +441,14 @@ pub mod sortable {
         query::{Query, RawSql},
     };
 
+    /// Trait that adds sorting support to query builders.
+    ///
+    /// Per-entity sort-field enums (e.g. `PostSort`, `AuthorSort`) are generated
+    /// automatically by the [`impl_sortable!`] macro.
     pub trait Sortable: Sized {
+        /// The sortable field enum type, defined in each sub-module by [`impl_sortable!`].
         type SortField;
+        /// Sort by the given field and direction, returning [`Sorted<Self, SortField>`].
         fn sort(self, field: Self::SortField, dir: SortDir) -> Sorted<Self, Self::SortField> {
             Sorted {
                 inner: self,
@@ -379,6 +456,7 @@ pub mod sortable {
                 dir,
             }
         }
+        /// Sort results randomly using `ORDER BY RANDOM()`.
         fn sort_random(self) -> Sorted<Self, Random> {
             Sorted {
                 inner: self,
@@ -388,6 +466,7 @@ pub mod sortable {
         }
     }
 
+    /// Sorting wrapper produced by [`.sort()`](Sortable::sort), holding the sort field and direction.
     #[derive(Debug)]
     pub struct Sorted<Q, F> {
         inner: Q,
@@ -395,14 +474,17 @@ pub mod sortable {
         dir: SortDir,
     }
 
+    /// Marker type used by [`Sortable::sort_random()`] for random ordering.
     #[derive(Debug)]
     pub struct Random;
 
-    /// Sort direction used with `.sort(field, dir)` builder methods.
+    /// Sort direction used with [`.sort(field, dir)`](Sortable::sort).
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub enum SortDir {
+        /// Ascending order (default).
         #[default]
         Asc,
+        /// Descending order.
         Desc,
     }
 

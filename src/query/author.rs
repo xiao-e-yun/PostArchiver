@@ -15,10 +15,10 @@ use super::{
 
 /// Fluent query builder for authors.  Obtained via [`PostArchiverManager::authors()`].
 ///
-/// The `platform` filter accepts `Option<PlatformId>`:
-/// - `Some(id)` filters authors belonging to that platform.
-/// - `None` filters authors with no platform (`platform IS NULL`).
-/// Multiple calls are combined with OR.
+/// # Available filter fields
+/// - `ids`: filter by a set of [`AuthorId`] values.
+/// - `name`: `LIKE` fuzzy match on the author name.
+/// - `updated`: date-range filter on the last-updated timestamp.
 #[derive(Debug)]
 pub struct AuthorQuery<'a, C> {
     queryer: Queryer<'a, C>,
@@ -82,7 +82,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         AuthorQuery::new(self)
     }
 
-    /// Fetch a single author by primary key.
+    /// Fetch a single author by primary key. Returns `None` if not found.
     pub fn get_author(&self, id: AuthorId) -> crate::error::Result<Option<Author>> {
         let mut stmt = self
             .conn()
@@ -90,7 +90,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
         Ok(stmt.query_row([id], Author::from_row).optional()?)
     }
 
-    /// Find an author ID by their alias (`source` + `platform`).
+    /// Find an author ID by alias (`source` + `platform`).
     pub fn find_author_by_alias(
         &self,
         source: &str,
@@ -104,7 +104,7 @@ impl<C: PostArchiverConnection> PostArchiverManager<C> {
             .optional()?)
     }
 
-    /// Fetch all aliases of an author.
+    /// Fetch all aliases belonging to the given author.
     pub fn list_author_aliases(&self, author: AuthorId) -> crate::error::Result<Vec<Alias>> {
         let mut stmt = self
             .conn()

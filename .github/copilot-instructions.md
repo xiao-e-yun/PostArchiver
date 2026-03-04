@@ -17,10 +17,10 @@ The Post Archiver project is structured to support both Rust and TypeScript comp
      import type { Post } from "post-archiver"
      ```
 
-2. **Building the Project**:
+2. **Testing the Project**:
    - For Rust, use:
      ```sh
-     cargo build
+     cargo test --all-features
      ```
    - For TypeScript, execute:
      ```sh
