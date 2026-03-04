@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::Deref, rc::Rc};
+use std::{collections::HashSet, fmt::Display, hash::Hash, ops::Deref, rc::Rc};
 
 use chrono::{DateTime, Utc};
 use rusqlite::ToSql;
@@ -142,9 +142,9 @@ impl<T> Deref for IdFilter<T> {
     }
 }
 
-impl<T: ToSql + Serialize + Clone + 'static> IdFilter<T>
+impl<T> IdFilter<T>
 where
-    T: Eq + std::hash::Hash,
+    T: Hash + PartialEq + Eq + ToSql + Serialize + Display + Clone + 'static,
 {
     pub fn new(col: &'static str) -> Self {
         IdFilter {
@@ -218,7 +218,7 @@ impl<T: Eq + std::hash::Hash> RelationshipsFilter<T> {
     }
 }
 
-impl<T: ToSql + Serialize + Clone + 'static> RelationshipsFilter<T>
+impl<T: Display + ToSql + Serialize + Clone + 'static> RelationshipsFilter<T>
 where
     T: Eq + std::hash::Hash,
 {

@@ -38,11 +38,15 @@ pub mod platform;
 pub mod post;
 pub mod tag;
 
-pub use countable::{Countable, PageResult};
+use cached::Cached;
+pub use countable::{Countable, Totalled};
 pub use paginate::Paginate;
 pub use sortable::{SortDir, Sortable};
 
-use std::{fmt::Debug, rc::Rc};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use rusqlite::ToSql;
 
@@ -84,11 +88,46 @@ pub trait BaseFilter: Sized {
         let sql = RawSql::<Self::Based>::new();
         let sql = self.update_sql(sql);
         let (sql, params) = sql.build_count_sql();
-        self.queryer().count(&sql, params)
+
+        let cache_key = (
+            sql.clone(),
+            params
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+
+        let cached_count = self
+            .queryer()
+            .manager
+            .caches
+            .lock()
+            .unwrap()
+            .counts
+            .cache_get(&cache_key)
+            .cloned();
+        match cached_count {
+            Some(cached_count) => Ok(cached_count),
+            None => {
+                let count = self.queryer().count(&sql, params)?;
+                self.queryer()
+                    .manager
+                    .caches
+                    .lock()
+                    .unwrap()
+                    .counts
+                    .cache_set(cache_key, count);
+                Ok(count)
+            }
+        }
     }
 }
 
-pub type Param = Rc<dyn ToSql>;
+pub trait ToSqlAndEq: ToSql + Display {}
+impl<T: ToSql + Display> ToSqlAndEq for T {}
+
+pub type Param = Rc<dyn ToSqlAndEq>;
 
 #[derive(Default, Clone)]
 pub struct RawSql<T> {
@@ -264,6 +303,8 @@ pub mod paginate {
 
 pub use countable::*;
 pub mod countable {
+    use serde::{Deserialize, Serialize};
+
     use crate::{
         manager::PostArchiverConnection,
         query::{Query, RawSql},
@@ -286,7 +327,7 @@ pub mod countable {
     }
 
     impl<Q: Query + BaseFilter> Query for WithTotal<Q> {
-        type Wrapper<T> = PageResult<Q::Wrapper<T>>;
+        type Wrapper<T> = Totalled<Q::Wrapper<T>>;
         type Based = <Q as Query>::Based;
 
         fn query_with_context<T: FromQuery<Based = Self::Based>>(
@@ -295,7 +336,7 @@ pub mod countable {
         ) -> crate::error::Result<Self::Wrapper<T>> {
             let total = self.inner.count()?;
             let items = self.inner.query_with_context(sql)?;
-            Ok(PageResult { items, total })
+            Ok(Totalled { items, total })
         }
     }
 
@@ -312,8 +353,8 @@ pub mod countable {
     }
 
     /// Result container for paginated queries (produced by `.with_total().query()`).
-    #[derive(Debug, Clone)]
-    pub struct PageResult<T> {
+    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct Totalled<T> {
         pub items: T,
         /// Total number of rows matching the filter, ignoring pagination.
         pub total: u64,

@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use cached::TimedSizedCache;
 use rusqlite::{Connection, Transaction};
 
 use crate::error::{Error, Result};
@@ -39,6 +42,7 @@ pub use tag::UpdateTag;
 /// ```
 #[derive(Debug)]
 pub struct PostArchiverManager<C = Connection> {
+    pub caches: Arc<Mutex<ManagerCaches>>,
     pub path: PathBuf,
     conn: C,
 }
@@ -77,7 +81,11 @@ impl PostArchiverManager {
             [VERSION],
         )?;
 
-        Ok(Self { conn, path })
+        Ok(Self {
+            conn,
+            path,
+            caches: Default::default(),
+        })
     }
 
     /// Opens an existing archive at the specified path
@@ -149,7 +157,11 @@ impl PostArchiverManager {
 
         let conn = Connection::open(db_path)?;
 
-        Ok(Some(Self { conn, path }))
+        Ok(Some(Self {
+            conn,
+            path,
+            caches: Default::default(),
+        }))
     }
 
     /// Opens an existing archive or creates a new one if it doesn't exist
@@ -191,7 +203,11 @@ impl PostArchiverManager {
             [VERSION],
         )?;
 
-        Ok(Self { conn, path })
+        Ok(Self {
+            conn,
+            path,
+            caches: Default::default(),
+        })
     }
 
     /// Starts a new transaction
@@ -208,6 +224,7 @@ impl PostArchiverManager {
     pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction<'_>>> {
         Ok(PostArchiverManager {
             path: self.path.clone(),
+            caches: self.caches.clone(),
             conn: self.conn.transaction()?,
         })
     }
@@ -261,5 +278,18 @@ impl PostArchiverConnection for Connection {
 impl PostArchiverConnection for Transaction<'_> {
     fn connection(&self) -> &Connection {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct ManagerCaches {
+    pub counts: TimedSizedCache<(String, String), u64>,
+}
+
+impl Default for ManagerCaches {
+    fn default() -> Self {
+        Self {
+            counts: TimedSizedCache::with_size_and_lifespan(128, Duration::from_mins(30)),
+        }
     }
 }
