@@ -5,7 +5,13 @@
 //! - Importer functionality
 
 #[cfg(feature = "utils")]
+pub mod helpers;
+
+#[cfg(feature = "utils")]
 mod manager;
+
+#[cfg(feature = "utils")]
+mod query;
 
 #[cfg(feature = "importer")]
 mod importer;

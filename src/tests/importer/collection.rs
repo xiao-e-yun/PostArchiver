@@ -3,7 +3,7 @@
 //! Tests for collection import functionality including creation,
 //! updating existing collections, and batch imports.
 
-use crate::{importer::collection::UnsyncCollection, manager::PostArchiverManager};
+use crate::{importer::collection::UnsyncCollection, manager::PostArchiverManager, tests::helpers};
 
 #[test]
 fn test_import_new_collection() {
@@ -20,14 +20,14 @@ fn test_import_new_collection() {
 
     assert!(collection_id.raw() > 0);
 
-    // Verify the collection was created
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
+    let collection =
+        helpers::get_collection(&manager, collection_id).expect("Collection should exist");
 
-    assert_eq!(collection.name, unsync_collection.name);
-    assert_eq!(collection.source, Some(unsync_collection.source));
+    assert_eq!(collection.name, "Test Collection");
+    assert_eq!(
+        collection.source,
+        Some("https://example.com/collection/1".to_string())
+    );
 }
 
 #[test]
@@ -36,12 +36,13 @@ fn test_import_existing_collection() {
 
     let source = "https://example.com/existing_collection".to_string();
 
-    // First, add a collection manually
-    let existing_collection_id = manager
-        .add_collection("Original Name".to_string(), Some(source.clone()), None)
-        .expect("Failed to add existing collection");
+    let existing_collection_id = helpers::add_collection(
+        &manager,
+        "Original Name".to_string(),
+        Some(source.clone()),
+        None,
+    );
 
-    // Now import the same collection with updated name
     let unsync_collection = UnsyncCollection {
         name: "Updated Name".to_string(),
         source: source.clone(),
@@ -51,14 +52,10 @@ fn test_import_existing_collection() {
         .import_collection(unsync_collection)
         .expect("Failed to import existing collection");
 
-    // Should return the same ID
     assert_eq!(existing_collection_id, imported_collection_id);
 
-    // Verify the name was updated
-    let collection = manager
-        .get_collection(&existing_collection_id)
-        .expect("Failed to get updated collection")
-        .expect("Collection should exist");
+    let collection =
+        helpers::get_collection(&manager, existing_collection_id).expect("Collection should exist");
 
     assert_eq!(collection.name, "Updated Name");
     assert_eq!(collection.source, Some(source));
@@ -154,9 +151,7 @@ fn test_unsync_collection_hash() {
     let hash2 = hasher2.finish();
     let hash3 = hasher3.finish();
 
-    // Same collections should have same hash
     assert_eq!(hash1, hash2);
-    // Different collections should have different hash
     assert_ne!(hash1, hash3);
 }
 
@@ -185,12 +180,9 @@ fn test_import_collections_multiple() {
 
     assert_eq!(collection_ids.len(), 3);
 
-    // Verify all collections were created
     for (i, collection_id) in collection_ids.iter().enumerate() {
-        let collection = manager
-            .get_collection(collection_id)
-            .expect("Failed to get collection")
-            .expect("Collection should exist");
+        let collection =
+            helpers::get_collection(&manager, *collection_id).expect("Collection should exist");
 
         assert_eq!(collection.name, collections[i].name);
         assert_eq!(collection.source, Some(collections[i].source.clone()));
@@ -203,14 +195,12 @@ fn test_import_collections_mixed_new_and_existing() {
 
     let existing_source = "https://example.com/existing".to_string();
 
-    // Add one collection manually first
-    let existing_collection_id = manager
-        .add_collection(
-            "Existing Collection".to_string(),
-            Some(existing_source.clone()),
-            None,
-        )
-        .expect("Failed to add existing collection");
+    let existing_collection_id = helpers::add_collection(
+        &manager,
+        "Existing Collection".to_string(),
+        Some(existing_source.clone()),
+        None,
+    );
 
     let collections = vec![
         UnsyncCollection {
@@ -228,24 +218,14 @@ fn test_import_collections_mixed_new_and_existing() {
         .expect("Failed to import mixed collections");
 
     assert_eq!(collection_ids.len(), 2);
-
-    // First ID should match the existing collection
     assert_eq!(collection_ids[0], existing_collection_id);
-
-    // Second ID should be new
     assert_ne!(collection_ids[1], existing_collection_id);
 
-    // Verify the existing collection was updated
-    let updated_collection = manager
-        .get_collection(&existing_collection_id)
-        .expect("Failed to get updated collection")
-        .expect("Collection should exist");
+    let updated_collection =
+        helpers::get_collection(&manager, existing_collection_id).expect("Collection should exist");
     assert_eq!(updated_collection.name, "Updated Existing Collection");
 
-    // Verify total collections in database
-    let all_collections = manager
-        .list_collections()
-        .expect("Failed to list collections");
+    let all_collections = helpers::list_collections(&manager);
     assert_eq!(all_collections.len(), 2);
 }
 
@@ -273,24 +253,14 @@ fn test_import_collections_duplicates_in_batch() {
         .expect("Failed to import collections with duplicates");
 
     assert_eq!(collection_ids.len(), 3);
-
-    // First and third should be the same ID (duplicates)
     assert_eq!(collection_ids[0], collection_ids[2]);
-
-    // Second should be different
     assert_ne!(collection_ids[0], collection_ids[1]);
 
-    // Verify only 2 unique collections in database
-    let all_collections = manager
-        .list_collections()
-        .expect("Failed to list collections");
+    let all_collections = helpers::list_collections(&manager);
     assert_eq!(all_collections.len(), 2);
 
-    // Verify the duplicate was updated with the latest name
-    let duplicate_collection = manager
-        .get_collection(&collection_ids[0])
-        .expect("Failed to get duplicate collection")
-        .expect("Collection should exist");
+    let duplicate_collection =
+        helpers::get_collection(&manager, collection_ids[0]).expect("Collection should exist");
     assert_eq!(duplicate_collection.name, "Updated Duplicate Collection");
 }
 
@@ -305,9 +275,7 @@ fn test_import_collections_empty_list() {
 
     assert_eq!(collection_ids.len(), 0);
 
-    let all_collections = manager
-        .list_collections()
-        .expect("Failed to list collections");
+    let all_collections = helpers::list_collections(&manager);
     assert_eq!(all_collections.len(), 0);
 }
 
@@ -329,35 +297,23 @@ fn test_unsync_collection_debug() {
 fn test_import_collection_with_transaction() {
     let mut manager = PostArchiverManager::open_in_memory().unwrap();
 
-    let tx = manager.transaction().expect("Failed to start transaction");
-
     let collection = UnsyncCollection {
         name: "Transaction Collection".to_string(),
         source: "https://example.com/transaction".to_string(),
     };
 
+    let tx = manager.transaction().expect("Failed to start transaction");
+
     let collection_id = tx
         .import_collection(collection)
         .expect("Failed to import collection in transaction");
 
-    // Verify collection exists in transaction
-    let stored_collection = tx
-        .get_collection(&collection_id)
-        .expect("Failed to get collection in transaction")
-        .expect("Collection should exist");
-    assert_eq!(stored_collection.name, "Transaction Collection");
-
     tx.commit().expect("Failed to commit transaction");
 
-    // Verify collection still exists after commit
-    let stored_collection_after_commit = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection after commit")
-        .expect("Collection should exist");
-    assert_eq!(
-        stored_collection_after_commit.name,
-        "Transaction Collection"
-    );
+    // Verify collection exists after commit
+    let stored_collection =
+        helpers::get_collection(&manager, collection_id).expect("Collection should exist");
+    assert_eq!(stored_collection.name, "Transaction Collection");
 }
 
 #[test]
@@ -411,12 +367,9 @@ fn test_import_collection_sets_no_thumbnail() {
         .import_collection(collection)
         .expect("Failed to import collection");
 
-    let stored_collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
+    let stored_collection =
+        helpers::get_collection(&manager, collection_id).expect("Collection should exist");
 
-    // Should have no thumbnail when imported
     assert_eq!(stored_collection.thumb, None);
 }
 
@@ -426,12 +379,13 @@ fn test_import_collection_name_update_only() {
 
     let source = "https://example.com/name_update".to_string();
 
-    // Create initial collection
-    let collection_id = manager
-        .add_collection("Initial Name".to_string(), Some(source.clone()), None)
-        .expect("Failed to add initial collection");
+    let collection_id = helpers::add_collection(
+        &manager,
+        "Initial Name".to_string(),
+        Some(source.clone()),
+        None,
+    );
 
-    // Import with updated name multiple times
     let names = vec!["First Update", "Second Update", "Final Update"];
 
     for name in names {
@@ -446,10 +400,8 @@ fn test_import_collection_name_update_only() {
 
         assert_eq!(collection_id, same_collection_id);
 
-        let stored_collection = manager
-            .get_collection(&collection_id)
-            .expect("Failed to get collection")
-            .expect("Collection should exist");
+        let stored_collection =
+            helpers::get_collection(&manager, collection_id).expect("Collection should exist");
         assert_eq!(stored_collection.name, name);
     }
 }

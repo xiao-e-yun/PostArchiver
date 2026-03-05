@@ -1,7 +1,9 @@
 use chrono::{DateTime, Utc};
+use rusqlite::params;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    error::Result,
+    manager::{PostArchiverConnection, PostArchiverManager, UpdateAuthor},
     AuthorId, PlatformId,
 };
 
@@ -15,9 +17,19 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_author(&self, author: UnsyncAuthor) -> Result<AuthorId, rusqlite::Error> {
-        let id = self.find_author(author.aliases.as_slice())?;
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_author(&self, author: UnsyncAuthor) -> Result<AuthorId> {
+        // find by aliases
+        let id = {
+            let mut found: Option<AuthorId> = None;
+            for alias in &author.aliases {
+                if let Some(id) = self.find_author_by_alias(&alias.source, alias.platform)? {
+                    found = Some(id);
+                    break;
+                }
+            }
+            found
+        };
 
         let aliases = author
             .aliases
@@ -27,20 +39,28 @@ where
 
         match id {
             Some(id) => {
-                self.set_author_name(id, author.name)?;
-
+                let b = self.bind(id);
+                let mut upd = UpdateAuthor::default().name(author.name);
                 if let Some(updated) = author.updated {
-                    self.set_author_updated(id, updated)?;
+                    upd = upd.updated(updated);
                 }
+                b.update(upd)?;
 
-                self.add_author_aliases(id, aliases)?;
+                b.add_aliases(aliases)?;
 
                 Ok(id)
             }
             None => {
-                let id = self.add_author(author.name, author.updated)?;
+                // insert
+                let mut stmt = self.conn().prepare_cached(
+                    "INSERT INTO authors (name, updated) VALUES (?, ?) RETURNING id",
+                )?;
+                let id: AuthorId = stmt.query_row(
+                    params![author.name, author.updated.unwrap_or_else(Utc::now)],
+                    |row| row.get(0),
+                )?;
 
-                self.add_author_aliases(id, aliases)?;
+                self.bind(id).add_aliases(aliases)?;
 
                 Ok(id)
             }
@@ -80,8 +100,8 @@ impl UnsyncAuthor {
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<AuthorId, rusqlite::Error>
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<AuthorId>
     where
         T: PostArchiverConnection,
     {

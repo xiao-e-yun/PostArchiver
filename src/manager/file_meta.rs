@@ -1,134 +1,205 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::File, io::Write, path::PathBuf};
 
-use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
-    FileMeta, FileMetaId, PostId,
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    FileMeta, FileMetaId, Post, PostId,
 };
 
-//=============================================================
-// Querying
-//=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Find a file's metadata by its post ID and filename.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn find_file_meta(
-        &self,
-        post: PostId,
-        filename: &str,
-    ) -> Result<Option<FileMetaId>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
+/// Builder for updating a file metadata's fields.
+///
+/// Fields left as `None` are not modified.
+#[derive(Debug, Clone)]
+pub struct UpdateFileMeta<T> {
+    pub mime: Option<String>,
+    pub extra: Option<HashMap<String, Value>>,
+    pub content: Option<T>,
+}
 
-        stmt.query_row(params![post, filename], |row| row.get(0))
-            .optional()
+impl Default for UpdateFileMeta<()> {
+    fn default() -> Self {
+        UpdateFileMeta {
+            mime: None,
+            extra: None,
+            content: None,
+        }
     }
-    /// Retrieve a file's metadata by its ID.
-    ///
-    /// Fetches all information about the file including its post ID, filename, MIME type, and extra metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The file ID does not exist
-    /// * There was an error accessing the database
-    pub fn get_file_meta(&self, id: &FileMetaId) -> Result<FileMeta, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
-        stmt.query_row([id], FileMeta::from_row)
+}
+
+impl<T> UpdateFileMeta<T> {
+    /// Set the MIME type.
+    pub fn mime(mut self, mime: String) -> Self {
+        self.mime = Some(mime);
+        self
+    }
+    /// Set the extra metadata.
+    pub fn extra(mut self, extra: HashMap<String, Value>) -> Self {
+        self.extra = Some(extra);
+        self
+    }
+    pub fn content<U: WritableFileMeta>(self, content: U) -> UpdateFileMeta<U> {
+        UpdateFileMeta {
+            content: Some(content),
+            mime: self.mime,
+            extra: self.extra,
+        }
+    }
+}
+
+impl UpdateFileMeta<()> {
+    /// Convert this update to a version without content, for use in the `update` method.
+    pub fn new() -> UpdateFileMeta<()> {
+        UpdateFileMeta {
+            content: None,
+            mime: None,
+            extra: None,
+        }
+    }
+}
+
+pub trait WritableFileMeta {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()>;
+}
+
+macro_rules! can_be_content {
+    ($t:ty) => {
+        impl UpdateFileMeta<$t> {
+            pub fn new(content: $t) -> Self {
+                Self {
+                    content: Some(content),
+                    mime: None,
+                    extra: None,
+                }
+            }
+        }
+    };
+}
+
+can_be_content!(File);
+impl WritableFileMeta for File {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        let mut src_file = self.try_clone()?;
+        std::io::copy(&mut src_file, file)?;
+        file.sync_data()?;
+        Ok(())
+    }
+}
+
+can_be_content!(Vec<u8>);
+impl WritableFileMeta for Vec<u8> {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        file.write_all(self)?;
+        file.sync_data()?;
+        Ok(())
+    }
+}
+
+can_be_content!(PathBuf);
+impl WritableFileMeta for PathBuf {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        let mut src_file = File::open(self)?;
+        std::io::copy(&mut src_file, file)?;
+        file.sync_data()?;
+        Ok(())
+    }
+}
+
+can_be_content!(String);
+impl WritableFileMeta for String {
+    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
+        file.write_all(self.as_bytes())?;
+        file.sync_data()?;
+        Ok(())
     }
 }
 
 //=============================================================
-// Modifying
+// Update / Delete
 //=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Add a new file metadata to the archive.
-    ///
-    /// Inserts a new file metadata with the given post ID, filename, MIME type, and extra metadata.
-    /// It will check if a file with the same post and filename already exists.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The post ID does not exist
-    /// * Duplicate filename for the same post
-    /// * There was an error accessing the database
-    pub fn add_file_meta(
-        &self,
-        post: PostId,
-        filename: String,
-        mime: String,
-        extra: HashMap<String, Value>,
-    ) -> Result<FileMetaId, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
-        )?;
-        stmt.query_row(
-            params![post, filename, mime, serde_json::to_string(&extra).unwrap()],
-            |row| row.get(0),
-        )
+impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
+    /// Get this file metadata's current data from the database.
+    pub fn value(&self) -> Result<FileMeta> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
+        Ok(stmt.query_row([self.id()], FileMeta::from_row)?)
     }
-    /// Remove a file metadata from the archive.
+
+    /// Remove this file metadata from the archive.
     ///
     /// This operation will also remove all associated thumb references.
     /// But it will not delete post.content related to this file.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn remove_file_meta(&self, id: FileMetaId) -> Result<(), rusqlite::Error> {
+    pub fn delete(self) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM file_metas WHERE id = ?")?;
-        stmt.execute([id])?;
+        stmt.execute([self.id()])?;
         Ok(())
     }
 
-    /// Set the filename of a file metadata.
+    /// Apply a batch of field updates to this file metadata in a single SQL statement.
     ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_file_meta_mime(&self, id: FileMetaId, mime: String) -> Result<(), rusqlite::Error> {
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update<T>(&self, update: UpdateFileMeta<T>) -> Result<()> {
+        use rusqlite::types::ToSql;
+
+        let extra_json = update.extra.map(|e| serde_json::to_string(&e).unwrap());
+
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
+
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
+
+        push!(update.mime, "mime = ?");
+        push!(extra_json, "extra = ?");
+
+        let sql = format!("UPDATE file_metas SET {} WHERE id = ?", sets.join(", "));
+        let id = self.id();
+        params.push(&id);
+        self.conn().execute(&sql, params.as_slice())?;
+
+        Ok(())
+    }
+
+    pub fn update_with_content<T>(&self, mut update: UpdateFileMeta<T>) -> Result<()>
+    where
+        T: WritableFileMeta,
+    {
+        let content = update.content.take();
+        self.update(UpdateFileMeta {
+            content: None,
+            ..update
+        })?;
+
+        let path = self.get_path()?;
+
+        if let Some(content) = content {
+            let mut file = File::create(path)?;
+            content.write_to_file(&mut file)?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the file path of this file metadata.
+    pub fn get_path(&self) -> Result<PathBuf> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE file_metas SET mime = ? WHERE id = ?")?;
-        stmt.execute(params![mime, id])?;
-        Ok(())
+            .prepare_cached("SELECT post, filename FROM file_metas WHERE id = ?")?;
+        Ok(stmt.query_row([self.id()], |row| {
+            let post_id: PostId = row.get(0)?;
+            let filename: String = row.get(1)?;
+            Ok(Post::directory(post_id).join(filename))
+        })?)
     }
-
-    /// Set the extra metadata of a file metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_file_meta_extra(
-        &self,
-        id: FileMetaId,
-        extra: HashMap<String, Value>,
-    ) -> Result<(), rusqlite::Error> {
-        let extra_json = serde_json::to_string(&extra).unwrap();
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE file_metas SET extra = ? WHERE id = ?")?;
-        stmt.execute(params![extra_json, id])?;
-        Ok(())
-    }
-
-    // TODO: implement a method to update the filename or post of a file_meta (because these need
-    // fs renames and moves)
 }

@@ -1,8 +1,11 @@
 use std::hash::Hash;
 
+use rusqlite::params;
+
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
-    CollectionId,
+    error::Result,
+    manager::{PostArchiverConnection, PostArchiverManager, UpdateCollection},
+    CollectionId, FileMetaId,
 };
 
 impl<T> PostArchiverManager<T>
@@ -15,22 +18,28 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_collection(
-        &self,
-        collection: UnsyncCollection,
-    ) -> Result<CollectionId, rusqlite::Error> {
-        match self.find_collection(&collection.source)? {
-            Some(id) => {
-                self.set_collection_name(id, collection.name)?;
-                Ok(id)
-            }
-            None => self.add_collection(
-                collection.name,
-                Some(collection.source),
-                None, // No thumbnail for unsynced collections
-            ),
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_collection(&self, collection: UnsyncCollection) -> Result<CollectionId> {
+        // find by source
+        if let Some(id) = self.find_collection_by_source(&collection.source)? {
+            self.bind(id)
+                .update(UpdateCollection::default().name(collection.name))?;
+            return Ok(id);
         }
+
+        // insert
+        let mut ins_stmt = self.conn().prepare_cached(
+            "INSERT INTO collections (name, source, thumb) VALUES (?, ?, ?) RETURNING id",
+        )?;
+        let id: CollectionId = ins_stmt.query_row(
+            params![
+                collection.name,
+                collection.source,
+                Option::<FileMetaId>::None
+            ],
+            |row| row.get(0),
+        )?;
+        Ok(id)
     }
 
     /// Import multiple collections into the archive.
@@ -39,19 +48,19 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_collections(
         &self,
         collections: impl IntoIterator<Item = UnsyncCollection>,
-    ) -> Result<Vec<CollectionId>, rusqlite::Error> {
+    ) -> Result<Vec<CollectionId>> {
         collections
             .into_iter()
             .map(|collection| self.import_collection(collection))
-            .collect::<Result<Vec<CollectionId>, rusqlite::Error>>()
+            .collect::<Result<Vec<CollectionId>>>()
     }
 }
 
-/// Represents a file metadata that is not yet synced to the database.
+/// Represents a collection that is not yet synced to the database.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsyncCollection {
     pub name: String,

@@ -1,10 +1,12 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, fs::File, hash::Hash, path::PathBuf};
 
+use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
-    FileMetaId, PostId,
+    error::Result,
+    manager::{PostArchiverConnection, PostArchiverManager, UpdateFileMeta, WritableFileMeta},
+    FileMetaId, Post, PostId,
 };
 
 impl<T> PostArchiverManager<T>
@@ -18,45 +20,102 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::importer::UnsyncFileMeta;
-    /// # use post_archiver::PostId;
-    /// # use std::collections::HashMap;
-    /// fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), rusqlite::Error> {
-    ///     let file_meta = UnsyncFileMeta {
-    ///         filename: "image.jpg".to_string(),
-    ///         mime: "image/jpeg".to_string(),
-    ///         extra: HashMap::new(),
-    ///         data: (),
-    ///     };
-    ///     let meta = manager.import_file_meta(post_id, &file_meta)?;
-    ///     
-    ///     Ok(())
-    /// }
-    /// ```
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_file_meta<U>(
         &self,
         post: PostId,
         file_meta: &UnsyncFileMeta<U>,
-    ) -> Result<FileMetaId, rusqlite::Error> {
-        match self.find_file_meta(post, &file_meta.filename)? {
-            Some(id) => {
-                // mime should not change
-                self.set_file_meta_extra(id, file_meta.extra.clone())?;
-                Ok(id)
-            }
-            None => self.add_file_meta(
-                post,
-                file_meta.filename.clone(),
-                file_meta.mime.clone(),
-                file_meta.extra.clone(),
-            ),
+    ) -> Result<FileMetaId> {
+        // find
+        if let Some(id) = self.find_file_meta(post, &file_meta.filename)? {
+            // update extra
+            self.bind(id)
+                .update(UpdateFileMeta::default().extra(file_meta.extra.clone()))?;
+            return Ok(id);
         }
+
+        // insert
+        let mut ins_stmt = self.conn().prepare_cached(
+            "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
+        )?;
+        Ok(ins_stmt.query_row(
+            params![
+                post,
+                file_meta.filename,
+                file_meta.mime,
+                serde_json::to_string(&file_meta.extra).unwrap()
+            ],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Create or update a file metadata entry in the archive, and write `file_meta.data` to disk.
+    ///
+    /// Behaves like [`import_file_meta`](Self::import_file_meta) for the database entry, then
+    /// writes the content of `file_meta.data` to
+    /// `<archive_path>/<post_dir>/<filename>`, creating intermediate directories as needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_file_meta_with_content<U>(
+        &self,
+        post: PostId,
+        file_meta: &UnsyncFileMeta<U>,
+    ) -> Result<FileMetaId>
+    where
+        U: WritableFileMeta,
+    {
+        let id = self.import_file_meta(post, file_meta)?;
+
+        let path = self
+            .path
+            .join(Post::directory(post))
+            .join(&file_meta.filename);
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut file = File::create(&path)?;
+        file_meta.data.write_to_file(&mut file)?;
+
+        Ok(id)
+    }
+
+    /// Create or update a file metadata entry in the archive by moving a buffered file into it.
+    ///
+    /// Behaves like [`import_file_meta`](Self::import_file_meta) for the database entry, then
+    /// moves the already-buffered file at `file_meta.data` to
+    /// `<archive_path>/<post_dir>/<filename>`, creating intermediate directories as needed.
+    ///
+    /// Uses [`std::fs::rename`] for an atomic, zero-copy move. The source file and the archive
+    /// **must reside on the same filesystem**; cross-device moves will fail.
+    /// Use [`import_file_meta_with_content`](Self::import_file_meta_with_content) instead when
+    /// the source and destination may be on different filesystems.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_file_meta_by_rename(
+        &self,
+        post: PostId,
+        file_meta: &UnsyncFileMeta<PathBuf>,
+    ) -> Result<FileMetaId> {
+        let id = self.import_file_meta(post, file_meta)?;
+
+        let path = self
+            .path
+            .join(Post::directory(post))
+            .join(&file_meta.filename);
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        std::fs::rename(&file_meta.data, &path)?;
+
+        Ok(id)
     }
 }
 

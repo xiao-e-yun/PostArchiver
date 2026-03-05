@@ -22,9 +22,6 @@
 //! - [`Platform`]: Information about the platform from which posts are archived
 //! - [`Comment`]: Nested discussion threads
 
-pub mod alias;
-pub use alias::*;
-
 pub mod author;
 pub use author::*;
 
@@ -53,10 +50,16 @@ pub mod content;
 pub use content::*;
 
 #[cfg(feature = "utils")]
+pub mod error;
+
+#[cfg(feature = "utils")]
 pub mod utils;
 
 #[cfg(feature = "utils")]
 pub mod manager;
+
+#[cfg(feature = "utils")]
+pub mod query;
 
 #[cfg(feature = "importer")]
 pub mod importer;

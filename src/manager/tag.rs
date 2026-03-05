@@ -1,85 +1,36 @@
-use rusqlite::{params, OptionalExtension};
+use crate::{
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    PlatformId, PostId, Tag, TagId,
+};
 
-use crate::{PlatformId, Post, PostId, Tag, TagId};
+/// Builder for updating a tag's fields.
+///
+/// Fields left as `None` are not modified.
+/// For nullable columns (platform), use `Some(None)` to clear the value.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateTag {
+    pub name: Option<String>,
+    pub platform: Option<Option<PlatformId>>,
+}
 
-use super::{PostArchiverConnection, PostArchiverManager};
-
-//=============================================================
-// Querying
-//=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Retrieve all tags in the archive.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn list_tags(&self) -> Result<Vec<Tag>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached("SELECT * FROM tags")?;
-        let tags = stmt.query_map([], Tag::from_row)?;
-        tags.collect()
+impl UpdateTag {
+    /// Set the tag's name.
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
     }
-
-    /// Find a tag by its name and platform.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::PlatformId;
-    /// fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    ///     let first_tag = manager.find_tag(&"tag1")?;
-    ///     let second_tag = manager.find_tag(&("tag2", PlatformId(2)))?;
-    ///     let third_tag = manager.find_tag(&("tag3", Some(PlatformId(3))))?;
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn find_tag<U: FindTag>(&self, tag: &U) -> Result<Option<TagId>, rusqlite::Error> {
-        let name = tag.name().to_string();
-        let platform = tag.platform();
-
-        let cache_key = (name.clone(), platform);
-        if let Some(id) = self.cache.tags.get(&cache_key) {
-            return Ok(Some(*id));
-        }
-
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM tags WHERE platform IS ? AND name = ?")?;
-
-        let id = stmt
-            .query_row(params![platform, name], |row| row.get(0))
-            .optional();
-
-        if let Ok(Some(id)) = id {
-            self.cache.tags.insert(cache_key, id);
-        }
-
-        id
-    }
-
-    /// Retrieve a tag by its ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The tag ID does not exist
-    /// * There was an error accessing the database
-    pub fn get_tag(&self, tag: &TagId) -> Result<Option<Tag>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM tags WHERE id = ?")?;
-
-        stmt.query_row([tag], Tag::from_row).optional()
+    /// Set or clear the tag's platform.
+    pub fn platform(mut self, platform: Option<PlatformId>) -> Self {
+        self.platform = Some(platform);
+        self
     }
 }
 
+//=============================================================
+// FindTag trait (kept for importer compatibility)
+//=============================================================
 pub trait FindTag {
     fn name(&self) -> &str;
     fn platform(&self) -> Option<PlatformId> {
@@ -112,145 +63,73 @@ impl FindTag for (&str, Option<PlatformId>) {
 }
 
 //=============================================================
-// Modifying
+// Update / Delete
 //=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Add a new tag to the archive.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The tag already exists
-    /// * There was an error accessing the database
-    pub fn add_tag(
-        &self,
-        name: String,
-        platform: Option<PlatformId>,
-    ) -> Result<TagId, rusqlite::Error> {
-        let cache_key = (name.clone(), platform);
-        if let Some(id) = self.cache.tags.get(&cache_key) {
-            return Ok(*id);
-        }
-
+impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
+    /// Get this tag's current data from the database.
+    pub fn value(&self) -> Result<Tag> {
         let mut stmt = self
             .conn()
-            .prepare_cached("INSERT INTO tags (name, platform) VALUES (?, ?) RETURNING id")?;
-
-        let id = stmt.query_row(params![name, platform], |row| row.get(0))?;
-
-        self.cache.tags.insert(cache_key, id);
-
-        Ok(id)
+            .prepare_cached("SELECT * FROM tags WHERE id = ?")?;
+        Ok(stmt.query_row([self.id()], Tag::from_row)?)
     }
 
-    /// Remove a tag from the archive.
+    /// Remove this tag from the archive.
     ///
-    /// This will delete the posts associated with the tag as well, but will not delete the posts themselves.
-    ///
-    /// # Errors
-    ///
-    /// # Returns `rusqlite::Error` if:
-    /// * The tag ID does not exist
-    /// * There was an error accessing the database
-    pub fn remove_tag(&self, tag: &TagId) -> Result<(), rusqlite::Error> {
+    /// This will also remove all post-tag relationships, but will not delete the posts themselves.
+    pub fn delete(self) -> Result<()> {
         let mut stmt = self
             .conn()
             .prepare_cached("DELETE FROM tags WHERE id = ?")?;
-
-        stmt.execute([tag])?;
+        stmt.execute([self.id()])?;
         Ok(())
     }
 
-    /// Set the name of a tag.
+    /// Apply a batch of field updates to this tag in a single SQL statement.
     ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_tag_name(&self, tag: &TagId, name: String) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE tags SET name = ? WHERE id = ? RETURNING platform")?;
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update(&self, update: UpdateTag) -> Result<()> {
+        use rusqlite::types::ToSql;
 
-        let platform: Option<PlatformId> = stmt.query_row(params![name, tag], |row| row.get(0))?;
-        self.cache.tags.insert((name, platform), *tag);
-        Ok(())
-    }
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
 
-    /// Set the platform of a tag.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_tag_platform(
-        &self,
-        tag: &TagId,
-        platform: Option<PlatformId>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE tags SET platform = ? WHERE id = ? RETURNING name")?;
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
 
-        let name: String = stmt.query_row(params![platform, tag], |row| row.get(0))?;
-        self.cache.tags.insert((name, platform), *tag);
+        push!(update.name, "name = ?");
+        push!(update.platform, "platform = ?");
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        let id = self.id();
+        params.push(&id);
+
+        let sql = format!("UPDATE tags SET {} WHERE id = ?", sets.join(", "));
+        self.conn().execute(&sql, params.as_slice())?;
         Ok(())
     }
 }
 
 //=============================================================
-// Relationships
+// Relations: Posts
 //=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// List all tags associated with a post.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn list_post_tags(&self, post: &PostId) -> Result<Vec<Tag>, rusqlite::Error> {
+impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
+    /// List all post IDs associated with this tag.
+    pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
             .conn()
-            .prepare_cached("SELECT tags.* FROM tags INNER JOIN post_tags ON post_tags.tag = tags.id WHERE post_tags.post = ?")?;
-        let tags = stmt.query_map([post], Tag::from_row)?;
-        tags.collect()
-    }
-
-    /// List all posts associated with a tag.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn list_tag_posts(&self, tag: &TagId) -> Result<Vec<Post>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT posts.* FROM posts INNER JOIN post_tags ON post_tags.post = posts.id WHERE post_tags.tag = ?")?;
-        let posts = stmt.query_map([tag], Post::from_row)?;
-        posts.collect()
-    }
-}
-
-impl Post {
-    /// Retrieve all tags associated with this post.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn tags(&self, manager: &PostArchiverManager) -> Result<Vec<Tag>, rusqlite::Error> {
-        manager.list_post_tags(&self.id)
-    }
-}
-
-impl Tag {
-    /// Retrieve all posts associated with this tag.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn posts(&self, manager: &PostArchiverManager) -> Result<Vec<Post>, rusqlite::Error> {
-        manager.list_tag_posts(&self.id)
+            .prepare_cached("SELECT post FROM post_tags WHERE tag = ?")?;
+        let rows = stmt.query_map([self.id()], |row| row.get(0))?;
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
     }
 }

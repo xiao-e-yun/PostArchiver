@@ -25,9 +25,15 @@ impl Platform {
 }
 
 #[cfg(feature = "utils")]
-crate::utils::macros::as_table! {
-    Platform {
-        id: "id",
-        name: "name",
+mod definitions {
+    use crate::utils::macros::as_table;
+
+    use super::*;
+
+    as_table! {
+        "platforms" => Platform {
+            id: "id",
+            name: "name",
+        }
     }
 }

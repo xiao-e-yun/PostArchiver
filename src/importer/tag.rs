@@ -1,6 +1,9 @@
 use std::hash::Hash;
 
+use rusqlite::params;
+
 use crate::{
+    error::Result,
     manager::{PostArchiverConnection, PostArchiverManager},
     PlatformId, TagId,
 };
@@ -15,13 +18,18 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_tag(&self, tag: UnsyncTag) -> Result<TagId, rusqlite::Error> {
-        let find_tag = (tag.name.as_str(), tag.platform);
-        match self.find_tag(&find_tag)? {
-            Some(id) => Ok(id),
-            None => self.add_tag(tag.name, tag.platform),
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_tag(&self, tag: UnsyncTag) -> Result<TagId> {
+        // find
+        if let Some(id) = self.find_tag(&tag.name, tag.platform)? {
+            return Ok(id);
         }
+
+        // insert
+        let mut ins_stmt = self
+            .conn()
+            .prepare_cached("INSERT INTO tags (name, platform) VALUES (?, ?) RETURNING id")?;
+        Ok(ins_stmt.query_row(params![tag.name, tag.platform], |row| row.get(0))?)
     }
 
     /// Import multiple tags into the archive.
@@ -30,14 +38,11 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn import_tags(
-        &self,
-        tags: impl IntoIterator<Item = UnsyncTag>,
-    ) -> Result<Vec<TagId>, rusqlite::Error> {
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn import_tags(&self, tags: impl IntoIterator<Item = UnsyncTag>) -> Result<Vec<TagId>> {
         tags.into_iter()
             .map(|tag| self.import_tag(tag))
-            .collect::<Result<Vec<TagId>, rusqlite::Error>>()
+            .collect::<Result<Vec<TagId>>>()
     }
 }
 

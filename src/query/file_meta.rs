@@ -1,0 +1,34 @@
+//! FileMeta point-query helpers (no builder — use the direct methods below).
+
+use rusqlite::OptionalExtension;
+
+use crate::{
+    manager::{PostArchiverConnection, PostArchiverManager},
+    FileMeta, FileMetaId, PostId,
+};
+
+use super::FromQuery;
+
+impl<C: PostArchiverConnection> PostArchiverManager<C> {
+    /// Fetch a single [`FileMeta`] by primary key. Returns `None` if not found.
+    pub fn get_file_meta(&self, id: FileMetaId) -> crate::error::Result<Option<FileMeta>> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
+        Ok(stmt.query_row([id], FileMeta::from_row).optional()?)
+    }
+
+    /// Find a [`FileMetaId`] by owning `post` and `filename`.
+    pub fn find_file_meta(
+        &self,
+        post: PostId,
+        filename: &str,
+    ) -> crate::error::Result<Option<FileMetaId>> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
+        Ok(stmt
+            .query_row(rusqlite::params![post, filename], |row| row.get(0))
+            .optional()?)
+    }
+}

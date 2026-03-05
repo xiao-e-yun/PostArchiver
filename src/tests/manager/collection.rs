@@ -3,99 +3,83 @@
 //! Tests for collection CRUD operations, property management,
 //! and collection-post relationships.
 
-use crate::{manager::PostArchiverManager, CollectionId};
+use crate::{
+    manager::{PostArchiverManager, UpdateCollection, UpdatePost},
+    tests::helpers,
+    CollectionId,
+};
 use chrono::Utc;
 use std::collections::HashMap;
+
+// ── CRUD via helpers ──────────────────────────────────────────
 
 #[test]
 fn test_add_collection() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let name = "Test Collection".to_string();
-    let source = Some("test_source".to_string());
-
-    let collection_id = manager
-        .add_collection(name.clone(), source.clone(), None)
-        .expect("Failed to add collection");
-
+    let collection_id = helpers::add_collection(
+        &manager,
+        "Test Collection".into(),
+        Some("test_source".into()),
+        None,
+    );
     assert!(collection_id.raw() > 0);
 
-    // Verify the collection was added
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    assert_eq!(collection.name, name);
-    assert_eq!(collection.source, source);
-    assert_eq!(collection.id, collection_id);
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
+    assert_eq!(collection.name, "Test Collection");
+    assert_eq!(collection.source, Some("test_source".into()));
     assert_eq!(collection.thumb, None);
 }
 
 #[test]
 fn test_add_collection_with_thumb() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "thumbnail.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
 
-    // Create a post first (required for file meta)
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
+    let collection_id = helpers::add_collection(
+        &manager,
+        "Collection with Thumb".into(),
+        None,
+        Some(file_meta_id),
+    );
 
-    // Add a file meta for thumbnail
-    let file_meta_id = manager
-        .add_file_meta(
-            post_id,
-            "thumbnail.jpg".to_string(),
-            "image/jpeg".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta");
-
-    let name = "Collection with Thumb".to_string();
-    let collection_id = manager
-        .add_collection(name.clone(), None, Some(file_meta_id))
-        .expect("Failed to add collection");
-
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    assert_eq!(collection.name, name);
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
+    assert_eq!(collection.name, "Collection with Thumb");
     assert_eq!(collection.thumb, Some(file_meta_id));
 }
 
 #[test]
 fn test_list_collections() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
+    let id1 = helpers::add_collection(
+        &manager,
+        "Collection 1".into(),
+        Some("source1".into()),
+        None,
+    );
+    let id2 = helpers::add_collection(
+        &manager,
+        "Collection 2".into(),
+        Some("source2".into()),
+        None,
+    );
 
-    // Add multiple collections
-    let id1 = manager
-        .add_collection(
-            "Collection 1".to_string(),
-            Some("source1".to_string()),
-            None,
-        )
-        .expect("Failed to add collection 1");
-    let id2 = manager
-        .add_collection(
-            "Collection 2".to_string(),
-            Some("source2".to_string()),
-            None,
-        )
-        .expect("Failed to add collection 2");
-
-    let collections = manager
-        .list_collections()
-        .expect("Failed to list collections");
-
+    let collections = helpers::list_collections(&manager);
     assert_eq!(collections.len(), 2);
-
     let ids: Vec<CollectionId> = collections.iter().map(|c| c.id).collect();
     assert!(ids.contains(&id1));
     assert!(ids.contains(&id2));
@@ -104,305 +88,142 @@ fn test_list_collections() {
 #[test]
 fn test_get_collection() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let name = "Get Test Collection".to_string();
-    let source = Some("get_test_source".to_string());
+    let collection_id = helpers::add_collection(
+        &manager,
+        "Get Test Collection".into(),
+        Some("get_test_source".into()),
+        None,
+    );
 
-    let collection_id = manager
-        .add_collection(name.clone(), source.clone(), None)
-        .expect("Failed to add collection");
-
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.id, collection_id);
-    assert_eq!(collection.name, name);
-    assert_eq!(collection.source, source);
+    assert_eq!(collection.name, "Get Test Collection");
+    assert_eq!(collection.source, Some("get_test_source".into()));
 }
 
 #[test]
 fn test_get_nonexistent_collection() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let fake_id = CollectionId(999);
-
-    let result = manager
-        .get_collection(&fake_id)
-        .expect("Failed to query collection");
-
+    let result = helpers::get_collection(&manager, CollectionId(999));
     assert!(result.is_none());
 }
 
 #[test]
 fn test_find_collection() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let source = "findable_source".to_string();
+    let collection_id = helpers::add_collection(
+        &manager,
+        "Findable Collection".into(),
+        Some("findable_source".into()),
+        None,
+    );
 
-    let collection_id = manager
-        .add_collection(
-            "Findable Collection".to_string(),
-            Some(source.clone()),
-            None,
-        )
-        .expect("Failed to add collection");
-
-    // Find collection by source
-    let found_id = manager
-        .find_collection(&source)
-        .expect("Failed to find collection");
-
+    let found_id = helpers::find_collection(&manager, "findable_source");
     assert_eq!(found_id, Some(collection_id));
 
-    // Test not found
-    let not_found = manager
-        .find_collection("nonexistent_source")
-        .expect("Failed to search for nonexistent collection");
-
+    let not_found = helpers::find_collection(&manager, "nonexistent_source");
     assert_eq!(not_found, None);
 }
 
-#[test]
-fn test_find_collection_caching() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-    let source = "cached_source".to_string();
-
-    let collection_id = manager
-        .add_collection("Cached Collection".to_string(), Some(source.clone()), None)
-        .expect("Failed to add collection");
-
-    // First call should cache the result
-    let found_id1 = manager
-        .find_collection(&source)
-        .expect("Failed to find collection");
-
-    // Second call should use cache
-    let found_id2 = manager
-        .find_collection(&source)
-        .expect("Failed to find collection from cache");
-
-    assert_eq!(found_id1, Some(collection_id));
-    assert_eq!(found_id2, Some(collection_id));
-}
+// ── Binded: Delete ────────────────────────────────────────────
 
 #[test]
 fn test_remove_collection() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let collection_id = manager
-        .add_collection(
-            "To Delete".to_string(),
-            Some("delete_source".to_string()),
-            None,
-        )
-        .expect("Failed to add collection");
+    let collection_id = helpers::add_collection(
+        &manager,
+        "To Delete".into(),
+        Some("delete_source".into()),
+        None,
+    );
 
-    // Verify collection exists
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection");
-    assert!(collection.is_some());
+    assert!(helpers::get_collection(&manager, collection_id).is_some());
 
-    // Remove collection
-    manager
-        .remove_collection(collection_id)
-        .expect("Failed to remove collection");
+    manager.bind(collection_id).delete().unwrap();
 
-    // Note: The current implementation only removes relationships, not the collection itself
-    // This appears to be a bug in the manager code
+    assert!(helpers::get_collection(&manager, collection_id).is_none());
 }
+
+// ── Binded: Set fields ───────────────────────────────────────
 
 #[test]
 fn test_set_collection_name() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let collection_id = manager
-        .add_collection("Original Name".to_string(), None, None)
-        .expect("Failed to add collection");
+    let collection_id = helpers::add_collection(&manager, "Original Name".into(), None, None);
 
-    let new_name = "Updated Name".to_string();
     manager
-        .set_collection_name(collection_id, new_name.clone())
-        .expect("Failed to update collection name");
+        .bind(collection_id)
+        .update(UpdateCollection::default().name("Updated Name".into()))
+        .unwrap();
 
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    assert_eq!(collection.name, new_name);
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
+    assert_eq!(collection.name, "Updated Name");
 }
 
 #[test]
 fn test_set_collection_source() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let collection_id = manager
-        .add_collection("Test Collection".to_string(), None, None)
-        .expect("Failed to add collection");
+    let collection_id = helpers::add_collection(&manager, "Test Collection".into(), None, None);
 
     let new_source = Some("new_source".to_string());
     manager
-        .set_collection_source(collection_id, new_source.clone())
-        .expect("Failed to update collection source");
+        .bind(collection_id)
+        .update(UpdateCollection::default().source(new_source.clone()))
+        .unwrap();
 
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.source, new_source);
 
-    // Test setting source to None
     manager
-        .set_collection_source(collection_id, None)
-        .expect("Failed to update collection source to None");
-
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
+        .bind(collection_id)
+        .update(UpdateCollection::default().source(None))
+        .unwrap();
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
     assert_eq!(collection.source, None);
 }
 
 #[test]
 fn test_set_collection_thumb() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let collection_id = manager
-        .add_collection("Test Collection".to_string(), None, None)
-        .expect("Failed to add collection");
+    let now = Utc::now();
+    let collection_id = helpers::add_collection(&manager, "Test Collection".into(), None, None);
+    let post_id = helpers::add_post(
+        &manager,
+        "Test Post".into(),
+        None,
+        None,
+        Some(now),
+        Some(now),
+    );
+    let file_meta_id = helpers::add_file_meta(
+        &manager,
+        post_id,
+        "thumb.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
 
-    // Note: The current implementation expects Option<String> but should probably be Option<FileMetaId>
-    // Testing with the current signature
-    let thumb_value = Some("thumb_value".to_string());
     manager
-        .set_collection_thumb(collection_id, thumb_value.clone())
-        .expect("Failed to set collection thumb");
+        .bind(collection_id)
+        .update(UpdateCollection::default().thumb(Some(file_meta_id)))
+        .unwrap();
 
-    // Since the function signature might be incorrect, we can't easily verify this without
-    // checking the actual database state or fixing the function signature
-}
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
+    assert_eq!(collection.thumb, Some(file_meta_id));
 
-#[test]
-fn test_list_collection_posts() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Create collection
-    let collection_id = manager
-        .add_collection("Test Collection".to_string(), None, None)
-        .expect("Failed to add collection");
-
-    // Create posts
-    let _post1_id = manager
-        .add_post(
-            "Post 1".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post 1");
-
-    let _post2_id = manager
-        .add_post(
-            "Post 2".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post 2");
-
-    // Note: The current implementation has SQL issues that would prevent proper testing
-    // The relationship management functions would need to be implemented or fixed
-
-    // For now, test that the function can be called without panicking
-    let posts = manager
-        .list_collection_posts(&collection_id)
-        .unwrap_or_default();
-
-    // Should be empty since we haven't added relationships and the SQL might be incorrect
-    assert_eq!(posts.len(), 0);
-}
-
-#[test]
-fn test_list_post_collections() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    // Create post
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
-
-    // Create collections
-    let _collection1_id = manager
-        .add_collection("Collection 1".to_string(), None, None)
-        .expect("Failed to add collection 1");
-
-    let _collection2_id = manager
-        .add_collection("Collection 2".to_string(), None, None)
-        .expect("Failed to add collection 2");
-
-    // Note: The current implementation has SQL issues that would prevent proper testing
-    // For now, test that the function can be called without panicking
-    let collections = manager.list_post_collections(&post_id).unwrap_or_default();
-
-    // Should be empty since we haven't added relationships and the SQL might be incorrect
-    assert_eq!(collections.len(), 0);
-}
-
-#[test]
-fn test_collection_posts_extension_method() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    let collection_id = manager
-        .add_collection("Test Collection".to_string(), None, None)
-        .expect("Failed to add collection");
-
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    // Test the extension method
-    let posts = collection.posts(&manager).unwrap_or_default();
-    assert_eq!(posts.len(), 0);
-}
-
-#[test]
-fn test_post_collections_extension_method() {
-    let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    let post_id = manager
-        .add_post(
-            "Test Post".to_string(),
-            None,
-            None,
-            Some(Utc::now()),
-            Some(Utc::now()),
-        )
-        .expect("Failed to add post");
-
-    let post = manager.get_post(&post_id).expect("Failed to get post");
-
-    // Test the extension method
-    let collections = post.collections(&manager).unwrap_or_default();
-    assert_eq!(collections.len(), 0);
+    manager
+        .bind(collection_id)
+        .update(UpdateCollection::default().thumb(None))
+        .unwrap();
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
+    assert_eq!(collection.thumb, None);
 }
 
 #[test]
 fn test_set_collection_thumb_by_latest() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
+    let collection_id = helpers::add_collection(&manager, "Test Collection".into(), None, None);
 
-    // Create a collection
-    let collection_id = manager
-        .add_collection("Test Collection".to_string(), None, None)
-        .expect("Failed to add collection");
-
-    // Create posts with different update times
     let early_time = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
@@ -413,122 +234,145 @@ fn test_set_collection_thumb_by_latest() {
         .unwrap()
         .with_timezone(&Utc);
 
-    // Create first post (earliest)
-    let post1_id = manager
-        .add_post(
-            "Post 1".to_string(),
-            None,
-            None,
-            Some(early_time),
-            Some(early_time),
-        )
-        .expect("Failed to add post 1");
+    let post1 = helpers::add_post(
+        &manager,
+        "Post 1".into(),
+        None,
+        None,
+        Some(early_time),
+        Some(early_time),
+    );
+    let post2 = helpers::add_post(
+        &manager,
+        "Post 2".into(),
+        None,
+        None,
+        Some(later_time),
+        Some(later_time),
+    );
+    let post3 = helpers::add_post(
+        &manager,
+        "Post 3".into(),
+        None,
+        None,
+        Some(latest_time),
+        Some(latest_time),
+    );
 
-    // Create second post (middle)
-    let post2_id = manager
-        .add_post(
-            "Post 2".to_string(),
-            None,
-            None,
-            Some(later_time),
-            Some(later_time),
-        )
-        .expect("Failed to add post 2");
+    let _fm1 = helpers::add_file_meta(
+        &manager,
+        post1,
+        "thumb1.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
+    let _fm2 = helpers::add_file_meta(
+        &manager,
+        post2,
+        "thumb2.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
+    let fm3 = helpers::add_file_meta(
+        &manager,
+        post3,
+        "thumb3.jpg".into(),
+        "image/jpeg".into(),
+        HashMap::new(),
+    );
 
-    // Create third post (latest)
-    let post3_id = manager
-        .add_post(
-            "Post 3".to_string(),
-            None,
-            None,
-            Some(latest_time),
-            Some(latest_time),
-        )
-        .expect("Failed to add post 3");
-
-    // Create file metas for thumbnails
-    let file_meta1_id = manager
-        .add_file_meta(
-            post1_id,
-            "thumb1.jpg".to_string(),
-            "image/jpeg".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta 1");
-
-    let file_meta2_id = manager
-        .add_file_meta(
-            post2_id,
-            "thumb2.jpg".to_string(),
-            "image/jpeg".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta 2");
-
-    let file_meta3_id = manager
-        .add_file_meta(
-            post3_id,
-            "thumb3.jpg".to_string(),
-            "image/jpeg".to_string(),
-            HashMap::new(),
-        )
-        .expect("Failed to add file meta 3");
-
-    // Set thumbnails for posts
+    // Set post thumbnails
     manager
-        .set_post_thumb(post1_id, Some(file_meta1_id))
-        .expect("Failed to set post 1 thumb");
-
+        .bind(post1)
+        .update(UpdatePost::default().thumb(Some(_fm1)))
+        .unwrap();
     manager
-        .set_post_thumb(post2_id, Some(file_meta2_id))
-        .expect("Failed to set post 2 thumb");
-
+        .bind(post2)
+        .update(UpdatePost::default().thumb(Some(_fm2)))
+        .unwrap();
     manager
-        .set_post_thumb(post3_id, Some(file_meta3_id))
-        .expect("Failed to set post 3 thumb");
+        .bind(post3)
+        .update(UpdatePost::default().thumb(Some(fm3)))
+        .unwrap();
 
     // Associate posts with collection
-    manager
-        .add_post_collections(post1_id, &[collection_id])
-        .expect("Failed to add post 1 to collection");
+    helpers::add_post_collections(&manager, post1, &[collection_id]);
+    helpers::add_post_collections(&manager, post2, &[collection_id]);
+    helpers::add_post_collections(&manager, post3, &[collection_id]);
 
     manager
-        .add_post_collections(post2_id, &[collection_id])
-        .expect("Failed to add post 2 to collection");
+        .bind(collection_id)
+        .update(UpdateCollection::default().thumb_by_latest())
+        .unwrap();
 
-    manager
-        .add_post_collections(post3_id, &[collection_id])
-        .expect("Failed to add post 3 to collection");
-
-    // Set collection thumb by latest post
-    manager
-        .set_collection_thumb_by_latest(collection_id)
-        .expect("Failed to set collection thumb by latest");
-
-    // Verify collection thumb is set to the latest post's thumb
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    assert_eq!(collection.thumb, Some(file_meta3_id));
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
+    assert_eq!(collection.thumb, Some(fm3));
 }
+
+// ── Binded: Post relationships ───────────────────────────────
+
+#[test]
+fn test_list_collection_posts() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let collection_id = helpers::add_collection(&manager, "Test Collection".into(), None, None);
+    let post1 = helpers::add_post(&manager, "Post 1".into(), None, None, Some(now), Some(now));
+    let post2 = helpers::add_post(&manager, "Post 2".into(), None, None, Some(now), Some(now));
+
+    helpers::add_post_collections(&manager, post1, &[collection_id]);
+    helpers::add_post_collections(&manager, post2, &[collection_id]);
+
+    let post_ids = manager.bind(collection_id).list_posts().unwrap();
+    assert_eq!(post_ids.len(), 2);
+    assert!(post_ids.contains(&post1));
+    assert!(post_ids.contains(&post2));
+}
+
+#[test]
+fn test_add_collection_posts() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let collection_id = helpers::add_collection(&manager, "Test Collection".into(), None, None);
+    let post1 = helpers::add_post(&manager, "Post 1".into(), None, None, Some(now), Some(now));
+    let post2 = helpers::add_post(&manager, "Post 2".into(), None, None, Some(now), Some(now));
+
+    manager
+        .bind(collection_id)
+        .add_posts(&[post1, post2])
+        .unwrap();
+
+    let posts = helpers::list_collection_posts(&manager, collection_id);
+    assert_eq!(posts.len(), 2);
+}
+
+#[test]
+fn test_remove_collection_posts() {
+    let manager = PostArchiverManager::open_in_memory().unwrap();
+    let now = Utc::now();
+    let collection_id = helpers::add_collection(&manager, "Test Collection".into(), None, None);
+    let post1 = helpers::add_post(&manager, "Post 1".into(), None, None, Some(now), Some(now));
+    let post2 = helpers::add_post(&manager, "Post 2".into(), None, None, Some(now), Some(now));
+
+    helpers::add_post_collections(&manager, post1, &[collection_id]);
+    helpers::add_post_collections(&manager, post2, &[collection_id]);
+
+    manager.bind(collection_id).remove_posts(&[post1]).unwrap();
+
+    let remaining = helpers::list_collection_posts(&manager, collection_id);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, post2);
+}
+
+// ── Edge cases ───────────────────────────────────────────────
 
 #[test]
 fn test_add_collection_without_source() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-    let name = "No Source Collection".to_string();
+    let collection_id =
+        helpers::add_collection(&manager, "No Source Collection".into(), None, None);
 
-    let collection_id = manager
-        .add_collection(name.clone(), None, None)
-        .expect("Failed to add collection");
-
-    let collection = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    assert_eq!(collection.name, name);
+    let collection = helpers::get_collection(&manager, collection_id).unwrap();
+    assert_eq!(collection.name, "No Source Collection");
     assert_eq!(collection.source, None);
     assert_eq!(collection.thumb, None);
 }
@@ -536,61 +380,35 @@ fn test_add_collection_without_source() {
 #[test]
 fn test_find_collection_with_none_source() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
+    let _collection_id =
+        helpers::add_collection(&manager, "No Source Collection".into(), None, None);
 
-    // Add collection without source
-    manager
-        .add_collection("No Source Collection".to_string(), None, None)
-        .expect("Failed to add collection");
-
-    // Should not find collection with empty string source
-    let result = manager
-        .find_collection("")
-        .expect("Failed to search collection");
-
+    let result = helpers::find_collection(&manager, "");
     assert_eq!(result, None);
 }
 
 #[test]
 fn test_list_empty_collections() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
-
-    let collections = manager
-        .list_collections()
-        .expect("Failed to list collections");
-
+    let collections = helpers::list_collections(&manager);
     assert_eq!(collections.len(), 0);
 }
 
 #[test]
 fn test_collection_id_consistency() {
     let manager = PostArchiverManager::open_in_memory().unwrap();
+    let collection_id = helpers::add_collection(
+        &manager,
+        "Consistency Test".into(),
+        Some("consistent".into()),
+        None,
+    );
 
-    let collection_id = manager
-        .add_collection(
-            "Consistency Test".to_string(),
-            Some("consistent".to_string()),
-            None,
-        )
-        .expect("Failed to add collection");
+    let by_id = helpers::get_collection(&manager, collection_id).unwrap();
+    let found_id = helpers::find_collection(&manager, "consistent").unwrap();
+    let by_source = helpers::get_collection(&manager, found_id).unwrap();
 
-    // Get by ID
-    let collection_by_id = manager
-        .get_collection(&collection_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    // Find by source
-    let found_id = manager
-        .find_collection("consistent")
-        .expect("Failed to find collection")
-        .expect("Collection should be found");
-
-    let collection_by_source = manager
-        .get_collection(&found_id)
-        .expect("Failed to get collection")
-        .expect("Collection should exist");
-
-    assert_eq!(collection_by_id.id, collection_by_source.id);
-    assert_eq!(collection_by_id.name, collection_by_source.name);
-    assert_eq!(collection_by_id.source, collection_by_source.source);
+    assert_eq!(by_id.id, by_source.id);
+    assert_eq!(by_id.name, by_source.name);
+    assert_eq!(by_id.source, by_source.source);
 }

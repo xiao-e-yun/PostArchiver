@@ -1,250 +1,154 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
-use crate::{Collection, CollectionId, FileMetaId, Post, PostId};
+use crate::{
+    error::Result,
+    manager::{binded::Binded, PostArchiverConnection},
+    query::FromQuery,
+    Collection, CollectionId, FileMetaId, PostId,
+};
 
-use super::{PostArchiverConnection, PostArchiverManager};
+/// Specifies how to update a collection's thumbnail.
+#[derive(Debug, Clone)]
+pub enum CollectionThumb {
+    /// Set to an explicit value (or clear with `None`).
+    Set(Option<FileMetaId>),
+    /// Set to the thumb of the most recently updated post in this collection.
+    ByLatest,
+}
+
+/// Builder for updating a collection's fields.
+///
+/// Fields left as `None` are not modified.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateCollection {
+    pub name: Option<String>,
+    pub source: Option<Option<String>>,
+    pub thumb: Option<CollectionThumb>,
+}
+
+impl UpdateCollection {
+    /// Set the collection's name.
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+    /// Set or clear the source URL.
+    pub fn source(mut self, source: Option<String>) -> Self {
+        self.source = Some(source);
+        self
+    }
+    /// Set or clear the thumbnail.
+    pub fn thumb(mut self, thumb: Option<FileMetaId>) -> Self {
+        self.thumb = Some(CollectionThumb::Set(thumb));
+        self
+    }
+    /// Set the thumbnail to the latest post's thumb in this collection.
+    pub fn thumb_by_latest(mut self) -> Self {
+        self.thumb = Some(CollectionThumb::ByLatest);
+        self
+    }
+}
 
 //=============================================================
-// Querying
+// Update / Delete
 //=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Retrieve all collections in the archive.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn list_collections(&self) -> Result<Vec<crate::Collection>, rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached("SELECT * FROM collections")?;
-        let collections = stmt.query_map([], Collection::from_row)?;
-        collections.collect()
-    }
-
-    /// Find a collection by its source.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn find_collection(&self, source: &str) -> Result<Option<CollectionId>, rusqlite::Error> {
-        if let Some(id) = self.cache.collections.get(source) {
-            return Ok(Some(*id));
-        }
-
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM collections WHERE source = ?")?;
-        let id = stmt.query_row([source], |row| row.get(0)).optional();
-
-        if let Ok(Some(id)) = id {
-            self.cache.collections.insert(source.to_string(), id);
-        }
-
-        id
-    }
-    /// Retrieve a collection by their ID.
-    ///
-    /// Fetches all information about a collection including its name, source, and thumb.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The collection ID does not exist
-    /// * There was an error accessing the database
-    pub fn get_collection(&self, id: &CollectionId) -> Result<Option<Collection>, rusqlite::Error> {
+impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
+    /// Get this collection's current data from the database.
+    pub fn value(&self) -> Result<Collection> {
         let mut stmt = self
             .conn()
             .prepare_cached("SELECT * FROM collections WHERE id = ?")?;
+        Ok(stmt.query_row([self.id()], Collection::from_row)?)
+    }
 
-        stmt.query_row([id], crate::Collection::from_row).optional()
+    /// Remove this collection from the archive.
+    ///
+    /// Also removes all collection-post relationships.
+    pub fn delete(self) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM collections WHERE id = ?", [self.id()])?;
+        Ok(())
+    }
+
+    /// Apply a batch of field updates to this collection in a single SQL statement.
+    ///
+    /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
+    pub fn update(&self, update: UpdateCollection) -> Result<()> {
+        use rusqlite::types::ToSql;
+
+        let id = self.id();
+        let mut sets: Vec<&str> = Vec::new();
+        let mut params: Vec<&dyn ToSql> = Vec::new();
+
+        macro_rules! push {
+            ($field:expr, $col:expr) => {
+                if let Some(ref v) = $field {
+                    sets.push($col);
+                    params.push(v);
+                }
+            };
+        }
+
+        push!(update.name, "name = ?");
+        push!(update.source, "source = ?");
+
+        match &update.thumb {
+            Some(CollectionThumb::Set(v)) => {
+                sets.push("thumb = ?");
+                params.push(v);
+            }
+            Some(CollectionThumb::ByLatest) => {
+                sets.push("thumb = (SELECT posts.thumb FROM posts INNER JOIN collection_posts ON collection_posts.post = posts.id WHERE collection_posts.collection = ? AND posts.thumb IS NOT NULL ORDER BY posts.updated DESC LIMIT 1)");
+                params.push(&id);
+            }
+            None => {}
+        }
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        params.push(&id);
+
+        let sql = format!("UPDATE collections SET {} WHERE id = ?", sets.join(", "));
+        self.conn().execute(&sql, params.as_slice())?;
+        Ok(())
     }
 }
 
 //=============================================================
-// Modifying
+// Relations: Posts
 //=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Add a new collection to the archive.
-    ///
-    /// inserts a new collection with the given name, an optional source, and an optional thumb.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * If the source is already in use by another collection
-    /// * There was an error accessing the database
-    pub fn add_collection(
-        &self,
-        name: String,
-        source: Option<String>,
-        thumb: Option<FileMetaId>,
-    ) -> Result<CollectionId, rusqlite::Error> {
+impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
+    /// List all post IDs in this collection.
+    pub fn list_posts(&self) -> Result<Vec<PostId>> {
+        let mut stmt = self
+            .conn()
+            .prepare_cached("SELECT post FROM collection_posts WHERE collection = ?")?;
+        let rows = stmt.query_map([self.id()], |row| row.get(0))?;
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
+    }
+
+    /// Add posts to this collection.
+    pub fn add_posts(&self, posts: &[PostId]) -> Result<()> {
         let mut stmt = self.conn().prepare_cached(
-            "INSERT INTO collections (name, source, thumb) VALUES (?, ?, ?) RETURNING id",
+            "INSERT OR IGNORE INTO collection_posts (collection, post) VALUES (?, ?)",
         )?;
-        let id = stmt.query_row(params![name, source, thumb], |row| row.get(0))?;
-
-        if let Some(source) = &source {
-            self.cache.collections.insert(source.clone(), id);
-        }
-        Ok(id)
-    }
-
-    /// Remove a collection from the archive.
-    ///
-    /// The operation will also remove Author-Post relationships associated with the collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn remove_collection(&self, id: CollectionId) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("DELETE FROM collection_posts WHERE collection = ?")?;
-        stmt.execute([id])?;
-        Ok(())
-    }
-
-    /// Set an name of a collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_collection_name(
-        &self,
-        id: CollectionId,
-        name: String,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE collections SET name = ? WHERE id = ?")?;
-        stmt.execute(params![name, id])?;
-        Ok(())
-    }
-
-    /// Set the source of a collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The source is already in use by another collection.
-    /// * There was an error accessing the database.
-    pub fn set_collection_source(
-        &self,
-        id: CollectionId,
-        source: Option<String>,
-    ) -> Result<(), rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("UPDATE collections SET source = ? WHERE id = ?")?;
-        stmt.execute(params![&source, id])?;
-        if let Some(source) = source {
-            self.cache.collections.insert(source, id);
+        for post in posts {
+            stmt.execute(params![self.id(), post])?;
         }
         Ok(())
     }
 
-    /// Set the thumb of a collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if:
-    /// * The thumb ID does not exist.
-    /// * There was an error accessing the database.
-    pub fn set_collection_thumb(
-        &self,
-        id: CollectionId,
-        thumb: Option<String>,
-    ) -> Result<(), rusqlite::Error> {
+    /// Remove posts from this collection.
+    pub fn remove_posts(&self, posts: &[PostId]) -> Result<()> {
         let mut stmt = self
             .conn()
-            .prepare_cached("UPDATE collections SET thumb = ? WHERE id = ?")?;
-        stmt.execute(params![thumb, id])?;
+            .prepare_cached("DELETE FROM collection_posts WHERE collection = ? AND post = ?")?;
+        for post in posts {
+            stmt.execute(params![self.id(), post])?;
+        }
         Ok(())
-    }
-
-    /// Set the collection's thumb to the latest post's thumb  that has a non-null thumb.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    pub fn set_collection_thumb_by_latest(&self, id: CollectionId) -> Result<(), rusqlite::Error> {
-        let mut stmt = self.conn().prepare_cached(
-            "UPDATE collections SET thumb = (
-                SELECT posts.thumb FROM posts 
-                INNER JOIN collection_posts ON collection_posts.post = posts.id 
-                WHERE collection_posts.collection = ? AND posts.thumb IS NOT NULL
-                ORDER BY posts.updated DESC LIMIT 1
-            ) WHERE id = ?",
-        )?;
-        stmt.execute(params![id, id])?;
-        Ok(())
-    }
-}
-
-//=============================================================
-// Relationships
-//=============================================================
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Retrieve all collections associated with a post.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn list_post_collections(&self, post: &PostId) -> Result<Vec<Collection>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT collections.* FROM collections INNER JOIN collection_posts ON collection_posts.collection = collections.id WHERE collection_posts.post = ?")?;
-        let collections = stmt.query_map([post], crate::Collection::from_row)?;
-        collections.collect()
-    }
-
-    /// Retrieve all posts associated with a collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn list_collection_posts(
-        &self,
-        collection: &CollectionId,
-    ) -> Result<Vec<Post>, rusqlite::Error> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT posts.* FROM posts INNER JOIN collection_posts ON collection_posts.post = posts.id WHERE collection_posts.collection = ?")?;
-        let posts = stmt.query_map([collection], Post::from_row)?;
-        posts.collect()
-    }
-}
-
-impl Post {
-    /// Retrieve all collections associated with this post.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn collections(
-        &self,
-        manager: &PostArchiverManager,
-    ) -> Result<Vec<Collection>, rusqlite::Error> {
-        manager.list_post_collections(&self.id)
-    }
-}
-
-impl Collection {
-    /// Retrieve all posts associated with this collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn posts(&self, manager: &PostArchiverManager) -> Result<Vec<Post>, rusqlite::Error> {
-        manager.list_collection_posts(&self.id)
     }
 }

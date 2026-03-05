@@ -1,13 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
+    fs::File,
     path::PathBuf,
 };
 
 use chrono::{DateTime, Utc};
+use rusqlite::params;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    error::Result,
+    manager::{
+        PostArchiverConnection, PostArchiverManager, UpdateAuthor, UpdateCollection, UpdatePost,
+        WritableFileMeta,
+    },
     AuthorId, CollectionId, Comment, Content, PlatformId, PostId, POSTS_PRE_CHUNK,
 };
 
@@ -27,56 +33,50 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::importer::UnsyncPost;
-    /// # use post_archiver::PlatformId;
-    /// # use std::collections::HashMap;
-    /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    /// let post: UnsyncPost<()> = UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]);
-    ///
-    /// let files_data = HashMap::<String,()>::new(); // You can provide file data if needed
-    ///    
-    /// let post = manager.import_post(post, true)?;
-    ///
-    /// Ok(())
-    /// # }
-    /// ```
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_post<U>(
         &self,
         post: UnsyncPost<U>,
         update_relation: bool,
-    ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>, Vec<(PathBuf, U)>), rusqlite::Error>
-    {
+    ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>, Vec<(PathBuf, U)>)> {
         macro_rules! import_many {
             ($vec:expr => $method:ident) => {
                 $vec.into_iter()
                     .map(|d| self.$method(d))
-                    .collect::<Result<Vec<_>, _>>()?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
             };
         }
 
-        let id = match self.find_post(&post.source)? {
-            Some(id) => {
-                self.set_post_title(id, post.title)?;
-                self.set_post_platform(id, Some(post.platform))?;
+        // find post by source
+        let existing: Option<PostId> = self.find_post(&post.source)?;
 
-                self.set_post_published(id, post.published.unwrap_or_else(Utc::now))?;
-                self.set_post_updated_by_latest(id, post.updated.unwrap_or_else(Utc::now))?;
+        let id = match existing {
+            Some(id) => {
+                let b = self.bind(id);
+                b.update(
+                    UpdatePost::default()
+                        .title(post.title)
+                        .platform(Some(post.platform))
+                        .published(post.published.unwrap_or_else(Utc::now))
+                        .updated_by_latest(post.updated.unwrap_or_else(Utc::now)),
+                )?;
                 id
             }
-            None => self.add_post(
-                post.title,
-                Some(post.source),
-                Some(post.platform),
-                post.published,
-                post.updated,
-            )?,
+            None => {
+                // insert new post
+                let mut stmt = self.conn().prepare_cached(
+                    "INSERT INTO posts (title, source, platform, published, updated) VALUES (?, ?, ?, ?, ?) RETURNING id",
+                )?;
+                let published = post.published.unwrap_or_else(Utc::now);
+                let updated = post.updated.unwrap_or_else(Utc::now);
+                stmt.query_row(
+                    params![post.title, post.source, post.platform, published, updated],
+                    |row| row.get(0),
+                )?
+            }
         };
+
+        let b = self.bind(id);
 
         let mut thumb = post
             .thumb
@@ -98,19 +98,21 @@ where
                     }
                 })
             })
-            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
-        self.set_post_content(id, content)?;
-        self.set_post_thumb(id, thumb)?;
-
-        self.set_post_comments(id, post.comments)?;
+            .collect::<Result<Vec<_>>>()?;
+        b.update(
+            UpdatePost::default()
+                .content(content)
+                .thumb(thumb)
+                .comments(post.comments),
+        )?;
 
         let tags = import_many!(post.tags => import_tag);
-        self.add_post_tags(id, &tags)?;
+        b.add_tags(&tags)?;
 
         let collections = import_many!(post.collections => import_collection);
-        self.add_post_collections(id, &collections)?;
+        b.add_collections(&collections)?;
 
-        self.add_post_authors(id, &post.authors)?;
+        b.add_authors(&post.authors)?;
 
         //
         let path = self
@@ -133,13 +135,17 @@ where
 
         if update_relation {
             post.authors.iter().try_for_each(|&author| {
-                self.set_author_thumb_by_latest(author)?;
-                self.set_author_updated_by_latest(author)
+                self.bind(author).update(
+                    UpdateAuthor::default()
+                        .thumb_by_latest()
+                        .updated_by_latest(),
+                )
             })?;
 
-            collections
-                .iter()
-                .try_for_each(|&collection| self.set_collection_thumb_by_latest(collection))?;
+            collections.iter().try_for_each(|&collection| {
+                self.bind(collection)
+                    .update(UpdateCollection::default().thumb_by_latest())
+            })?;
         }
 
         Ok((
@@ -148,6 +154,37 @@ where
             collections.into_iter().collect(),
             files,
         ))
+    }
+
+    pub fn import_post_with_files<U: WritableFileMeta>(
+        &self,
+        post: UnsyncPost<U>,
+    ) -> Result<PostId> {
+        let (id, _, _, contents) = self.import_post(post, true)?;
+
+        let mut first = true;
+        for (path, content) in &contents {
+            if first {
+                std::fs::create_dir_all(path.parent().unwrap())?;
+                first = false;
+            }
+
+            let mut file = File::create(path)?;
+            content.write_to_file(&mut file)?;
+        }
+
+        Ok(id)
+    }
+
+    pub fn import_post_with_rename_files(&self, post: UnsyncPost<PathBuf>) -> Result<PostId> {
+        let (id, _, _, contents) = self.import_post(post, true)?;
+
+        for (path, src) in &contents {
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::rename(src, path)?;
+        }
+
+        Ok(id)
     }
 
     /// Import multiple posts into the archive.
@@ -160,31 +197,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::importer::UnsyncPost;
-    /// # use post_archiver::PlatformId;
-    /// # use std::collections::HashMap;
-    /// # fn example(manager: &PostArchiverManager) -> Result<(), rusqlite::Error> {
-    /// let posts: Vec<UnsyncPost<()>> = vec![
-    ///     UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/1".to_string(), "My First Post".to_string(), vec![]),
-    ///     UnsyncPost::new(PlatformId(1), "https://blog.example.com/post/2".to_string(), "My Second Post".to_string(), vec![]),
-    /// ];
-    ///
-    /// let post = manager.import_posts(posts, true)?;
-    ///
-    /// Ok(())
-    /// # }
-    /// ```
+    /// Returns `Error` if there was an error accessing the database.
     pub fn import_posts<U>(
         &self,
         posts: impl IntoIterator<Item = UnsyncPost<U>>,
         update_relation: bool,
-    ) -> Result<(Vec<PostId>, Vec<(PathBuf, U)>), rusqlite::Error> {
+    ) -> Result<(Vec<PostId>, Vec<(PathBuf, U)>)> {
         let mut total_author = HashSet::new();
         let mut total_collections = HashSet::new();
         let mut total_files = Vec::new();
@@ -201,16 +219,50 @@ where
 
         if update_relation {
             total_author.into_iter().try_for_each(|author| {
-                self.set_author_thumb_by_latest(author)?;
-                self.set_author_updated_by_latest(author)
+                self.bind(author).update(
+                    UpdateAuthor::default()
+                        .thumb_by_latest()
+                        .updated_by_latest(),
+                )
             })?;
 
-            total_collections
-                .into_iter()
-                .try_for_each(|collection| self.set_collection_thumb_by_latest(collection))?;
+            total_collections.into_iter().try_for_each(|collection| {
+                self.bind(collection)
+                    .update(UpdateCollection::default().thumb_by_latest())
+            })?;
         }
 
         Ok((results, total_files))
+    }
+
+    pub fn import_posts_with_files<U: WritableFileMeta>(
+        &self,
+        posts: impl IntoIterator<Item = UnsyncPost<U>>,
+    ) -> Result<Vec<PostId>> {
+        let (ids, contents) = self.import_posts(posts, true)?;
+
+        for (path, content) in contents {
+            std::fs::create_dir_all(path.parent().unwrap())?;
+
+            let mut file = File::create(path)?;
+            content.write_to_file(&mut file)?;
+        }
+
+        Ok(ids)
+    }
+
+    pub fn import_posts_with_rename_files(
+        &self,
+        posts: impl IntoIterator<Item = UnsyncPost<PathBuf>>,
+    ) -> Result<Vec<PostId>> {
+        let (ids, contents) = self.import_posts(posts, true)?;
+
+        for (path, src) in contents {
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            std::fs::rename(src, path)?;
+        }
+
+        Ok(ids)
     }
 }
 
@@ -322,11 +374,8 @@ impl<T> UnsyncPost<T> {
     ///
     /// # Errors
     ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn sync<U>(
-        self,
-        manager: &PostArchiverManager<U>,
-    ) -> Result<(PostId, Vec<(PathBuf, T)>), rusqlite::Error>
+    /// Returns `Error` if there was an error accessing the database.
+    pub fn sync<U>(self, manager: &PostArchiverManager<U>) -> Result<(PostId, Vec<(PathBuf, T)>)>
     where
         U: PostArchiverConnection,
     {

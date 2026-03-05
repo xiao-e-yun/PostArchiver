@@ -1,46 +1,57 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use dashmap::DashMap;
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
-use serde_json::Value;
+use cached::TimedSizedCache;
+use rusqlite::{Connection, Transaction};
 
-use crate::TagId;
-use crate::{
-    utils::{DATABASE_NAME, VERSION},
-    CollectionId, PlatformId,
-};
+use crate::error::{Error, Result};
+use crate::utils::{DATABASE_NAME, VERSION};
+
+pub mod binded;
+pub use binded::*;
 
 pub mod author;
+pub use author::{AuthorThumb, AuthorUpdated, UpdateAuthor};
+
 pub mod collection;
+pub use collection::{CollectionThumb, UpdateCollection};
+
 pub mod file_meta;
+pub use file_meta::{UpdateFileMeta, WritableFileMeta};
+
 pub mod platform;
+pub use platform::UpdatePlatform;
+
 pub mod post;
+pub use post::{PostUpdated, UpdatePost};
+
 pub mod tag;
+pub use tag::UpdateTag;
 
 /// Core manager type for post archive operations with SQLite backend
+///
+/// Provides database connection management and access to entity operations
+/// through the [`Binded`] type via [`bind()`](PostArchiverManager::bind).
 ///
 /// # Examples
 /// ```no_run
 /// use post_archiver::manager::PostArchiverManager;
-///    
+///
 /// let manager = PostArchiverManager::open_or_create("./data").unwrap();
 /// ```
 #[derive(Debug)]
-pub struct PostArchiverManager<T = Connection> {
+pub struct PostArchiverManager<C = Connection> {
+    pub caches: Arc<Mutex<ManagerCaches>>,
     pub path: PathBuf,
-    conn: T,
-    pub(crate) cache: Arc<PostArchiverManagerCache>,
+    conn: C,
 }
 
 impl PostArchiverManager {
     /// Creates a new archive at the specified path
     ///
-    /// # Safety
-    /// The path must not already contain a database file.
+    /// # Panics
+    /// Panics if the path already contains a database file.
     ///
     /// # Examples
     /// ```no_run
@@ -48,7 +59,7 @@ impl PostArchiverManager {
     ///
     /// let manager = PostArchiverManager::create("./new_archive").unwrap();
     /// ```
-    pub fn create<P>(path: P) -> Result<Self, rusqlite::Error>
+    pub fn create<P>(path: P) -> Result<Self>
     where
         P: AsRef<Path>,
     {
@@ -56,7 +67,7 @@ impl PostArchiverManager {
         let db_path = path.join(DATABASE_NAME);
 
         if db_path.exists() {
-            panic!("Database already exists");
+            return Err(Error::DatabaseAlreadyExists);
         }
 
         let conn = Connection::open(&db_path)?;
@@ -70,9 +81,11 @@ impl PostArchiverManager {
             [VERSION],
         )?;
 
-        let cache = Arc::new(PostArchiverManagerCache::default());
-
-        Ok(Self { conn, path, cache })
+        Ok(Self {
+            conn,
+            path,
+            caches: Default::default(),
+        })
     }
 
     /// Opens an existing archive at the specified path
@@ -90,14 +103,14 @@ impl PostArchiverManager {
     ///     println!("Archive opened successfully");
     /// }
     /// ```
-    pub fn open<P>(path: P) -> Result<Option<Self>, rusqlite::Error>
+    pub fn open<P>(path: P) -> Result<Option<Self>>
     where
         P: AsRef<Path>,
     {
-        let manager = Self::open_uncheck(path);
+        let manager = Self::open_uncheck(path)?;
 
         // check version
-        if let Ok(Some(manager)) = &manager {
+        if let Some(manager) = &manager {
             let version: String = manager
                 .conn()
                 .query_row("SELECT version FROM post_archiver_meta", [], |row| {
@@ -115,33 +128,23 @@ impl PostArchiverManager {
             let expect_version = get_compatible_version(VERSION);
 
             if match_version != expect_version {
-                panic!(
-                    "Database version mismatch \n + current: {}\n + expected: {}",
-                    version, VERSION
-                )
+                return Err(Error::VersionMismatch {
+                    current: version,
+                    expected: VERSION.to_string(),
+                });
             }
         }
 
-        manager
+        Ok(manager)
     }
 
-    /// Opens an existing archive at the specified path
-    /// Does not check the version of the archive.
+    /// Opens an existing archive at the specified path without checking version.
     ///
     /// # Returns
-    /// - `Ok(Some(manager))` if archive exists and version is compatible
+    /// - `Ok(Some(manager))` if archive exists
     /// - `Ok(None)` if archive doesn't exist
     /// - `Err(_)` on database errors
-    ///
-    /// # Examples
-    /// ```no_run
-    /// use post_archiver::manager::PostArchiverManager;
-    ///
-    /// if let Some(manager) = PostArchiverManager::open_uncheck("./archive").unwrap() {
-    ///     println!("Archive opened successfully");
-    /// }
-    /// ```
-    pub fn open_uncheck<P>(path: P) -> Result<Option<Self>, rusqlite::Error>
+    pub fn open_uncheck<P>(path: P) -> Result<Option<Self>>
     where
         P: AsRef<Path>,
     {
@@ -154,8 +157,11 @@ impl PostArchiverManager {
 
         let conn = Connection::open(db_path)?;
 
-        let cache = Arc::new(PostArchiverManagerCache::default());
-        Ok(Some(Self { conn, path, cache }))
+        Ok(Some(Self {
+            conn,
+            path,
+            caches: Default::default(),
+        }))
     }
 
     /// Opens an existing archive or creates a new one if it doesn't exist
@@ -166,7 +172,7 @@ impl PostArchiverManager {
     ///
     /// let manager = PostArchiverManager::open_or_create("./archive").unwrap();
     /// ```
-    pub fn open_or_create<P>(path: P) -> Result<Self, rusqlite::Error>
+    pub fn open_or_create<P>(path: P) -> Result<Self>
     where
         P: AsRef<Path>,
     {
@@ -177,15 +183,13 @@ impl PostArchiverManager {
 
     /// Creates an in-memory database
     ///
-    /// it will generate a temporary path for the archive files
-    ///
     /// # Examples
     /// ```
     /// use post_archiver::manager::PostArchiverManager;
     ///
     /// let manager = PostArchiverManager::open_in_memory().unwrap();
     /// ```
-    pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
+    pub fn open_in_memory() -> Result<Self> {
         let path = std::env::temp_dir();
 
         let conn = Connection::open_in_memory()?;
@@ -199,9 +203,11 @@ impl PostArchiverManager {
             [VERSION],
         )?;
 
-        let cache = Arc::new(PostArchiverManagerCache::default());
-
-        Ok(Self { conn, path, cache })
+        Ok(Self {
+            conn,
+            path,
+            caches: Default::default(),
+        })
     }
 
     /// Starts a new transaction
@@ -215,124 +221,47 @@ impl PostArchiverManager {
     /// // ... perform operations
     /// tx.commit().unwrap();
     /// ```
-    pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction<'_>>, rusqlite::Error> {
+    pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction<'_>>> {
         Ok(PostArchiverManager {
             path: self.path.clone(),
+            caches: self.caches.clone(),
             conn: self.conn.transaction()?,
-            cache: self.cache.clone(),
         })
     }
 }
 
 impl PostArchiverManager<Transaction<'_>> {
     /// Commits the transaction
-    pub fn commit(self) -> Result<(), rusqlite::Error> {
-        self.conn.commit()
+    pub fn commit(self) -> Result<()> {
+        Ok(self.conn.commit()?)
     }
 }
 
-impl<T> PostArchiverManager<T>
+impl<C> PostArchiverManager<C>
 where
-    T: PostArchiverConnection,
+    C: PostArchiverConnection,
 {
+    /// Returns a reference to the underlying database connection
     pub fn conn(&self) -> &Connection {
         self.conn.connection()
     }
-    /// Returns this archive's feature value by name.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database or if the feature does not exist.
-    ///
-    /// # Examples
-    /// ```no_run
-    /// use post_archiver::manager::PostArchiverManager;
-    ///
-    /// let manager = PostArchiverManager::open_in_memory().unwrap();
-    /// let feature_value = manager.get_feature("example_feature").unwrap();
-    /// println!("Feature value: {}", feature_value);
-    /// ```
-    pub fn get_feature(&self, name: &str) -> Result<i64, rusqlite::Error> {
-        self.conn()
-            .query_row("SELECT value FROM features WHERE name = ?", [name], |row| {
-                row.get(0)
-            })
-            .optional()
-            .transpose()
-            .unwrap_or(Ok(0))
-    }
-    /// Returns this archive's feature value and extra data by name.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database or if the feature does not exist.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use post_archiver::manager::PostArchiverManager;
-    /// let manager = PostArchiverManager::open_in_memory().unwrap();
-    /// let (value, extra) = manager.get_feature_with_extra("example_feature").unwrap();
-    /// println!("Feature value: {}, Extra: {:?}", value, extra);
-    /// ```
-    pub fn get_feature_with_extra(
-        &self,
-        name: &str,
-    ) -> Result<(i64, HashMap<String, Value>), rusqlite::Error> {
-        self.conn()
-            .query_row(
-                "SELECT value, extra FROM features WHERE name = ?",
-                [name],
-                |row| {
-                    let value: i64 = row.get(0)?;
-                    let extra: String = row.get(1)?;
-                    let extra: HashMap<String, Value> =
-                        serde_json::from_str(&extra).unwrap_or_default();
-                    Ok((value, extra))
-                },
-            )
-            .optional()
-            .transpose()
-            .unwrap_or(Ok((0, HashMap::default())))
-    }
-    /// Set feature value by name.
-    ///
-    /// if it exists, its value will be updated.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_feature(&self, name: &str, value: i64) {
-        self.conn()
-            .execute(
-                "INSERT INTO features (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = ?",
-                params![name, value, value],
-            )
-            .unwrap();
-    }
-    /// Set feature value and extra data by name.
-    ///
-    /// if it exists, its value and extra data will be updated.
-    ///
-    /// # Errors
-    ///
-    /// Returns `rusqlite::Error` if there was an error accessing the database.
-    pub fn set_feature_with_extra(&self, name: &str, value: i64, extra: HashMap<String, Value>) {
-        let extra = serde_json::to_string(&extra).unwrap();
-        self.conn()
-            .execute(
-                "INSERT OR REPLACE INTO features (name, value, extra) VALUES (?, ?, ?)",
-                params![name, value, extra],
-            )
-            .unwrap();
-    }
-}
 
-#[derive(Debug, Default)]
-pub struct PostArchiverManagerCache {
-    pub tags: DashMap<(String, Option<PlatformId>), TagId>,
-    pub collections: DashMap<String, CollectionId>,
-    pub platforms: DashMap<String, PlatformId>,
+    /// Bind an entity ID to get a [`Binded`] context for update/delete/relation operations.
+    ///
+    /// The type parameter is inferred from the ID argument — no turbofish needed.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::PostId;
+    /// # fn example(manager: &PostArchiverManager, post_id: PostId) {
+    /// let binded = manager.bind(post_id);
+    /// // binded is Binded<'_, PostId>
+    /// # }
+    /// ```
+    pub fn bind<Id: BindableId>(&self, id: Id) -> Binded<'_, Id, C> {
+        Binded::new(self, id)
+    }
 }
 
 /// Trait for types that can provide a database connection
@@ -349,5 +278,18 @@ impl PostArchiverConnection for Connection {
 impl PostArchiverConnection for Transaction<'_> {
     fn connection(&self) -> &Connection {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct ManagerCaches {
+    pub counts: TimedSizedCache<(String, String), u64>,
+}
+
+impl Default for ManagerCaches {
+    fn default() -> Self {
+        Self {
+            counts: TimedSizedCache::with_size_and_lifespan(128, Duration::from_mins(30)),
+        }
     }
 }
