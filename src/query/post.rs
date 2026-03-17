@@ -23,22 +23,20 @@ impl_sortable!(PostQuery(PostSort) {
 
 // ── Builder ───────────────────────────────────────────────────────────────────
 
-/// 貼文的流式查詢構建器。
+/// Fluent query builder for posts.  Obtained via [`PostArchiverManager::posts()`].
 ///
-/// 透過 [`PostArchiverManager::posts()`] 取得。
+/// # Available filter fields
+/// - `ids`: filter by a set of [`PostId`] values.
+/// - `title`: fuzzy match on the title.
+/// - `source`: fuzzy match on the post source.
+/// - `updated`：filter by last-updated timestamp range.
+/// - `published`：filter by published timestamp range.
+/// - `platforms`：filter by a set of [`PlatformId`] values.
+/// - `tags`：filter by a set of [`TagId`] values, through the `post_tags` relation table.
+/// - `authors`：filter by a set of [`AuthorId`] values, through the `author_posts` relation table。
+/// - `collections`：filter by a set of [`CollectionId`] values, through the `collection_posts` relation table.
 ///
-/// # 可用過濾欄位
-/// - `ids`：依 `PostId` 陸列過濾。
-/// - `title`：依標題進行 `LIKE` 模糊匹配。
-/// - `source`：依來源字串進行 `LIKE` 模糊匹配。
-/// - `updated`：依最後更新時間進行範圍過濾。
-/// - `published`：依發布時間進行範圍過濾。
-/// - `platforms`：依所屬平台的 `PlatformId` 陸列過濾。
-/// - `tags`：展性匹配標籤，最小定包含透過 `post_tags` 關聯表指定的所有 `TagId`。
-/// - `authors`：展性匹配作者，結構同上，透過 `author_posts` 關聯表。
-/// - `collections`：展性匹配收藏集，結構同上，透過 `collection_posts` 關聯表。
-///
-/// # 範例
+/// # Example
 /// ```no_run
 /// # use post_archiver::manager::PostArchiverManager;
 /// # use post_archiver::query::{SortDir, Sortable, Countable, Paginate, Query};
