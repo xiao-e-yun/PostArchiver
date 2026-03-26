@@ -13,6 +13,9 @@ A simple unify post archive.
 * [PostArchiverViewer](https://github.com/xiao-e-yun/PostArchiverViewer)
 * Code by your self
 
+### Edit
+* [PostArchiverEditor](https://github.com/xiao-e-yun/PostArchiverEditor)
+
 ## Install
 
 ### For Rust
