@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
-use crate::{Author, Collection, FileMeta, Platform, Post, Tag};
-
 pub trait HasId {
     type Id: std::hash::Hash + Eq + Clone;
     fn id(&self) -> Self::Id;
@@ -35,7 +33,7 @@ pub trait HasId {
 /// // let _: PostId = author_id;
 /// ```
 macro_rules! define_id {
-    ($(#[$meta:meta])*,$table:ty : $name:ident) => {
+    ($(#[$meta:meta])*,$table:ident : $name:ident) => {
         #[cfg_attr(feature = "typescript", derive(TS))]
         #[cfg_attr(feature = "typescript", ts(export))]
         #[derive(Deserialize, Serialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -119,7 +117,7 @@ macro_rules! define_id {
         }
 
         #[cfg(feature = "utils")]
-        impl crate::id::HasId for $table {
+        impl crate::id::HasId for crate::$table {
             type Id = $name;
             fn id(&self) -> $name {
                 self.id.clone()
