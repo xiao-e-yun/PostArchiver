@@ -114,7 +114,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
         push!(update.mime, "mime = ?");
         push!(extra_json, "extra = ?");
 
-        if !sets.is_empty() {
+        if sets.is_empty() {
             return Ok(());
         }
 
@@ -143,7 +143,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
 // File content
 //=============================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FileMetaContent {
     Content(Vec<u8>),
     Path(PathBuf),
