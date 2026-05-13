@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    fs::File,
-    path::PathBuf,
-};
+use std::{collections::HashSet, fmt::Debug};
 
 use chrono::{DateTime, Utc};
 use rusqlite::params;
@@ -12,7 +7,6 @@ use crate::{
     error::Result,
     manager::{
         PostArchiverConnection, PostArchiverManager, UpdateAuthor, UpdateCollection, UpdatePost,
-        WritableFileMeta,
     },
     AuthorId, CollectionId, Comment, Content, PlatformId, PostId, POSTS_PRE_CHUNK,
 };
@@ -34,11 +28,11 @@ where
     /// # Errors
     ///
     /// Returns `Error` if there was an error accessing the database.
-    pub fn import_post<U>(
+    pub fn import_post(
         &self,
-        post: UnsyncPost<U>,
+        post: UnsyncPost,
         update_relation: bool,
-    ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>, Vec<(PathBuf, U)>)> {
+    ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>)> {
         macro_rules! import_many {
             ($vec:expr => $method:ident) => {
                 $vec.into_iter()
@@ -120,7 +114,7 @@ where
             .join((id.raw() / POSTS_PRE_CHUNK).to_string())
             .join((id.raw() % POSTS_PRE_CHUNK).to_string());
 
-        let files = post
+        for f in post
             .content
             .into_iter()
             .flat_map(|c| match c {
@@ -128,10 +122,13 @@ where
                 UnsyncContent::File(file) => Some(file),
             })
             .chain(post.thumb)
-            .map(|f| (path.join(f.filename), f.data))
-            .collect::<HashMap<_, _>>()
-            .into_iter()
-            .collect::<Vec<_>>();
+        {
+            let path = path.join(f.filename);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            };
+            f.data.write(&path)?;
+        }
 
         if update_relation {
             post.authors.iter().try_for_each(|&author| {
@@ -152,39 +149,7 @@ where
             id,
             post.authors.into_iter().collect(),
             collections.into_iter().collect(),
-            files,
         ))
-    }
-
-    pub fn import_post_with_files<U: WritableFileMeta>(
-        &self,
-        post: UnsyncPost<U>,
-    ) -> Result<PostId> {
-        let (id, _, _, contents) = self.import_post(post, true)?;
-
-        let mut first = true;
-        for (path, content) in &contents {
-            if first {
-                std::fs::create_dir_all(path.parent().unwrap())?;
-                first = false;
-            }
-
-            let mut file = File::create(path)?;
-            content.write_to_file(&mut file)?;
-        }
-
-        Ok(id)
-    }
-
-    pub fn import_post_with_rename_files(&self, post: UnsyncPost<PathBuf>) -> Result<PostId> {
-        let (id, _, _, contents) = self.import_post(post, true)?;
-
-        for (path, src) in &contents {
-            std::fs::create_dir_all(path.parent().unwrap())?;
-            std::fs::rename(src, path)?;
-        }
-
-        Ok(id)
     }
 
     /// Import multiple posts into the archive.
@@ -200,19 +165,17 @@ where
     /// Returns `Error` if there was an error accessing the database.
     pub fn import_posts<U>(
         &self,
-        posts: impl IntoIterator<Item = UnsyncPost<U>>,
+        posts: impl IntoIterator<Item = UnsyncPost>,
         update_relation: bool,
-    ) -> Result<(Vec<PostId>, Vec<(PathBuf, U)>)> {
+    ) -> Result<Vec<PostId>> {
         let mut total_author = HashSet::new();
         let mut total_collections = HashSet::new();
-        let mut total_files = Vec::new();
         let mut results = Vec::new();
 
         for post in posts {
-            let (id, authors, collections, files_data) = self.import_post(post, false)?;
+            let (id, authors, collections) = self.import_post(post, false)?;
 
             results.push(id);
-            total_files.extend(files_data);
             total_author.extend(authors);
             total_collections.extend(collections);
         }
@@ -232,51 +195,21 @@ where
             })?;
         }
 
-        Ok((results, total_files))
-    }
-
-    pub fn import_posts_with_files<U: WritableFileMeta>(
-        &self,
-        posts: impl IntoIterator<Item = UnsyncPost<U>>,
-    ) -> Result<Vec<PostId>> {
-        let (ids, contents) = self.import_posts(posts, true)?;
-
-        for (path, content) in contents {
-            std::fs::create_dir_all(path.parent().unwrap())?;
-
-            let mut file = File::create(path)?;
-            content.write_to_file(&mut file)?;
-        }
-
-        Ok(ids)
-    }
-
-    pub fn import_posts_with_rename_files(
-        &self,
-        posts: impl IntoIterator<Item = UnsyncPost<PathBuf>>,
-    ) -> Result<Vec<PostId>> {
-        let (ids, contents) = self.import_posts(posts, true)?;
-
-        for (path, src) in contents {
-            std::fs::create_dir_all(path.parent().unwrap())?;
-            std::fs::rename(src, path)?;
-        }
-
-        Ok(ids)
+        Ok(results)
     }
 }
 
 #[derive(Debug, Clone)]
 /// Represents a post that is not yet synchronized with the archive.
-pub struct UnsyncPost<T> {
+pub struct UnsyncPost {
     /// The original URL of this post (e.g., "https://example.com/blog/1")
     pub source: String,
     /// The title of the post
     pub title: String,
     /// The post's content items (text and file references)
-    pub content: Vec<UnsyncContent<T>>,
+    pub content: Vec<UnsyncContent>,
     /// Optional thumbnail image for the post
-    pub thumb: Option<UnsyncFileMeta<T>>,
+    pub thumb: Option<UnsyncFileMeta>,
     /// Comments on the post
     pub comments: Vec<Comment>,
     /// When the post was updated
@@ -293,12 +226,12 @@ pub struct UnsyncPost<T> {
     pub collections: Vec<UnsyncCollection>,
 }
 
-impl<T> UnsyncPost<T> {
+impl UnsyncPost {
     pub fn new(
         platform: PlatformId,
         source: String,
         title: String,
-        content: Vec<UnsyncContent<T>>,
+        content: Vec<UnsyncContent>,
     ) -> Self {
         Self {
             source,
@@ -323,11 +256,11 @@ impl<T> UnsyncPost<T> {
         Self { title, ..self }
     }
 
-    pub fn content(self, content: Vec<UnsyncContent<T>>) -> Self {
+    pub fn content(self, content: Vec<UnsyncContent>) -> Self {
         Self { content, ..self }
     }
 
-    pub fn thumb(self, thumb: Option<UnsyncFileMeta<T>>) -> Self {
+    pub fn thumb(self, thumb: Option<UnsyncFileMeta>) -> Self {
         Self { thumb, ..self }
     }
 
@@ -367,26 +300,10 @@ impl<T> UnsyncPost<T> {
             ..self
         }
     }
-
-    /// import this post into the archive, synchronizing it with the database.
-    ///
-    /// This is abbreviation for [import_post](crate::PostArchiverManager::import_post)
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if there was an error accessing the database.
-    pub fn sync<U>(self, manager: &PostArchiverManager<U>) -> Result<(PostId, Vec<(PathBuf, T)>)>
-    where
-        U: PostArchiverConnection,
-    {
-        let (id, _, _, files_data) = manager.import_post(self, true)?;
-
-        Ok((id, files_data))
-    }
 }
 
 #[derive(Debug, Clone)]
-pub enum UnsyncContent<T> {
+pub enum UnsyncContent {
     Text(String),
-    File(UnsyncFileMeta<T>),
+    File(UnsyncFileMeta),
 }

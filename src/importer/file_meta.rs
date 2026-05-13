@@ -1,11 +1,13 @@
-use std::{collections::HashMap, fs::File, hash::Hash, path::PathBuf};
+use std::{collections::HashMap, hash::Hash};
 
 use rusqlite::params;
 use serde_json::Value;
 
 use crate::{
     error::Result,
-    manager::{PostArchiverConnection, PostArchiverManager, UpdateFileMeta, WritableFileMeta},
+    manager::{
+        file_meta::FileMetaContent, PostArchiverConnection, PostArchiverManager, UpdateFileMeta,
+    },
     FileMetaId, Post, PostId,
 };
 
@@ -21,11 +23,7 @@ where
     /// # Errors
     ///
     /// Returns `Error` if there was an error accessing the database.
-    pub fn import_file_meta<U>(
-        &self,
-        post: PostId,
-        file_meta: &UnsyncFileMeta<U>,
-    ) -> Result<FileMetaId> {
+    pub fn import_file_meta(&self, post: PostId, file_meta: &UnsyncFileMeta) -> Result<FileMetaId> {
         // find
         if let Some(id) = self.find_file_meta(post, &file_meta.filename)? {
             // update extra
@@ -33,6 +31,12 @@ where
                 .update(UpdateFileMeta::default().extra(file_meta.extra.clone()))?;
             return Ok(id);
         }
+
+        let path = self.path.join(Post::directory(post));
+        if !path.exists() {
+            std::fs::create_dir_all(&path)?;
+        }
+        file_meta.data.write(&path.join(&file_meta.filename))?;
 
         // insert
         let mut ins_stmt = self.conn().prepare_cached(
@@ -48,107 +52,38 @@ where
             |row| row.get(0),
         )?)
     }
-
-    /// Create or update a file metadata entry in the archive, and write `file_meta.data` to disk.
-    ///
-    /// Behaves like [`import_file_meta`](Self::import_file_meta) for the database entry, then
-    /// writes the content of `file_meta.data` to
-    /// `<archive_path>/<post_dir>/<filename>`, creating intermediate directories as needed.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if there was an error accessing the database.
-    pub fn import_file_meta_with_content<U>(
-        &self,
-        post: PostId,
-        file_meta: &UnsyncFileMeta<U>,
-    ) -> Result<FileMetaId>
-    where
-        U: WritableFileMeta,
-    {
-        let id = self.import_file_meta(post, file_meta)?;
-
-        let path = self
-            .path
-            .join(Post::directory(post))
-            .join(&file_meta.filename);
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let mut file = File::create(&path)?;
-        file_meta.data.write_to_file(&mut file)?;
-
-        Ok(id)
-    }
-
-    /// Create or update a file metadata entry in the archive by moving a buffered file into it.
-    ///
-    /// Behaves like [`import_file_meta`](Self::import_file_meta) for the database entry, then
-    /// moves the already-buffered file at `file_meta.data` to
-    /// `<archive_path>/<post_dir>/<filename>`, creating intermediate directories as needed.
-    ///
-    /// Uses [`std::fs::rename`] for an atomic, zero-copy move. The source file and the archive
-    /// **must reside on the same filesystem**; cross-device moves will fail.
-    /// Use [`import_file_meta_with_content`](Self::import_file_meta_with_content) instead when
-    /// the source and destination may be on different filesystems.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if there was an error accessing the database.
-    pub fn import_file_meta_by_rename(
-        &self,
-        post: PostId,
-        file_meta: &UnsyncFileMeta<PathBuf>,
-    ) -> Result<FileMetaId> {
-        let id = self.import_file_meta(post, file_meta)?;
-
-        let path = self
-            .path
-            .join(Post::directory(post))
-            .join(&file_meta.filename);
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        std::fs::rename(&file_meta.data, &path)?;
-
-        Ok(id)
-    }
 }
 
 /// Represents a file metadata that is not yet synced to the database.
 #[derive(Debug, Clone)]
-pub struct UnsyncFileMeta<T> {
+pub struct UnsyncFileMeta {
     pub filename: String,
     pub mime: String,
     pub extra: HashMap<String, Value>,
-    pub data: T,
+    pub data: FileMetaContent,
 }
 
-impl<T> Hash for UnsyncFileMeta<T> {
+impl Hash for UnsyncFileMeta {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.filename.hash(state);
         self.mime.hash(state);
     }
 }
 
-impl<T> PartialEq for UnsyncFileMeta<T> {
+impl PartialEq for UnsyncFileMeta {
     fn eq(&self, other: &Self) -> bool {
         self.filename == other.filename && self.mime == other.mime && self.extra == other.extra
     }
 }
 
-impl<T> Eq for UnsyncFileMeta<T> {}
+impl Eq for UnsyncFileMeta {}
 
-impl<T> UnsyncFileMeta<T> {
-    pub fn new(filename: String, mime: String, data: T) -> Self {
+impl UnsyncFileMeta {
+    pub fn new(filename: String, mime: String, data: FileMetaContent) -> Self {
         Self {
             filename,
             mime,
-            data,
+            data: data.into(),
             extra: HashMap::new(),
         }
     }

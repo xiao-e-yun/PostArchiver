@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs::{self, File},
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use serde_json::Value;
 
@@ -13,13 +18,13 @@ use crate::{
 ///
 /// Fields left as `None` are not modified.
 #[derive(Debug, Clone)]
-pub struct UpdateFileMeta<T> {
+pub struct UpdateFileMeta {
     pub mime: Option<String>,
     pub extra: Option<HashMap<String, Value>>,
-    pub content: Option<T>,
+    pub content: Option<FileMetaContent>,
 }
 
-impl Default for UpdateFileMeta<()> {
+impl Default for UpdateFileMeta {
     fn default() -> Self {
         UpdateFileMeta {
             mime: None,
@@ -29,7 +34,16 @@ impl Default for UpdateFileMeta<()> {
     }
 }
 
-impl<T> UpdateFileMeta<T> {
+impl UpdateFileMeta {
+    /// Convert this update to a version, for use in the `update` method.
+    pub fn new() -> UpdateFileMeta {
+        UpdateFileMeta {
+            content: None,
+            mime: None,
+            extra: None,
+        }
+    }
+
     /// Set the MIME type.
     pub fn mime(mut self, mime: String) -> Self {
         self.mime = Some(mime);
@@ -40,79 +54,16 @@ impl<T> UpdateFileMeta<T> {
         self.extra = Some(extra);
         self
     }
-    pub fn content<U: WritableFileMeta>(self, content: U) -> UpdateFileMeta<U> {
-        UpdateFileMeta {
-            content: Some(content),
-            mime: self.mime,
-            extra: self.extra,
-        }
+    /// Set the file content by path.
+    pub fn path(mut self, content: impl AsRef<Path>) -> UpdateFileMeta {
+        self.content = Some(FileMetaContent::path(content));
+        self
     }
-}
 
-impl UpdateFileMeta<()> {
-    /// Convert this update to a version without content, for use in the `update` method.
-    pub fn new() -> UpdateFileMeta<()> {
-        UpdateFileMeta {
-            content: None,
-            mime: None,
-            extra: None,
-        }
-    }
-}
-
-pub trait WritableFileMeta {
-    fn write_to_file(&self, file: &mut File) -> std::io::Result<()>;
-}
-
-macro_rules! can_be_content {
-    ($t:ty) => {
-        impl UpdateFileMeta<$t> {
-            pub fn new(content: $t) -> Self {
-                Self {
-                    content: Some(content),
-                    mime: None,
-                    extra: None,
-                }
-            }
-        }
-    };
-}
-
-can_be_content!(File);
-impl WritableFileMeta for File {
-    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
-        let mut src_file = self.try_clone()?;
-        std::io::copy(&mut src_file, file)?;
-        file.sync_data()?;
-        Ok(())
-    }
-}
-
-can_be_content!(Vec<u8>);
-impl WritableFileMeta for Vec<u8> {
-    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
-        file.write_all(self)?;
-        file.sync_data()?;
-        Ok(())
-    }
-}
-
-can_be_content!(PathBuf);
-impl WritableFileMeta for PathBuf {
-    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
-        let mut src_file = File::open(self)?;
-        std::io::copy(&mut src_file, file)?;
-        file.sync_data()?;
-        Ok(())
-    }
-}
-
-can_be_content!(String);
-impl WritableFileMeta for String {
-    fn write_to_file(&self, file: &mut File) -> std::io::Result<()> {
-        file.write_all(self.as_bytes())?;
-        file.sync_data()?;
-        Ok(())
+    /// Set the file content by bytes.
+    pub fn content(mut self, content: Vec<u8>) -> Self {
+        self.content = Some(FileMetaContent::content(content));
+        self
     }
 }
 
@@ -143,7 +94,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
     /// Apply a batch of field updates to this file metadata in a single SQL statement.
     ///
     /// Only fields set on `update` (i.e. `Some(...)`) are written to the database.
-    pub fn update<T>(&self, update: UpdateFileMeta<T>) -> Result<()> {
+    pub fn update(&self, update: UpdateFileMeta) -> Result<()> {
         use rusqlite::types::ToSql;
 
         let extra_json = update.extra.map(|e| serde_json::to_string(&e).unwrap());
@@ -163,30 +114,14 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
         push!(update.mime, "mime = ?");
         push!(extra_json, "extra = ?");
 
+        if !sets.is_empty() {
+            return Ok(());
+        }
+
         let sql = format!("UPDATE file_metas SET {} WHERE id = ?", sets.join(", "));
         let id = self.id();
         params.push(&id);
         self.conn().execute(&sql, params.as_slice())?;
-
-        Ok(())
-    }
-
-    pub fn update_with_content<T>(&self, mut update: UpdateFileMeta<T>) -> Result<()>
-    where
-        T: WritableFileMeta,
-    {
-        let content = update.content.take();
-        self.update(UpdateFileMeta {
-            content: None,
-            ..update
-        })?;
-
-        let path = self.get_path()?;
-
-        if let Some(content) = content {
-            let mut file = File::create(path)?;
-            content.write_to_file(&mut file)?;
-        }
 
         Ok(())
     }
@@ -201,5 +136,36 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
             let filename: String = row.get(1)?;
             Ok(Post::directory(post_id).join(filename))
         })?)
+    }
+}
+
+//=============================================================
+// File content
+//=============================================================
+
+#[derive(Debug, Clone)]
+pub enum FileMetaContent {
+    Content(Vec<u8>),
+    Path(PathBuf),
+}
+
+impl FileMetaContent {
+    pub fn content(content: Vec<u8>) -> Self {
+        FileMetaContent::Content(content)
+    }
+    pub fn path(path: impl AsRef<Path>) -> Self {
+        FileMetaContent::Path(path.as_ref().to_path_buf())
+    }
+    pub fn write(&self, path: &Path) -> Result<()> {
+        match self {
+            FileMetaContent::Content(content) => {
+                let mut file = File::create(path)?;
+                file.write_all(content)?;
+            }
+            FileMetaContent::Path(src_path) => {
+                fs::copy(src_path, path)?;
+            }
+        };
+        Ok(())
     }
 }
