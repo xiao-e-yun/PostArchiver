@@ -1,17 +1,10 @@
-use std::hash::Hash;
+use std::{hash::Hash, ops::Deref};
 
-use rusqlite::params;
+use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::{
-    error::Result,
-    manager::{PostArchiverConnection, PostArchiverManager},
-    PlatformId, TagId,
-};
+use crate::{error::Result, importer::Importer, PlatformId, TagId};
 
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
+impl<C: Deref<Target = Connection>> Importer<'_, C> {
     /// Import a tag into the archive.
     ///
     /// If the tag already exists, it returns the existing ID.
@@ -20,29 +13,22 @@ where
     ///
     /// Returns `Error` if there was an error accessing the database.
     pub fn import_tag(&self, tag: UnsyncTag) -> Result<TagId> {
-        // find
-        if let Some(id) = self.find_tag(&tag.name, tag.platform)? {
+        if let Some(id) = self.lookup_tag(&tag.name, tag.platform)? {
             return Ok(id);
         }
 
-        // insert
         let mut ins_stmt = self
-            .conn()
+            .conn
             .prepare_cached("INSERT INTO tags (name, platform) VALUES (?, ?) RETURNING id")?;
         Ok(ins_stmt.query_row(params![tag.name, tag.platform], |row| row.get(0))?)
     }
 
-    /// Import multiple tags into the archive.
-    ///
-    /// If a tag already exists, it returns the existing ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if there was an error accessing the database.
-    pub fn import_tags(&self, tags: impl IntoIterator<Item = UnsyncTag>) -> Result<Vec<TagId>> {
-        tags.into_iter()
-            .map(|tag| self.import_tag(tag))
-            .collect::<Result<Vec<TagId>>>()
+    pub fn lookup_tag(&self, name: &str, platform: Option<PlatformId>) -> Result<Option<TagId>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id FROM tags WHERE name = ? AND platform IS ?")?;
+        let query = stmt.query_row(params![name, platform], |row| row.get(0));
+        Ok(query.optional()?)
     }
 }
 

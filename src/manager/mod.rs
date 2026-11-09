@@ -1,9 +1,5 @@
+use rusqlite::Connection;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use cached::TimedSizedCache;
-use rusqlite::{Connection, Transaction};
 
 use crate::error::{Error, Result};
 use crate::utils::{DATABASE_NAME, VERSION};
@@ -41,10 +37,9 @@ pub use tag::UpdateTag;
 /// let manager = PostArchiverManager::open_or_create("./data").unwrap();
 /// ```
 #[derive(Debug)]
-pub struct PostArchiverManager<C = Connection> {
-    pub caches: Arc<Mutex<ManagerCaches>>,
+pub struct PostArchiverManager {
     pub path: PathBuf,
-    conn: C,
+    pub conn: Connection,
 }
 
 impl PostArchiverManager {
@@ -81,11 +76,7 @@ impl PostArchiverManager {
             [VERSION],
         )?;
 
-        Ok(Self {
-            conn,
-            path,
-            caches: Default::default(),
-        })
+        Ok(Self { conn, path })
     }
 
     /// Opens an existing archive at the specified path
@@ -112,7 +103,7 @@ impl PostArchiverManager {
         // check version
         if let Some(manager) = &manager {
             let version: String = manager
-                .conn()
+                .conn
                 .query_row("SELECT version FROM post_archiver_meta", [], |row| {
                     row.get(0)
                 })
@@ -157,11 +148,7 @@ impl PostArchiverManager {
 
         let conn = Connection::open(db_path)?;
 
-        Ok(Some(Self {
-            conn,
-            path,
-            caches: Default::default(),
-        }))
+        Ok(Some(Self { conn, path }))
     }
 
     /// Opens an existing archive or creates a new one if it doesn't exist
@@ -203,93 +190,6 @@ impl PostArchiverManager {
             [VERSION],
         )?;
 
-        Ok(Self {
-            conn,
-            path,
-            caches: Default::default(),
-        })
-    }
-
-    /// Starts a new transaction
-    ///
-    /// # Examples
-    /// ```no_run
-    /// use post_archiver::manager::PostArchiverManager;
-    ///
-    /// let mut manager = PostArchiverManager::open_in_memory().unwrap();
-    /// let mut tx = manager.transaction().unwrap();
-    /// // ... perform operations
-    /// tx.commit().unwrap();
-    /// ```
-    pub fn transaction(&mut self) -> Result<PostArchiverManager<Transaction<'_>>> {
-        Ok(PostArchiverManager {
-            path: self.path.clone(),
-            caches: self.caches.clone(),
-            conn: self.conn.transaction()?,
-        })
-    }
-}
-
-impl PostArchiverManager<Transaction<'_>> {
-    /// Commits the transaction
-    pub fn commit(self) -> Result<()> {
-        Ok(self.conn.commit()?)
-    }
-}
-
-impl<C> PostArchiverManager<C>
-where
-    C: PostArchiverConnection,
-{
-    /// Returns a reference to the underlying database connection
-    pub fn conn(&self) -> &Connection {
-        self.conn.connection()
-    }
-
-    /// Bind an entity ID to get a [`Binded`] context for update/delete/relation operations.
-    ///
-    /// The type parameter is inferred from the ID argument — no turbofish needed.
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use post_archiver::manager::PostArchiverManager;
-    /// # use post_archiver::PostId;
-    /// # fn example(manager: &PostArchiverManager, post_id: PostId) {
-    /// let binded = manager.bind(post_id);
-    /// // binded is Binded<'_, PostId>
-    /// # }
-    /// ```
-    pub fn bind<Id: BindableId>(&self, id: Id) -> Binded<'_, Id, C> {
-        Binded::new(self, id)
-    }
-}
-
-/// Trait for types that can provide a database connection
-pub trait PostArchiverConnection {
-    fn connection(&self) -> &Connection;
-}
-
-impl PostArchiverConnection for Connection {
-    fn connection(&self) -> &Connection {
-        self
-    }
-}
-
-impl PostArchiverConnection for Transaction<'_> {
-    fn connection(&self) -> &Connection {
-        self
-    }
-}
-
-#[derive(Debug)]
-pub struct ManagerCaches {
-    pub counts: TimedSizedCache<(String, String), u64>,
-}
-
-impl Default for ManagerCaches {
-    fn default() -> Self {
-        Self {
-            counts: TimedSizedCache::with_size_and_lifespan(128, Duration::from_mins(30)),
-        }
+        Ok(Self { conn, path })
     }
 }

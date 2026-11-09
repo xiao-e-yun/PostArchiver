@@ -2,10 +2,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    error::Result,
-    manager::{binded::Binded, PostArchiverConnection},
-    query::FromQuery,
-    Alias, Author, AuthorId, FileMetaId, PlatformId, PostId,
+    error::Result, manager::binded::Binded, query::FromQuery, Alias, Author, AuthorId, FileMetaId,
+    PlatformId, PostId,
 };
 
 /// Specifies how to update an author's thumbnail.
@@ -67,11 +65,11 @@ impl UpdateAuthor {
 //=============================================================
 // Update / Delete
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
+impl<'a> Binded<'a, AuthorId> {
     /// Get this author's current data from the database.
     pub fn value(&self) -> Result<Author> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT * FROM authors WHERE id = ?")?;
         Ok(stmt.query_row([self.id()], Author::from_row)?)
     }
@@ -80,7 +78,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     ///
     /// This also removes all associated aliases and author-post relationships.
     pub fn delete(self) -> Result<()> {
-        self.conn()
+        self.conn
             .execute("DELETE FROM authors WHERE id = ?", [self.id()])?;
         Ok(())
     }
@@ -137,7 +135,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
         params.push(&id);
 
         let sql = format!("UPDATE authors SET {} WHERE id = ?", sets.join(", "));
-        self.conn().execute(&sql, params.as_slice())?;
+        self.conn.execute(&sql, params.as_slice())?;
         Ok(())
     }
 }
@@ -145,11 +143,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
 //=============================================================
 // Relations: Aliases
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
+impl<'a> Binded<'a, AuthorId> {
     /// List all aliases associated with this author.
     pub fn list_aliases(&self) -> Result<Vec<Alias>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")?;
         let rows = stmt.query_map([self.id()], Alias::from_row)?;
         rows.collect::<std::result::Result<_, _>>()
@@ -161,7 +159,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     /// # Parameters
     /// - aliases: Vec of (source, platform, link)
     pub fn add_aliases(&self, aliases: Vec<(String, PlatformId, Option<String>)>) -> Result<()> {
-        let mut stmt = self.conn().prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "INSERT OR REPLACE INTO author_aliases (target, source, platform, link) VALUES (?, ?, ?, ?)",
         )?;
         for (source, platform, link) in aliases {
@@ -175,7 +173,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
     /// # Parameters
     /// - aliases: &[(source, platform)]
     pub fn remove_aliases(&self, aliases: &[(String, PlatformId)]) -> Result<()> {
-        let mut stmt = self.conn().prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "DELETE FROM author_aliases WHERE target = ? AND source = ? AND platform = ?",
         )?;
         for (source, platform) in aliases {
@@ -186,7 +184,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
 
     /// Set an alias's name.
     pub fn set_alias_name(&self, alias: &(String, PlatformId), name: String) -> Result<()> {
-        let mut stmt = self.conn().prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "UPDATE author_aliases SET source = ? WHERE target = ? AND source = ? AND platform = ?",
         )?;
         stmt.execute(params![name, self.id(), alias.0, alias.1])?;
@@ -199,7 +197,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
         alias: &(String, PlatformId),
         platform: PlatformId,
     ) -> Result<()> {
-        let mut stmt = self.conn().prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "UPDATE author_aliases SET platform = ? WHERE target = ? AND source = ? AND platform = ?",
         )?;
         stmt.execute(params![platform, self.id(), alias.0, alias.1])?;
@@ -208,7 +206,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
 
     /// Set an alias's link.
     pub fn set_alias_link(&self, alias: &(String, PlatformId), link: Option<String>) -> Result<()> {
-        let mut stmt = self.conn().prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "UPDATE author_aliases SET link = ? WHERE target = ? AND source = ? AND platform = ?",
         )?;
         stmt.execute(params![link, self.id(), alias.0, alias.1])?;
@@ -219,11 +217,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
 //=============================================================
 // Relations: Posts
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, AuthorId, C> {
+impl<'a> Binded<'a, AuthorId> {
     /// List all post IDs associated with this author.
     pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT post FROM author_posts WHERE author = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()

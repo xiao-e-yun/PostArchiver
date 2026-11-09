@@ -2,10 +2,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::{
-    error::Result,
-    manager::{binded::Binded, PostArchiverConnection},
-    query::FromQuery,
-    AuthorId, CollectionId, Comment, Content, FileMetaId, PlatformId, Post, PostId, TagId,
+    error::Result, manager::binded::Binded, query::FromQuery, AuthorId, CollectionId, Comment,
+    Content, FileMetaId, PlatformId, Post, PostId, TagId,
 };
 
 /// Specifies how to update a post's `updated` timestamp.
@@ -84,11 +82,11 @@ impl UpdatePost {
 //=============================================================
 // Update / Delete
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
+impl<'a> Binded<'a, PostId> {
     /// Get this post's current data from the database.
     pub fn value(&self) -> Result<Post> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT * FROM posts WHERE id = ?")?;
         Ok(stmt.query_row([self.id()], Post::from_row)?)
     }
@@ -98,9 +96,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// This also removes all associated file metadata, author associations,
     /// tag associations, and collection associations.
     pub fn delete(self) -> Result<()> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("DELETE FROM posts WHERE id = ?")?;
+        let mut stmt = self.conn.prepare_cached("DELETE FROM posts WHERE id = ?")?;
         stmt.execute([self.id()])?;
         Ok(())
     }
@@ -155,14 +151,14 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
         params.push(&id);
 
         let sql = format!("UPDATE posts SET {} WHERE id = ?", sets.join(", "));
-        self.conn().execute(&sql, params.as_slice())?;
+        self.conn.execute(&sql, params.as_slice())?;
         Ok(())
     }
 
     /// List all file metadata IDs associated with this post.
     pub fn list_file_metas(&self) -> Result<Vec<FileMetaId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT id FROM file_metas WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()
@@ -173,11 +169,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
 //=============================================================
 // Relations: Authors
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
+impl<'a> Binded<'a, PostId> {
     /// List all author IDs associated with this post.
     pub fn list_authors(&self) -> Result<Vec<AuthorId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT author FROM author_posts WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()
@@ -188,7 +184,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Duplicate associations are silently ignored.
     pub fn add_authors(&self, authors: &[AuthorId]) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("INSERT OR IGNORE INTO author_posts (author, post) VALUES (?, ?)")?;
         for author in authors {
             stmt.execute(params![author, self.id()])?;
@@ -199,7 +195,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Remove one or more authors from this post.
     pub fn remove_authors(&self, authors: &[AuthorId]) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("DELETE FROM author_posts WHERE post = ? AND author = ?")?;
         for author in authors {
             stmt.execute(params![self.id(), author])?;
@@ -211,11 +207,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
 //=============================================================
 // Relations: Tags
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
+impl<'a> Binded<'a, PostId> {
     /// List all tag IDs associated with this post.
     pub fn list_tags(&self) -> Result<Vec<TagId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT tag FROM post_tags WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()
@@ -226,7 +222,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Duplicate associations are silently ignored.
     pub fn add_tags(&self, tags: &[TagId]) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("INSERT OR IGNORE INTO post_tags (post, tag) VALUES (?, ?)")?;
         for tag in tags {
             stmt.execute(params![self.id(), tag])?;
@@ -237,7 +233,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Remove one or more tags from this post.
     pub fn remove_tags(&self, tags: &[TagId]) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("DELETE FROM post_tags WHERE post = ? AND tag = ?")?;
         for tag in tags {
             stmt.execute(params![self.id(), tag])?;
@@ -249,11 +245,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
 //=============================================================
 // Relations: Collections
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
+impl<'a> Binded<'a, PostId> {
     /// List all collection IDs associated with this post.
     pub fn list_collections(&self) -> Result<Vec<CollectionId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT collection FROM collection_posts WHERE post = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()
@@ -263,7 +259,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Associate one or more collections with this post.
     /// Duplicate associations are silently ignored.
     pub fn add_collections(&self, collections: &[CollectionId]) -> Result<()> {
-        let mut stmt = self.conn().prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "INSERT OR IGNORE INTO collection_posts (collection, post) VALUES (?, ?)",
         )?;
         for collection in collections {
@@ -275,7 +271,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PostId, C> {
     /// Remove one or more collections from this post.
     pub fn remove_collections(&self, collections: &[CollectionId]) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("DELETE FROM collection_posts WHERE collection = ? AND post = ?")?;
         for collection in collections {
             stmt.execute(params![collection, self.id()])?;

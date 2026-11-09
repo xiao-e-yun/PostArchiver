@@ -58,7 +58,6 @@ CREATE TABLE
         FOREIGN KEY (thumb) REFERENCES file_metas (id) ON DELETE SET NULL
     );
 
-CREATE INDEX posts_source_idx ON posts (source);
 CREATE INDEX posts_updated_idx ON posts (updated);
 CREATE INDEX posts_platform_idx ON posts (platform);
 
@@ -129,3 +128,5 @@ CREATE TABLE
         extra JSON NOT NULL DEFAULT '{}',
         FOREIGN KEY (post) REFERENCES posts (id) ON DELETE CASCADE
     );
+
+CREATE UNIQUE INDEX file_metas_idx ON file_metas (post, filename);

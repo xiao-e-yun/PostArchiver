@@ -1,8 +1,5 @@
 use crate::{
-    error::Result,
-    manager::{binded::Binded, PostArchiverConnection},
-    query::FromQuery,
-    PlatformId, PostId, Tag, TagId,
+    error::Result, manager::binded::Binded, query::FromQuery, PlatformId, PostId, Tag, TagId,
 };
 
 /// Builder for updating a tag's fields.
@@ -65,11 +62,11 @@ impl FindTag for (&str, Option<PlatformId>) {
 //=============================================================
 // Update / Delete
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
+impl<'a> Binded<'a, TagId> {
     /// Get this tag's current data from the database.
     pub fn value(&self) -> Result<Tag> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT * FROM tags WHERE id = ?")?;
         Ok(stmt.query_row([self.id()], Tag::from_row)?)
     }
@@ -78,9 +75,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
     ///
     /// This will also remove all post-tag relationships, but will not delete the posts themselves.
     pub fn delete(self) -> Result<()> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("DELETE FROM tags WHERE id = ?")?;
+        let mut stmt = self.conn.prepare_cached("DELETE FROM tags WHERE id = ?")?;
         stmt.execute([self.id()])?;
         Ok(())
     }
@@ -114,7 +109,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
         params.push(&id);
 
         let sql = format!("UPDATE tags SET {} WHERE id = ?", sets.join(", "));
-        self.conn().execute(&sql, params.as_slice())?;
+        self.conn.execute(&sql, params.as_slice())?;
         Ok(())
     }
 }
@@ -122,11 +117,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
 //=============================================================
 // Relations: Posts
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, TagId, C> {
+impl<'a> Binded<'a, TagId> {
     /// List all post IDs associated with this tag.
     pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT post FROM post_tags WHERE tag = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()

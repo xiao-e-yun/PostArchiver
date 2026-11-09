@@ -1,10 +1,12 @@
 use core::fmt;
+use rusqlite::ToSql;
 use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
 pub trait HasId {
-    type Id: std::hash::Hash + Eq + Clone;
+    type Id: ToSql + Hash + Eq + Clone;
     fn id(&self) -> Self::Id;
 }
 

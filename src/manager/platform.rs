@@ -1,8 +1,5 @@
 use crate::{
-    error::Result,
-    manager::{binded::Binded, PostArchiverConnection},
-    query::FromQuery,
-    Platform, PlatformId, PostId, TagId,
+    error::Result, manager::binded::Binded, query::FromQuery, Platform, PlatformId, PostId, TagId,
 };
 
 /// Builder for updating a platform's fields.
@@ -24,11 +21,11 @@ impl UpdatePlatform {
 //=============================================================
 // Update / Delete
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
+impl<'a> Binded<'a, PlatformId> {
     /// Get this platform's current data from the database.
     pub fn value(&self) -> Result<Platform> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT * FROM platforms WHERE id = ?")?;
         Ok(stmt.query_row([self.id()], Platform::from_row)?)
     }
@@ -39,7 +36,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
     /// Tags associated with the platform will be deleted.
     pub fn delete(self) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("DELETE FROM platforms WHERE id = ?")?;
         stmt.execute([self.id()])?;
         Ok(())
@@ -73,7 +70,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
         params.push(&id);
 
         let sql = format!("UPDATE platforms SET {} WHERE id = ?", sets.join(", "));
-        self.conn().execute(&sql, params.as_slice())?;
+        self.conn.execute(&sql, params.as_slice())?;
         Ok(())
     }
 }
@@ -81,11 +78,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
 //=============================================================
 // Relations: Tags / Posts
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
+impl<'a> Binded<'a, PlatformId> {
     /// List all tag IDs associated with this platform.
     pub fn list_tags(&self) -> Result<Vec<TagId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT id FROM tags WHERE platform = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()
@@ -95,7 +92,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, PlatformId, C> {
     /// List all post IDs associated with this platform.
     pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT id FROM posts WHERE platform = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()

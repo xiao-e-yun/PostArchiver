@@ -1,20 +1,16 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::{
     error::Result,
-    manager::{
-        file_meta::FileMetaContent, PostArchiverConnection, PostArchiverManager, UpdateFileMeta,
-    },
+    importer::{Importer, SavepointExt},
+    manager::{PostArchiverBindExt, UpdateFileMeta},
     FileMetaId, Post, PostId,
 };
 
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
+impl<C: SavepointExt> Importer<'_, C> {
     /// Create or update a file metadata entry in the archive.
     ///
     /// Takes a file metadata object and either creates a new entry or updates an existing one.
@@ -23,34 +19,56 @@ where
     /// # Errors
     ///
     /// Returns `Error` if there was an error accessing the database.
-    pub fn import_file_meta(&self, post: PostId, file_meta: &UnsyncFileMeta) -> Result<FileMetaId> {
-        // find
-        if let Some(id) = self.find_file_meta(post, &file_meta.filename)? {
-            // update extra
-            self.bind(id)
-                .update(UpdateFileMeta::default().extra(file_meta.extra.clone()))?;
-            return Ok(id);
-        }
+    pub fn import_file_meta(
+        &mut self,
+        post: PostId,
+        file_meta: UnsyncFileMeta,
+    ) -> Result<FileMetaId> {
+        let id: Option<FileMetaId> = self.lookup_file_meta(post, &file_meta)?;
+
+        let sp = self.conn.savepoint()?;
+        let id = match id {
+            Some(id) => {
+                let upd = UpdateFileMeta::default().extra(file_meta.extra.clone());
+                sp.bind(id).update(upd)?;
+                id
+            }
+            None => {
+                let mut ins_stmt = sp.prepare_cached(
+                    "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
+                )?;
+                ins_stmt.query_row(
+                    params![
+                        post,
+                        file_meta.filename,
+                        file_meta.mime,
+                        serde_json::to_string(&file_meta.extra).unwrap()
+                    ],
+                    |row| row.get(0),
+                )?
+            }
+        };
 
         let path = self.path.join(Post::directory(post));
-        if !path.exists() {
-            std::fs::create_dir_all(&path)?;
-        }
-        file_meta.data.write(&path.join(&file_meta.filename))?;
+        std::fs::create_dir_all(&path)?;
 
-        // insert
-        let mut ins_stmt = self.conn().prepare_cached(
-            "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
-        )?;
-        Ok(ins_stmt.query_row(
-            params![
-                post,
-                file_meta.filename,
-                file_meta.mime,
-                serde_json::to_string(&file_meta.extra).unwrap()
-            ],
-            |row| row.get(0),
-        )?)
+        let target = path.join(&file_meta.filename);
+        std::fs::rename(file_meta.source, target)?;
+        sp.commit()?;
+
+        Ok(id)
+    }
+
+    pub fn lookup_file_meta(
+        &self,
+        post: PostId,
+        file_meta: &UnsyncFileMeta,
+    ) -> Result<Option<FileMetaId>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
+        let query = stmt.query_row(params![post, file_meta.filename], |row| row.get(0));
+        Ok(query.optional()?)
     }
 }
 
@@ -60,7 +78,7 @@ pub struct UnsyncFileMeta {
     pub filename: String,
     pub mime: String,
     pub extra: HashMap<String, Value>,
-    pub data: FileMetaContent,
+    pub source: PathBuf,
 }
 
 impl Hash for UnsyncFileMeta {
@@ -79,11 +97,11 @@ impl PartialEq for UnsyncFileMeta {
 impl Eq for UnsyncFileMeta {}
 
 impl UnsyncFileMeta {
-    pub fn new(filename: String, mime: String, data: FileMetaContent) -> Self {
+    pub fn new(filename: String, mime: String, source: PathBuf) -> Self {
         Self {
             filename,
             mime,
-            data: data.into(),
+            source,
             extra: HashMap::new(),
         }
     }

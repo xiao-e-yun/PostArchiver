@@ -1,70 +1,65 @@
-use chrono::{DateTime, Utc};
-use rusqlite::params;
+use std::ops::Deref;
+
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
     error::Result,
-    manager::{PostArchiverConnection, PostArchiverManager, UpdateAuthor},
+    importer::{Importer, SavepointExt},
+    manager::{PostArchiverBindExt, UpdateAuthor},
     AuthorId, PlatformId,
 };
 
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
-    /// Import an author into the archive.
-    ///
-    /// If the author already exists (by aliases), it updates their name, aliases, and updated date.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if there was an error accessing the database.
-    pub fn import_author(&self, author: UnsyncAuthor) -> Result<AuthorId> {
-        // find by aliases
-        let id = {
-            let mut found: Option<AuthorId> = None;
-            for alias in &author.aliases {
-                if let Some(id) = self.find_author_by_alias(&alias.source, alias.platform)? {
-                    found = Some(id);
-                    break;
-                }
-            }
-            found
-        };
-
-        let aliases = author
-            .aliases
-            .into_iter()
-            .map(|alias| (alias.source, alias.platform, alias.link))
-            .collect::<Vec<_>>();
-
-        match id {
+impl<C: SavepointExt> Importer<'_, C> {
+    pub fn import_author(&mut self, author: UnsyncAuthor) -> Result<AuthorId> {
+        let (id, unlinked_aliases) = self.lookup_author(author.clone())?;
+        let id = match id {
             Some(id) => {
-                let b = self.bind(id);
-                let mut upd = UpdateAuthor::default().name(author.name);
-                if let Some(updated) = author.updated {
-                    upd = upd.updated(updated);
-                }
-                b.update(upd)?;
-
-                b.add_aliases(aliases)?;
-
-                Ok(id)
+                let sp = self.savepoint()?;
+                let b = sp.conn.bind(id);
+                b.update(UpdateAuthor::default().name(author.name.clone()))?;
+                b.add_aliases(unlinked_aliases)?;
+                sp.commit()?;
+                id
             }
             None => {
-                // insert
-                let mut stmt = self.conn().prepare_cached(
-                    "INSERT INTO authors (name, updated) VALUES (?, ?) RETURNING id",
-                )?;
-                let id: AuthorId = stmt.query_row(
-                    params![author.name, author.updated.unwrap_or_else(Utc::now)],
-                    |row| row.get(0),
-                )?;
+                let sp = self.conn.savepoint()?;
+                let mut stmt =
+                    sp.prepare_cached("INSERT INTO authors (name) VALUES (?) RETURNING id")?;
 
-                self.bind(id).add_aliases(aliases)?;
-
-                Ok(id)
+                let id: AuthorId = stmt.query_row(params![author.name], |row| row.get(0))?;
+                sp.bind(id).add_aliases(unlinked_aliases)?;
+                drop(stmt);
+                sp.commit()?;
+                id
             }
+        };
+
+        Ok(id)
+    }
+}
+
+impl<C: Deref<Target = Connection>> Importer<'_, C> {
+    pub fn lookup_author(
+        &self,
+        author: UnsyncAuthor,
+    ) -> Result<(Option<AuthorId>, Vec<(String, PlatformId, Option<String>)>)> {
+        let mut unlinked_aliases: Vec<(String, PlatformId, Option<String>)> = vec![];
+        let mut id: Option<AuthorId> = None;
+
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT target FROM author_aliases WHERE platform = ? AND source = ?",
+        )?;
+        for alias in &author.aliases {
+            let query = stmt.query_row(params![alias.platform, alias.source], |row| row.get(0));
+            if let Some(author_id) = query.optional()? {
+                id = id.or(Some(author_id));
+                continue;
+            }
+
+            unlinked_aliases.push(alias.clone().into());
         }
+
+        Ok((id, unlinked_aliases))
     }
 }
 
@@ -72,7 +67,6 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsyncAuthor {
     name: String,
-    updated: Option<DateTime<Utc>>,
     aliases: Vec<UnsyncAlias>,
 }
 
@@ -80,7 +74,6 @@ impl UnsyncAuthor {
     pub fn new(name: String) -> Self {
         Self {
             name,
-            updated: None,
             aliases: Vec::new(),
         }
     }
@@ -90,22 +83,6 @@ impl UnsyncAuthor {
     }
     pub fn aliases(self, aliases: Vec<UnsyncAlias>) -> Self {
         Self { aliases, ..self }
-    }
-    pub fn updated(self, updated: Option<DateTime<Utc>>) -> Self {
-        Self { updated, ..self }
-    }
-    /// Import it into the archive.
-    ///
-    /// If the author already exists (by aliases), it updates their name, aliases, and updated date.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if there was an error accessing the database.
-    pub fn sync<T>(self, manager: &PostArchiverManager<T>) -> Result<AuthorId>
-    where
-        T: PostArchiverConnection,
-    {
-        manager.import_author(self)
     }
 }
 
@@ -142,5 +119,11 @@ impl UnsyncAlias {
     pub fn link<S: Into<String>>(mut self, link: S) -> Self {
         self.link = Some(link.into());
         self
+    }
+}
+
+impl Into<(String, PlatformId, Option<String>)> for UnsyncAlias {
+    fn into(self) -> (String, PlatformId, Option<String>) {
+        (self.source, self.platform, self.link)
     }
 }

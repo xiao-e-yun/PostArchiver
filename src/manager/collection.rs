@@ -1,10 +1,8 @@
 use rusqlite::params;
 
 use crate::{
-    error::Result,
-    manager::{binded::Binded, PostArchiverConnection},
-    query::FromQuery,
-    Collection, CollectionId, FileMetaId, PostId,
+    error::Result, manager::binded::Binded, query::FromQuery, Collection, CollectionId, FileMetaId,
+    PostId,
 };
 
 /// Specifies how to update a collection's thumbnail.
@@ -52,11 +50,11 @@ impl UpdateCollection {
 //=============================================================
 // Update / Delete
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
+impl<'a> Binded<'a, CollectionId> {
     /// Get this collection's current data from the database.
     pub fn value(&self) -> Result<Collection> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT * FROM collections WHERE id = ?")?;
         Ok(stmt.query_row([self.id()], Collection::from_row)?)
     }
@@ -65,7 +63,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
     ///
     /// Also removes all collection-post relationships.
     pub fn delete(self) -> Result<()> {
-        self.conn()
+        self.conn
             .execute("DELETE FROM collections WHERE id = ?", [self.id()])?;
         Ok(())
     }
@@ -111,7 +109,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
         params.push(&id);
 
         let sql = format!("UPDATE collections SET {} WHERE id = ?", sets.join(", "));
-        self.conn().execute(&sql, params.as_slice())?;
+        self.conn.execute(&sql, params.as_slice())?;
         Ok(())
     }
 }
@@ -119,11 +117,11 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
 //=============================================================
 // Relations: Posts
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
+impl<'a> Binded<'a, CollectionId> {
     /// List all post IDs in this collection.
     pub fn list_posts(&self) -> Result<Vec<PostId>> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT post FROM collection_posts WHERE collection = ?")?;
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()
@@ -132,7 +130,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
 
     /// Add posts to this collection.
     pub fn add_posts(&self, posts: &[PostId]) -> Result<()> {
-        let mut stmt = self.conn().prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "INSERT OR IGNORE INTO collection_posts (collection, post) VALUES (?, ?)",
         )?;
         for post in posts {
@@ -144,7 +142,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, CollectionId, C> {
     /// Remove posts from this collection.
     pub fn remove_posts(&self, posts: &[PostId]) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("DELETE FROM collection_posts WHERE collection = ? AND post = ?")?;
         for post in posts {
             stmt.execute(params![self.id(), post])?;

@@ -1,17 +1,30 @@
 //! Tag query builder and related point-query helpers.
 
-use rusqlite::OptionalExtension;
+use rusqlite::Connection;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    impl_sortable,
+    query::{author::AuthorSort, OrderBy, Pagination, Repo, SqlBuilder},
     PlatformId, Tag, TagId,
 };
 
 use super::{
     filter::{IdFilter, TextFilter},
-    sortable::impl_sortable,
-    BaseFilter, FromQuery, Query, Queryer, RawSql,
+    Query,
 };
+
+impl Repo<'_, Tag> {
+    fn query(&self) -> TagQuery<'_> {
+        TagQuery {
+            conn: &self.conn,
+            ids: IdFilter::new("id"),
+            name: TextFilter::new("name"),
+            platforms: IdFilter::new("platform"),
+            order: OrderBy::default(),
+            pagination: Pagination::default(),
+        }
+    }
+}
 
 /// Fluent query builder for tags.  Obtained via [`PostArchiverManager::tags()`].
 ///
@@ -21,88 +34,32 @@ use super::{
 /// - `source`: `LIKE` fuzzy match on the source field.
 /// - `platforms`: filter by a set of [`PlatformId`] values.
 #[derive(Debug)]
-pub struct TagQuery<'a, C> {
-    queryer: Queryer<'a, C>,
+pub struct TagQuery<'a> {
+    conn: &'a Connection,
     pub ids: IdFilter<TagId>,
-    pub name: TextFilter,
-    pub source: TextFilter,
     pub platforms: IdFilter<PlatformId>,
-}
+    pub name: TextFilter,
 
-impl<'a, C: PostArchiverConnection> TagQuery<'a, C> {
-    pub fn new(manager: &'a PostArchiverManager<C>) -> Self {
-        TagQuery {
-            queryer: Queryer::new(manager),
-            ids: IdFilter::new("id"),
-            name: TextFilter::new("name"),
-            source: TextFilter::new("source"),
-            platforms: IdFilter::new("platform"),
-        }
-    }
+    pub order: OrderBy<AuthorSort>,
+    pub pagination: Pagination,
 }
 
 impl_sortable!(TagQuery(TagSort) {
     Id: "id",
     Name: "name",
-    Source: "source"
+    Platform: "platform"
 });
 
-impl<C: PostArchiverConnection> BaseFilter for TagQuery<'_, C> {
-    type Based = Tag;
-
-    fn update_sql<T: FromQuery<Based = Self::Based>>(&self, mut sql: RawSql<T>) -> RawSql<T> {
-        sql = self.ids.build_sql(sql);
-        sql = self.name.build_sql(sql);
-        sql = self.source.build_sql(sql);
-        sql = self.platforms.build_sql(sql);
-
-        sql
+impl Query for TagQuery<'_> {
+    type Source = Tag;
+    fn sql(&self, sql: SqlBuilder) -> SqlBuilder {
+        sql.filter(&self.ids)
+            .filter(&self.platforms)
+            .filter(&self.name)
+            .order_by(&self.order)
+            .pagination(&self.pagination)
     }
-
-    fn queryer(&self) -> &Queryer<'_, impl PostArchiverConnection> {
-        &self.queryer
-    }
-}
-
-impl<C: PostArchiverConnection> Query for TagQuery<'_, C> {
-    type Wrapper<T> = Vec<T>;
-    type Based = Tag;
-
-    fn query_with_context<T: FromQuery<Based = Self::Based>>(
-        self,
-        sql: RawSql<T>,
-    ) -> crate::error::Result<Self::Wrapper<T>> {
-        let sql = self.update_sql(sql);
-        let (sql, params) = sql.build_sql();
-        self.queryer.fetch(&sql, params)
-    }
-}
-
-impl<C: PostArchiverConnection> PostArchiverManager<C> {
-    /// Entry point for the tag query builder.
-    pub fn tags(&self) -> TagQuery<'_, C> {
-        TagQuery::new(self)
-    }
-
-    /// Fetch a single tag by primary key. Returns `None` if not found.
-    pub fn get_tag(&self, id: TagId) -> crate::error::Result<Option<Tag>> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM tags WHERE id = ?")?;
-        Ok(stmt.query_row([id], Tag::from_row).optional()?)
-    }
-
-    /// Find a tag ID by `name` and optional `platform` (exact match).
-    pub fn find_tag(
-        &self,
-        name: &str,
-        platform: Option<PlatformId>,
-    ) -> crate::error::Result<Option<TagId>> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM tags WHERE platform IS ? AND name = ?")?;
-        Ok(stmt
-            .query_row(rusqlite::params![platform, name], |row| row.get(0))
-            .optional()?)
+    fn conn(&self) -> &Connection {
+        self.conn
     }
 }

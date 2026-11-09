@@ -24,13 +24,13 @@ macro_rules! as_table {
 
         impl $crate::query::FromQuery for $name {
             type Based = Self;
-            fn select_sql() -> String {
-                format!("SELECT * FROM {}", <Self as crate::utils::macros::AsTable>::TABLE_NAME)
+            fn fields() -> String {
+                "*".to_string()
             }
             fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
                 Ok(Self {
                     $(
-                        $field: crate::utils::macros::as_column!(
+                        $field: $crate::utils::macros::as_column!(
                             $($mode ,)?
                             row,
                             $col

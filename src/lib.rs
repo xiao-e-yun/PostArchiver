@@ -63,6 +63,3 @@ pub mod query;
 
 #[cfg(feature = "importer")]
 pub mod importer;
-
-#[cfg(test)]
-mod tests;

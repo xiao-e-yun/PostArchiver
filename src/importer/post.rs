@@ -1,201 +1,124 @@
-use std::{collections::HashSet, fmt::Debug};
+use std::fmt::Debug;
 
 use chrono::{DateTime, Utc};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use crate::{
     error::Result,
-    manager::{
-        PostArchiverConnection, PostArchiverManager, UpdateAuthor, UpdateCollection, UpdatePost,
-    },
-    AuthorId, CollectionId, Comment, Content, PlatformId, PostId, POSTS_PRE_CHUNK,
+    importer::{Importer, SavepointExt, UnsyncAuthor},
+    manager::{PostArchiverBindExt, UpdateAuthor, UpdateCollection, UpdatePost},
+    Comment, Content, PostId,
 };
 
 use super::{collection::UnsyncCollection, tag::UnsyncTag, UnsyncFileMeta};
 
-impl<T> PostArchiverManager<T>
-where
-    T: PostArchiverConnection,
-{
+impl<C: SavepointExt> Importer<'_, C> {
     /// Import a post into the archive.
     ///
     /// If the post already exists (by source), it updates its title, platform, published date,
     ///
-    /// # Parameters
-    ///
-    /// - `update_relation`: update the relations of authors and collections after importing.
-    ///
     /// # Errors
     ///
     /// Returns `Error` if there was an error accessing the database.
-    pub fn import_post(
-        &self,
-        post: UnsyncPost,
-        update_relation: bool,
-    ) -> Result<(PostId, Vec<AuthorId>, Vec<CollectionId>)> {
-        macro_rules! import_many {
-            ($vec:expr => $method:ident) => {
-                $vec.into_iter()
-                    .map(|d| self.$method(d))
-                    .collect::<std::result::Result<Vec<_>, _>>()?
-            };
-        }
-
-        // find post by source
-        let existing: Option<PostId> = self.find_post(&post.source)?;
-
-        let id = match existing {
-            Some(id) => {
-                let b = self.bind(id);
-                b.update(
-                    UpdatePost::default()
-                        .title(post.title)
-                        .platform(Some(post.platform))
-                        .published(post.published.unwrap_or_else(Utc::now))
-                        .updated_by_latest(post.updated.unwrap_or_else(Utc::now)),
-                )?;
-                id
-            }
-            None => {
-                // insert new post
-                let mut stmt = self.conn().prepare_cached(
-                    "INSERT INTO posts (title, source, platform, published, updated) VALUES (?, ?, ?, ?, ?) RETURNING id",
-                )?;
-                let published = post.published.unwrap_or_else(Utc::now);
-                let updated = post.updated.unwrap_or_else(Utc::now);
-                stmt.query_row(
-                    params![post.title, post.source, post.platform, published, updated],
-                    |row| row.get(0),
-                )?
-            }
+    pub fn import_post(&mut self, post: UnsyncPost) -> Result<PostId> {
+        let mut sp = self.savepoint()?;
+        let id: PostId = {
+            let mut stmt = sp.conn.prepare_cached(
+                "INSERT INTO posts (source, title) VALUES (?1, ?2) ON CONFLICT(source) DO UPDATE SET source = excluded.source RETURNING id",
+            )?;
+            stmt.query_row(params![post.source, post.title], |row| row.get(0))?
         };
 
-        let b = self.bind(id);
-
-        let mut thumb = post
-            .thumb
-            .as_ref()
-            .map(|thumb| self.import_file_meta(id, thumb))
-            .transpose()?;
+        let mut thumb = match post.thumb {
+            Some(thumb) => Some(sp.import_file_meta(id, thumb)?),
+            None => None,
+        };
 
         let content = post
             .content
-            .iter()
+            .into_iter()
             .map(|content| {
                 Ok(match content {
                     UnsyncContent::Text(text) => Content::Text(text.clone()),
                     UnsyncContent::File(file) => {
                         let need_thumb = thumb.is_none() && file.mime.starts_with("image/");
-                        let file_meta = self.import_file_meta(id, file)?;
+                        let file_meta = sp.import_file_meta(id, file.clone())?;
                         need_thumb.then(|| thumb = Some(file_meta));
                         Content::File(file_meta)
                     }
                 })
             })
             .collect::<Result<Vec<_>>>()?;
+
+        let platform = sp.import_platform(post.platform)?;
+
+        macro_rules! import_many {
+            ($vec:expr => $method:ident) => {
+                $vec.into_iter()
+                    .map(|d| sp.$method(d))
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+            };
+        }
+
+        let tags = import_many!(post.tags => import_tag);
+        let collections = import_many!(post.collections => import_collection);
+        let authors = import_many!(post.authors => import_author);
+
+        let b = sp.conn.bind(id);
         b.update(
             UpdatePost::default()
-                .content(content)
+                .title(post.title)
+                .platform(Some(platform))
+                .published(post.published.unwrap_or_else(Utc::now))
+                .updated_by_latest(post.updated.unwrap_or_else(Utc::now))
                 .thumb(thumb)
+                .content(content)
                 .comments(post.comments),
         )?;
 
-        let tags = import_many!(post.tags => import_tag);
         b.add_tags(&tags)?;
-
-        let collections = import_many!(post.collections => import_collection);
         b.add_collections(&collections)?;
+        b.add_authors(&authors)?;
 
-        b.add_authors(&post.authors)?;
+        authors.iter().try_for_each(|&author| {
+            sp.conn.bind(author).update(
+                UpdateAuthor::default()
+                    .thumb_by_latest()
+                    .updated_by_latest(),
+            )
+        })?;
 
-        //
-        let path = self
-            .path
-            .join((id.raw() / POSTS_PRE_CHUNK).to_string())
-            .join((id.raw() % POSTS_PRE_CHUNK).to_string());
+        collections.iter().try_for_each(|&collection| {
+            sp.conn
+                .bind(collection)
+                .update(UpdateCollection::default().thumb_by_latest())
+        })?;
 
-        for f in post
-            .content
-            .into_iter()
-            .flat_map(|c| match c {
-                UnsyncContent::Text(_) => None,
-                UnsyncContent::File(file) => Some(file),
-            })
-            .chain(post.thumb)
-        {
-            let path = path.join(f.filename);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            };
-            f.data.write(&path)?;
-        }
+        sp.commit()?;
 
-        if update_relation {
-            post.authors.iter().try_for_each(|&author| {
-                self.bind(author).update(
-                    UpdateAuthor::default()
-                        .thumb_by_latest()
-                        .updated_by_latest(),
-                )
-            })?;
+        Ok(id)
+    }
+}
 
-            collections.iter().try_for_each(|&collection| {
-                self.bind(collection)
-                    .update(UpdateCollection::default().thumb_by_latest())
-            })?;
-        }
-
-        Ok((
-            id,
-            post.authors.into_iter().collect(),
-            collections.into_iter().collect(),
-        ))
+impl<C: SavepointExt> Importer<'_, C> {
+    pub fn lookup_post(&mut self, source: &str) -> Result<Option<PostId>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
+        let query = stmt.query_row(params![source], |row| row.get(0));
+        Ok(query.optional()?)
     }
 
-    /// Import multiple posts into the archive.
-    ///
-    /// This function processes each post, importing its authors, collections, and files.
-    ///
-    /// # Parameters
-    ///
-    /// - `update_relation`: update the relations of authors and collections after importing.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if there was an error accessing the database.
-    pub fn import_posts<U>(
+    pub fn lookup_post_with_updated(
         &self,
-        posts: impl IntoIterator<Item = UnsyncPost>,
-        update_relation: bool,
-    ) -> Result<Vec<PostId>> {
-        let mut total_author = HashSet::new();
-        let mut total_collections = HashSet::new();
-        let mut results = Vec::new();
-
-        for post in posts {
-            let (id, authors, collections) = self.import_post(post, false)?;
-
-            results.push(id);
-            total_author.extend(authors);
-            total_collections.extend(collections);
-        }
-
-        if update_relation {
-            total_author.into_iter().try_for_each(|author| {
-                self.bind(author).update(
-                    UpdateAuthor::default()
-                        .thumb_by_latest()
-                        .updated_by_latest(),
-                )
-            })?;
-
-            total_collections.into_iter().try_for_each(|collection| {
-                self.bind(collection)
-                    .update(UpdateCollection::default().thumb_by_latest())
-            })?;
-        }
-
-        Ok(results)
+        source: &str,
+        updated: &DateTime<Utc>,
+    ) -> crate::error::Result<Option<PostId>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id FROM posts WHERE source = ? AND updated >= ?")?;
+        let query = stmt.query_row(params![source, updated], |row| row.get(0));
+        Ok(query.optional()?)
     }
 }
 
@@ -217,18 +140,18 @@ pub struct UnsyncPost {
     /// When the post was published
     pub published: Option<DateTime<Utc>>,
     /// Platform associated with the post
-    pub platform: PlatformId,
+    pub platform: String,
     /// Tags associated with the post
     pub tags: Vec<UnsyncTag>,
     /// The IDs of the author who created this post
-    pub authors: Vec<AuthorId>,
+    pub authors: Vec<UnsyncAuthor>,
     /// The collections this post belongs to
     pub collections: Vec<UnsyncCollection>,
 }
 
 impl UnsyncPost {
     pub fn new(
-        platform: PlatformId,
+        platform: String,
         source: String,
         title: String,
         content: Vec<UnsyncContent>,
@@ -282,7 +205,7 @@ impl UnsyncPost {
         }
     }
 
-    pub fn platform(self, platform: PlatformId) -> Self {
+    pub fn platform(self, platform: String) -> Self {
         Self { platform, ..self }
     }
 
@@ -290,7 +213,7 @@ impl UnsyncPost {
         Self { tags, ..self }
     }
 
-    pub fn authors(self, authors: Vec<AuthorId>) -> Self {
+    pub fn authors(self, authors: Vec<UnsyncAuthor>) -> Self {
         Self { authors, ..self }
     }
 

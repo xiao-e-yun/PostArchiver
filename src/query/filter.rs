@@ -12,13 +12,13 @@
 //! | [`IdFilter`] | Exact ID matching (`= ?` or `IN (…)`) |
 //! | [`RelationshipsFilter`] | All-of matching across a many-to-many join table |
 
-use std::{collections::HashSet, fmt::Display, hash::Hash, ops::Deref, rc::Rc};
+use std::{collections::HashSet, fmt::Display, hash::Hash, ops::Deref};
 
 use chrono::{DateTime, Utc};
 use rusqlite::ToSql;
 use serde::Serialize;
 
-use crate::query::RawSql;
+use crate::query::{Filter, SqlBuilder};
 
 /// SQL `LIKE` filter for string columns.
 ///
@@ -32,6 +32,7 @@ use crate::query::RawSql;
 pub struct TextFilter {
     col: &'static str,
     text: String,
+    like: bool,
 }
 
 impl Deref for TextFilter {
@@ -42,58 +43,80 @@ impl Deref for TextFilter {
     }
 }
 
+macro_rules! format_like {
+    ($template: expr, $text: expr) => {
+        match $text.is_empty() {
+            true => String::new(),
+            false => format!($template, Self::safe_escape($text)),
+        }
+    };
+}
+
 impl TextFilter {
     /// Create an empty filter for the given column (no match pattern — generates no WHERE clause).
     pub fn new(col: &'static str) -> Self {
         TextFilter {
             col,
             text: String::new(),
+            like: false,
         }
     }
 
     /// Match rows where the column contains `text` (`%text%`). Special chars are auto-escaped.
     pub fn contains(&mut self, text: &str) -> &mut Self {
-        self.text = format!("%{}%", Self::safe_escape(text));
+        self.text = format_like!("%{}%", text);
+        self.like = true;
         self
     }
 
     /// Match rows where the column starts with `text` (`text%`). Special chars are auto-escaped.
     pub fn starts_with(&mut self, text: &str) -> &mut Self {
-        self.text = format!("{}%", Self::safe_escape(text));
+        self.text = format_like!("{}%", text);
+        self.like = true;
         self
     }
 
     /// Match rows where the column ends with `text` (`%text`). Special chars are auto-escaped.
     pub fn ends_with(&mut self, text: &str) -> &mut Self {
-        self.text = format!("%{}", Self::safe_escape(text));
+        self.text = format_like!("%{}", text);
+        self.like = true;
         self
     }
 
     /// Exact equality match (equivalent to `LIKE 'text'` with no wildcards).
     pub fn equals(&mut self, text: &str) -> &mut Self {
-        self.text = Self::safe_escape(text);
+        self.text = text.to_string();
+        self.like = false;
         self
     }
 
     /// Set the raw `LIKE` pattern directly (`%` / `_` are **not** escaped).
     /// Use this when you need manual control over wildcards.
-    pub fn like(&mut self, t: &str) -> &mut Self {
-        self.text = t.to_string();
+    pub fn like(&mut self, text: &str) -> &mut Self {
+        self.text = text.to_string();
+        self.like = true;
         self
     }
 
     fn safe_escape(text: &str) -> String {
-        text.replace('%', "\\%").replace('_', "\\_")
+        text.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
     }
+}
 
-    pub fn build_sql<T>(&self, mut sql: RawSql<T>) -> RawSql<T> {
+impl Filter for TextFilter {
+    fn apply(&self, mut sql: SqlBuilder) -> SqlBuilder {
         if self.text.is_empty() {
             return sql;
         }
 
-        let (wheres, params) = &mut sql.where_clause;
-        wheres.push(format!("{} LIKE ?", self.col));
-        params.push(Rc::new(self.text.clone()));
+        let op = match self.like {
+            true => "LIKE ? ESCAPE '\\'",
+            false => "= ?",
+        };
+        sql.where_clause.push(format!("{} {op}", self.col));
+        sql.params.push(Box::new(self.text.clone()));
         sql
     }
 }
@@ -137,27 +160,29 @@ impl DateFilter {
         self.after = Some(date);
         self
     }
+}
 
-    pub fn build_sql<T>(&self, mut sql: RawSql<T>) -> RawSql<T> {
-        let (wheres, params) = &mut sql.where_clause;
+impl Filter for DateFilter {
+    fn apply(&self, mut sql: SqlBuilder) -> SqlBuilder {
         match (self.before, self.after) {
             (None, None) => {}
             (Some(before), None) => {
-                wheres.push(format!("{} <= ?", self.col));
-                params.push(Rc::new(before));
+                sql.where_clause.push(format!("{} <= ?", self.col));
+                sql.params.push(Box::new(before));
             }
             (None, Some(after)) => {
-                wheres.push(format!("{} >= ?", self.col));
-                params.push(Rc::new(after));
+                sql.where_clause.push(format!("{} >= ?", self.col));
+                sql.params.push(Box::new(after));
             }
             (Some(before), Some(after)) => {
                 if before == after {
-                    wheres.push(format!("{} = ?", self.col));
-                    params.push(Rc::new(before));
+                    sql.where_clause.push(format!("{} = ?", self.col));
+                    sql.params.push(Box::new(before));
                 } else {
-                    wheres.push(format!("{} BETWEEN ? AND ?", self.col));
-                    params.push(Rc::new(after));
-                    params.push(Rc::new(before));
+                    sql.where_clause
+                        .push(format!("{} BETWEEN ? AND ?", self.col));
+                    sql.params.push(Box::new(after));
+                    sql.params.push(Box::new(before));
                 }
             }
         }
@@ -188,7 +213,7 @@ impl<T> Deref for IdFilter<T> {
 
 impl<T> IdFilter<T>
 where
-    T: Hash + PartialEq + Eq + ToSql + Serialize + Display + Clone + 'static,
+    T: Hash + Eq,
 {
     /// Create an empty filter for the given column.
     pub fn new(col: &'static str) -> Self {
@@ -209,20 +234,22 @@ where
         self.ids.extend(ids);
         self
     }
+}
 
-    /// Translate the current ID set into a SQL WHERE condition and write it into `sql`.
-    pub fn build_sql<U>(&self, mut sql: RawSql<U>) -> RawSql<U> {
-        let (wheres, params) = &mut sql.where_clause;
+impl<T: Serialize + ToSql + Copy + 'static> Filter for IdFilter<T> {
+    fn apply(&self, mut sql: SqlBuilder) -> SqlBuilder {
         match self.ids.len() {
             0 => {}
             1 => {
-                wheres.push(format!("{} = ?", self.col));
-                params.push(Rc::new(self.ids.iter().next().unwrap().clone()));
+                sql.where_clause.push(format!("{} = ?", self.col));
+                let id = self.ids.iter().next().unwrap();
+                sql.params.push(Box::new(*id));
             }
             _ => {
-                wheres.push(format!("{} IN (SELECT value FROM json_each(?))", self.col));
+                sql.where_clause
+                    .push(format!("{} IN (SELECT value FROM json_each(?))", self.col));
                 let json_array = serde_json::to_string(&self.ids).unwrap();
-                params.push(Rc::new(json_array));
+                sql.params.push(Box::new(json_array));
             }
         }
         sql
@@ -236,7 +263,7 @@ where
 /// - Empty set: generates no WHERE clause.
 /// - Single ID: uses `EXISTS (SELECT 1 FROM <table> WHERE post = posts.id AND <col> = ?)`.
 /// - Multiple IDs: ensures **all** specified IDs are present (intersection match)
-///   via a count sub-query.
+///   with one `EXISTS` per ID, joined by `AND`.
 ///
 /// [`deref()`](Deref::deref) exposes the inner `HashSet<T>`.
 #[derive(Debug)]
@@ -265,7 +292,7 @@ impl<T> RelationshipsFilter<T> {
     }
 }
 
-impl<T: Eq + std::hash::Hash> RelationshipsFilter<T> {
+impl<T: Eq + Hash> RelationshipsFilter<T> {
     /// Add a single related ID to the match set.
     pub fn insert(&mut self, id: T) -> &mut Self {
         self.ids.insert(id);
@@ -279,30 +306,14 @@ impl<T: Eq + std::hash::Hash> RelationshipsFilter<T> {
     }
 }
 
-impl<T: Display + ToSql + Serialize + Clone + 'static> RelationshipsFilter<T>
-where
-    T: Eq + std::hash::Hash,
-{
-    pub fn build_sql<U>(&self, mut sql: RawSql<U>) -> RawSql<U> {
-        let (wheres, params) = &mut sql.where_clause;
-        match self.len() {
-            0 => {}
-            1 => {
-                wheres.push(format!(
-                    "EXISTS (SELECT 1 FROM {} WHERE post = posts.id AND {} = ?)",
-                    self.table, self.col
-                ));
-                params.push(Rc::new(self.iter().next().unwrap().clone()));
-            }
-            n => {
-                wheres.push(format!(
-                  "? == (SELECT COUNT(*) FROM {} WHERE post = posts.id AND {} IN (SELECT value FROM json_each(?)))",
-                  self.table, self.col
-                ));
-                params.push(Rc::new(n));
-                let json_array = serde_json::to_string(&self.ids).unwrap();
-                params.push(Rc::new(json_array));
-            }
+impl<T: Display + ToSql + Copy + 'static> Filter for RelationshipsFilter<T> {
+    fn apply(&self, mut sql: SqlBuilder) -> SqlBuilder {
+        for id in self.iter() {
+            sql.where_clause.push(format!(
+                "EXISTS (SELECT 1 FROM {} WHERE post = posts.id AND {} = ?)",
+                self.table, self.col
+            ));
+            sql.params.push(Box::new(*id));
         }
         sql
     }

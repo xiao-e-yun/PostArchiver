@@ -8,10 +8,7 @@ use std::{
 use serde_json::Value;
 
 use crate::{
-    error::Result,
-    manager::{binded::Binded, PostArchiverConnection},
-    query::FromQuery,
-    FileMeta, FileMetaId, Post, PostId,
+    error::Result, manager::binded::Binded, query::FromQuery, FileMeta, FileMetaId, Post, PostId,
 };
 
 /// Builder for updating a file metadata's fields.
@@ -70,11 +67,11 @@ impl UpdateFileMeta {
 //=============================================================
 // Update / Delete
 //=============================================================
-impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
+impl<'a> Binded<'a, FileMetaId> {
     /// Get this file metadata's current data from the database.
     pub fn value(&self) -> Result<FileMeta> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
         Ok(stmt.query_row([self.id()], FileMeta::from_row)?)
     }
@@ -85,7 +82,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
     /// But it will not delete post.content related to this file.
     pub fn delete(self) -> Result<()> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("DELETE FROM file_metas WHERE id = ?")?;
         stmt.execute([self.id()])?;
         Ok(())
@@ -121,7 +118,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
         let sql = format!("UPDATE file_metas SET {} WHERE id = ?", sets.join(", "));
         let id = self.id();
         params.push(&id);
-        self.conn().execute(&sql, params.as_slice())?;
+        self.conn.execute(&sql, params.as_slice())?;
 
         Ok(())
     }
@@ -129,7 +126,7 @@ impl<'a, C: PostArchiverConnection> Binded<'a, FileMetaId, C> {
     /// Get the file path of this file metadata.
     pub fn get_path(&self) -> Result<PathBuf> {
         let mut stmt = self
-            .conn()
+            .conn
             .prepare_cached("SELECT post, filename FROM file_metas WHERE id = ?")?;
         Ok(stmt.query_row([self.id()], |row| {
             let post_id: PostId = row.get(0)?;

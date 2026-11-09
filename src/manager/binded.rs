@@ -1,6 +1,8 @@
-use crate::{AuthorId, CollectionId, FileMetaId, PlatformId, PostId, TagId};
+use std::ops::Deref;
 
-use super::{PostArchiverConnection, PostArchiverManager};
+use rusqlite::Connection;
+
+use crate::{AuthorId, CollectionId, FileMetaId, PlatformId, PostId, TagId};
 
 /// Marker trait for ID types that can be bound to a [`Binded`] context.
 ///
@@ -30,28 +32,47 @@ impl BindableId for FileMetaId {}
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct Binded<'a, Id: BindableId, C: PostArchiverConnection = rusqlite::Connection> {
-    manager: &'a PostArchiverManager<C>,
+pub struct Binded<'a, Id: BindableId> {
+    pub(crate) conn: &'a Connection,
     id: Id,
 }
 
-impl<'a, Id: BindableId, C: PostArchiverConnection> Binded<'a, Id, C> {
-    pub fn new(manager: &'a PostArchiverManager<C>, id: Id) -> Self {
-        Self { manager, id }
+impl<'a, Id: BindableId> Binded<'a, Id> {
+    pub fn new(conn: &'a Connection, id: Id) -> Self {
+        Self { conn, id }
     }
 
     /// Returns the bound entity ID.
     pub fn id(&self) -> Id {
         self.id
     }
+}
 
-    /// Returns a reference to the underlying manager.
-    pub fn manager(&self) -> &'a PostArchiverManager<C> {
-        self.manager
+pub trait PostArchiverBindExt {
+    fn conn(&self) -> &Connection;
+
+    /// Bind an entity ID to get a [`Binded`] context for update/delete/relation operations.
+    ///
+    /// The type parameter is inferred from the ID argument — no turbofish needed.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::PostId;
+    /// # fn example(manager: &PostArchiverManager, post_id: PostId) {
+    /// let binded = manager.bind(post_id);
+    /// // binded is Binded<'_, PostId>
+    /// # }
+    /// ```
+    fn bind<Id: BindableId>(&self, id: Id) -> Binded<'_, Id> {
+        Binded::new(self.conn(), id)
     }
-
-    /// Shortcut: returns a reference to the database connection.
-    pub fn conn(&self) -> &rusqlite::Connection {
-        self.manager.conn()
+}
+impl<T> PostArchiverBindExt for T
+where
+    T: Deref<Target = Connection>,
+{
+    fn conn(&self) -> &Connection {
+        self.deref()
     }
 }

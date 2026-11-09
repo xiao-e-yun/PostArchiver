@@ -1,34 +1,66 @@
 //! FileMeta point-query helpers (no builder — use the direct methods below).
 
-use rusqlite::OptionalExtension;
+use rusqlite::Connection;
 
 use crate::{
-    manager::{PostArchiverConnection, PostArchiverManager},
+    impl_sortable,
+    query::{
+        filter::{IdFilter, TextFilter},
+        OrderBy, Pagination, Query, Repo, SqlBuilder,
+    },
     FileMeta, FileMetaId, PostId,
 };
 
-use super::FromQuery;
-
-impl<C: PostArchiverConnection> PostArchiverManager<C> {
-    /// Fetch a single [`FileMeta`] by primary key. Returns `None` if not found.
-    pub fn get_file_meta(&self, id: FileMetaId) -> crate::error::Result<Option<FileMeta>> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT * FROM file_metas WHERE id = ?")?;
-        Ok(stmt.query_row([id], FileMeta::from_row).optional()?)
+impl Repo<'_, FileMeta> {
+    fn query(&self) -> FileMetaQuery<'_> {
+        FileMetaQuery {
+            conn: &self.conn,
+            ids: IdFilter::new("id"),
+            posts: IdFilter::new("post"),
+            filename: TextFilter::new("filename"),
+            mime: TextFilter::new("mime"),
+            order: OrderBy::default(),
+            pagination: Pagination::default(),
+        }
     }
+}
 
-    /// Find a [`FileMetaId`] by owning `post` and `filename`.
-    pub fn find_file_meta(
-        &self,
-        post: PostId,
-        filename: &str,
-    ) -> crate::error::Result<Option<FileMetaId>> {
-        let mut stmt = self
-            .conn()
-            .prepare_cached("SELECT id FROM file_metas WHERE post = ? AND filename = ?")?;
-        Ok(stmt
-            .query_row(rusqlite::params![post, filename], |row| row.get(0))
-            .optional()?)
+/// Fluent query builder for collections.  Obtained via [`PostArchiverManager::collections()`].
+///
+/// # Available filter fields
+/// - `ids`: filter by a set of [`CollectionId`] values.
+/// - `name`: `LIKE` fuzzy match on the collection name.
+/// - `source`: `LIKE` fuzzy match on the source field.
+#[derive(Debug)]
+pub struct FileMetaQuery<'a> {
+    conn: &'a Connection,
+    pub ids: IdFilter<FileMetaId>,
+    pub posts: IdFilter<PostId>,
+    pub filename: TextFilter,
+    pub mime: TextFilter,
+
+    pub order: OrderBy<FileMetaSort>,
+    pub pagination: Pagination,
+}
+
+impl_sortable!(FileMetaQuery(FileMetaSort) {
+    Id: "id",
+    Post: "post",
+    Filename: "filename",
+    Mime: "mime"
+});
+
+impl Query for FileMetaQuery<'_> {
+    type Source = FileMeta;
+    fn sql(&self, sql: SqlBuilder) -> SqlBuilder {
+        sql.filter(&self.ids)
+            .filter(&self.posts)
+            .filter(&self.filename)
+            .filter(&self.mime)
+            .order_by(&self.order)
+            .pagination(&self.pagination)
+    }
+    fn conn(&self) -> &Connection {
+        self.conn
     }
 }
