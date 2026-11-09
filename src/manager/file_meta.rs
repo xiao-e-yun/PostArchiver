@@ -14,21 +14,11 @@ use crate::{
 /// Builder for updating a file metadata's fields.
 ///
 /// Fields left as `None` are not modified.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UpdateFileMeta {
     pub mime: Option<String>,
     pub extra: Option<HashMap<String, Value>>,
     pub content: Option<FileMetaContent>,
-}
-
-impl Default for UpdateFileMeta {
-    fn default() -> Self {
-        UpdateFileMeta {
-            mime: None,
-            extra: None,
-            content: None,
-        }
-    }
 }
 
 impl UpdateFileMeta {

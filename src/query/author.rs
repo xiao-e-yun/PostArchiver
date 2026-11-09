@@ -13,9 +13,9 @@ use super::{
 };
 
 impl Repo<'_, Author> {
-    fn query(&self) -> AuthorQuery<'_> {
+    pub fn query(&self) -> AuthorQuery<'_> {
         AuthorQuery {
-            conn: &self.conn,
+            conn: self.conn,
             ids: IdFilter::new("id"),
             name: TextFilter::new("name"),
             updated: DateFilter::new("updated"),

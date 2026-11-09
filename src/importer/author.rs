@@ -38,12 +38,13 @@ impl<C: SavepointExt> Importer<'_, C> {
     }
 }
 
+type AuthorAlias = (String, PlatformId, Option<String>);
 impl<C: Deref<Target = Connection>> Importer<'_, C> {
     pub fn lookup_author(
         &self,
         author: UnsyncAuthor,
-    ) -> Result<(Option<AuthorId>, Vec<(String, PlatformId, Option<String>)>)> {
-        let mut unlinked_aliases: Vec<(String, PlatformId, Option<String>)> = vec![];
+    ) -> Result<(Option<AuthorId>, Vec<AuthorAlias>)> {
+        let mut unlinked_aliases: Vec<AuthorAlias> = vec![];
         let mut id: Option<AuthorId> = None;
 
         let mut stmt = self.conn.prepare_cached(
@@ -122,8 +123,8 @@ impl UnsyncAlias {
     }
 }
 
-impl Into<(String, PlatformId, Option<String>)> for UnsyncAlias {
-    fn into(self) -> (String, PlatformId, Option<String>) {
-        (self.source, self.platform, self.link)
+impl From<UnsyncAlias> for (String, PlatformId, Option<String>) {
+    fn from(val: UnsyncAlias) -> Self {
+        (val.source, val.platform, val.link)
     }
 }

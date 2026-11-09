@@ -1,24 +1,22 @@
 //! Post query builder and related point-query helpers.
 
-use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use crate::{
     impl_sortable,
-    manager::PostArchiverManager,
     query::{OrderBy, Pagination, Repo, SqlBuilder},
     AuthorId, CollectionId, PlatformId, Post, PostId, TagId,
 };
 
 use super::{
     filter::{DateFilter, IdFilter, RelationshipsFilter, TextFilter},
-    FromQuery, Query,
+    Query,
 };
 
 impl Repo<'_, Post> {
-    fn query(&self) -> PostQuery<'_> {
+    pub fn query(&self) -> PostQuery<'_> {
         PostQuery {
-            conn: &self.conn,
+            conn: self.conn,
             ids: IdFilter::new("id"),
             updated: DateFilter::new("updated"),
             published: DateFilter::new("published"),

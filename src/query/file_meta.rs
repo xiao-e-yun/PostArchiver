@@ -12,9 +12,9 @@ use crate::{
 };
 
 impl Repo<'_, FileMeta> {
-    fn query(&self) -> FileMetaQuery<'_> {
+    pub fn query(&self) -> FileMetaQuery<'_> {
         FileMetaQuery {
-            conn: &self.conn,
+            conn: self.conn,
             ids: IdFilter::new("id"),
             posts: IdFilter::new("post"),
             filename: TextFilter::new("filename"),

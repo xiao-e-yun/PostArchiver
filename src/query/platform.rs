@@ -14,9 +14,9 @@ use super::{
 };
 
 impl Repo<'_, Platform> {
-    fn query(&self) -> PlatformQuery<'_> {
+    pub fn query(&self) -> PlatformQuery<'_> {
         PlatformQuery {
-            conn: &self.conn,
+            conn: self.conn,
             ids: IdFilter::new("id"),
             name: TextFilter::new("name"),
             order: OrderBy::default(),

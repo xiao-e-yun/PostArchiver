@@ -48,10 +48,7 @@ pub mod platform;
 pub mod post;
 pub mod tag;
 
-use std::{
-    fmt::{Debug, Display},
-    rc::Rc,
-};
+use std::fmt::{Debug, Display};
 
 use rusqlite::{params, Connection, OptionalExtension, Result, ToSql};
 
@@ -146,7 +143,7 @@ impl SqlBuilder {
     }
 
     pub fn pagination(mut self, pagination: &Pagination) -> Self {
-        self.pagination = pagination.clone();
+        self.pagination = *pagination;
         self
     }
 

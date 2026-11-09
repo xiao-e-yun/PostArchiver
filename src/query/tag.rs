@@ -14,9 +14,9 @@ use super::{
 };
 
 impl Repo<'_, Tag> {
-    fn query(&self) -> TagQuery<'_> {
+    pub fn query(&self) -> TagQuery<'_> {
         TagQuery {
-            conn: &self.conn,
+            conn: self.conn,
             ids: IdFilter::new("id"),
             name: TextFilter::new("name"),
             platforms: IdFilter::new("platform"),

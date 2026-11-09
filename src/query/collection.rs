@@ -11,9 +11,9 @@ use crate::{
 use super::filter::{IdFilter, TextFilter};
 
 impl Repo<'_, Collection> {
-    fn query(&self) -> CollectionQuery<'_> {
+    pub fn query(&self) -> CollectionQuery<'_> {
         CollectionQuery {
-            conn: &self.conn,
+            conn: self.conn,
             ids: IdFilter::new("id"),
             name: TextFilter::new("name"),
             source: TextFilter::new("source"),
