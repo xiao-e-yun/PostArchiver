@@ -209,6 +209,20 @@ pub struct Pagination {
 }
 
 impl Pagination {
+    pub fn limit(mut self, limit: u64) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+    pub fn offset(mut self, offset: u64) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+    pub fn page(mut self, page: u64) -> Self {
+        if let Some(limit) = self.limit {
+            self.offset = Some(page * limit);
+        }
+        self
+    }
     pub fn extract(&self) -> Option<(String, Vec<Param>)> {
         match (self.limit, self.offset) {
             (None, None) => None,
@@ -216,7 +230,10 @@ impl Pagination {
             (limit, Some(offset)) => Some((
                 "LIMIT ? OFFSET ?".to_string(),
                 vec![
-                    Box::new(limit.unwrap_or(u64::MAX)) as Param,
+                    match limit {
+                        Some(l) => Box::new(l) as Param,
+                        None => Box::new(-1) as Param,
+                    },
                     Box::new(offset) as Param,
                 ],
             )),

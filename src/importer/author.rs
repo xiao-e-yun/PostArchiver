@@ -11,13 +11,14 @@ use crate::{
 
 impl<C: SavepointExt> Importer<'_, C> {
     pub fn import_author(&mut self, author: UnsyncAuthor) -> Result<AuthorId> {
-        let (id, unlinked_aliases) = self.lookup_author(author.clone())?;
+        let id = self.lookup_author(author.clone())?;
+        let aliases = author.aliases.into_iter().map(|v| v.into());
         let id = match id {
             Some(id) => {
                 let sp = self.savepoint()?;
                 let b = sp.conn.bind(id);
                 b.update(UpdateAuthor::default().name(author.name.clone()))?;
-                b.add_aliases(unlinked_aliases)?;
+                b.add_aliases(aliases)?;
                 sp.commit()?;
                 id
             }
@@ -27,7 +28,7 @@ impl<C: SavepointExt> Importer<'_, C> {
                     sp.prepare_cached("INSERT INTO authors (name) VALUES (?) RETURNING id")?;
 
                 let id: AuthorId = stmt.query_row(params![author.name], |row| row.get(0))?;
-                sp.bind(id).add_aliases(unlinked_aliases)?;
+                sp.bind(id).add_aliases(aliases)?;
                 drop(stmt);
                 sp.commit()?;
                 id
@@ -38,29 +39,18 @@ impl<C: SavepointExt> Importer<'_, C> {
     }
 }
 
-type AuthorAlias = (String, PlatformId, Option<String>);
 impl<C: Deref<Target = Connection>> Importer<'_, C> {
-    pub fn lookup_author(
-        &self,
-        author: UnsyncAuthor,
-    ) -> Result<(Option<AuthorId>, Vec<AuthorAlias>)> {
-        let mut unlinked_aliases: Vec<AuthorAlias> = vec![];
-        let mut id: Option<AuthorId> = None;
-
+    pub fn lookup_author(&self, author: UnsyncAuthor) -> Result<Option<AuthorId>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT target FROM author_aliases WHERE platform = ? AND source = ?",
         )?;
         for alias in &author.aliases {
             let query = stmt.query_row(params![alias.platform, alias.source], |row| row.get(0));
             if let Some(author_id) = query.optional()? {
-                id = id.or(Some(author_id));
-                continue;
+                return Ok(Some(author_id));
             }
-
-            unlinked_aliases.push(alias.clone().into());
         }
-
-        Ok((id, unlinked_aliases))
+        Ok(None)
     }
 }
 

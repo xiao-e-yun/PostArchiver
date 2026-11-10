@@ -26,40 +26,6 @@ impl UpdateTag {
 }
 
 //=============================================================
-// FindTag trait (kept for importer compatibility)
-//=============================================================
-pub trait FindTag {
-    fn name(&self) -> &str;
-    fn platform(&self) -> Option<PlatformId> {
-        None
-    }
-}
-
-impl FindTag for &str {
-    fn name(&self) -> &str {
-        self
-    }
-}
-
-impl FindTag for (&str, PlatformId) {
-    fn name(&self) -> &str {
-        self.0
-    }
-    fn platform(&self) -> Option<PlatformId> {
-        Some(self.1)
-    }
-}
-
-impl FindTag for (&str, Option<PlatformId>) {
-    fn name(&self) -> &str {
-        self.0
-    }
-    fn platform(&self) -> Option<PlatformId> {
-        self.1
-    }
-}
-
-//=============================================================
 // Update / Delete
 //=============================================================
 impl<'a> Binded<'a, TagId> {

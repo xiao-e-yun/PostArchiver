@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 use crate::{
     impl_sortable,
-    query::{author::AuthorSort, OrderBy, Pagination, Repo, SqlBuilder},
+    query::{OrderBy, Pagination, Repo, SqlBuilder},
     PlatformId, Tag, TagId,
 };
 

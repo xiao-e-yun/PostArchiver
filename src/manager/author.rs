@@ -158,7 +158,10 @@ impl<'a> Binded<'a, AuthorId> {
     ///
     /// # Parameters
     /// - aliases: Vec of (source, platform, link)
-    pub fn add_aliases(&self, aliases: Vec<(String, PlatformId, Option<String>)>) -> Result<()> {
+    pub fn add_aliases<T>(&self, aliases: T) -> Result<()>
+    where
+        T: IntoIterator<Item = (String, PlatformId, Option<String>)>,
+    {
         let mut stmt = self.conn.prepare_cached(
             "INSERT OR REPLACE INTO author_aliases (target, source, platform, link) VALUES (?, ?, ?, ?)",
         )?;
@@ -172,7 +175,10 @@ impl<'a> Binded<'a, AuthorId> {
     ///
     /// # Parameters
     /// - aliases: &[(source, platform)]
-    pub fn remove_aliases(&self, aliases: &[(String, PlatformId)]) -> Result<()> {
+    pub fn remove_aliases<T>(&self, aliases: T) -> Result<()>
+    where
+        T: IntoIterator<Item = (String, PlatformId)>,
+    {
         let mut stmt = self.conn.prepare_cached(
             "DELETE FROM author_aliases WHERE target = ? AND source = ? AND platform = ?",
         )?;
@@ -226,32 +232,5 @@ impl<'a> Binded<'a, AuthorId> {
         let rows = stmt.query_map([self.id()], |row| row.get(0))?;
         rows.collect::<std::result::Result<_, _>>()
             .map_err(Into::into)
-    }
-}
-
-//=============================================================
-// FindAlias trait (kept for importer compatibility)
-//=============================================================
-pub trait FindAlias {
-    fn source(&self) -> &str;
-    fn platform(&self) -> PlatformId;
-}
-
-impl FindAlias for (&str, PlatformId) {
-    fn source(&self) -> &str {
-        self.0
-    }
-    fn platform(&self) -> PlatformId {
-        self.1
-    }
-}
-
-#[cfg(feature = "importer")]
-impl FindAlias for crate::importer::UnsyncAlias {
-    fn source(&self) -> &str {
-        &self.source
-    }
-    fn platform(&self) -> PlatformId {
-        self.platform
     }
 }
