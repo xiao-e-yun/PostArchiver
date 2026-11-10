@@ -48,30 +48,44 @@ pub mod platform;
 pub mod post;
 pub mod tag;
 
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
 
 use rusqlite::{params, Connection, OptionalExtension, Result, ToSql};
 
-use crate::{manager::PostArchiverManager, utils::macros::AsTable, HasId};
+use crate::{utils::macros::AsTable, HasId};
 
-impl PostArchiverManager {
-    pub fn posts(&self) -> Repo<'_, crate::Post> {
-        Repo::new(&self.conn)
+pub trait PostArchiverQueryExt {
+    fn posts(&'_ self) -> Repo<'_, crate::Post>;
+    fn authors(&'_ self) -> Repo<'_, crate::Author>;
+    fn tags(&'_ self) -> Repo<'_, crate::Tag>;
+    fn collections(&'_ self) -> Repo<'_, crate::Collection>;
+    fn platforms(&'_ self) -> Repo<'_, crate::Platform>;
+    fn file_metas(&'_ self) -> Repo<'_, crate::FileMeta>;
+}
+impl<T> PostArchiverQueryExt for T
+where
+    T: Deref<Target = Connection>,
+{
+    fn posts(&'_ self) -> Repo<'_, crate::Post> {
+        Repo::new(self)
     }
-    pub fn authors(&self) -> Repo<'_, crate::Author> {
-        Repo::new(&self.conn)
+    fn authors(&'_ self) -> Repo<'_, crate::Author> {
+        Repo::new(self)
     }
-    pub fn tags(&self) -> Repo<'_, crate::Tag> {
-        Repo::new(&self.conn)
+    fn tags(&'_ self) -> Repo<'_, crate::Tag> {
+        Repo::new(self)
     }
-    pub fn collections(&self) -> Repo<'_, crate::Collection> {
-        Repo::new(&self.conn)
+    fn collections(&'_ self) -> Repo<'_, crate::Collection> {
+        Repo::new(self)
     }
-    pub fn platforms(&self) -> Repo<'_, crate::Platform> {
-        Repo::new(&self.conn)
+    fn platforms(&'_ self) -> Repo<'_, crate::Platform> {
+        Repo::new(self)
     }
-    pub fn file_metas(&self) -> Repo<'_, crate::FileMeta> {
-        Repo::new(&self.conn)
+    fn file_metas(&'_ self) -> Repo<'_, crate::FileMeta> {
+        Repo::new(self)
     }
 }
 
@@ -80,15 +94,15 @@ pub struct Repo<'a, T> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<'a, E: AsTable + HasId> Repo<'a, E> {
-    fn new(conn: &'a Connection) -> Repo<'a, E> {
+impl<'a, T: AsTable + HasId> Repo<'a, T> {
+    fn new(conn: &'a Connection) -> Repo<'a, T> {
         Self {
             conn,
             _phantom: std::marker::PhantomData,
         }
     }
-    pub fn get<T: FromQuery<Based = E>>(&self, id: E::Id) -> crate::error::Result<Option<T>> {
-        let sql = format!("SELECT {} FROM {} WHERE id = ?", T::fields(), E::TABLE_NAME);
+    pub fn get<U: FromQuery<Based = T>>(&self, id: T::Id) -> crate::error::Result<Option<T>> {
+        let sql = format!("SELECT {} FROM {} WHERE id = ?", U::fields(), T::TABLE_NAME);
         let mut stmt = self.conn.prepare_cached(&sql)?;
         Ok(stmt.query_row(params![id], T::from_row).optional()?)
     }

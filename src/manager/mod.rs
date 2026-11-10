@@ -1,4 +1,5 @@
 use rusqlite::Connection;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -191,5 +192,13 @@ impl PostArchiverManager {
         )?;
 
         Ok(Self { conn, path })
+    }
+}
+
+impl Deref for PostArchiverManager {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.conn
     }
 }
