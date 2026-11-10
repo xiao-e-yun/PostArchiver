@@ -28,8 +28,10 @@ pub use tag::UpdateTag;
 
 /// Core manager type for post archive operations with SQLite backend
 ///
-/// Provides database connection management and access to entity operations
-/// through the [`Binded`] type via [`bind()`](PostArchiverManager::bind).
+/// Owns the SQLite connection and the archive root. It derefs to [`rusqlite::Connection`], so
+/// [`bind()`](PostArchiverBindExt::bind) (update/delete/relations),
+/// [`posts()`](crate::query::PostArchiverQueryExt::posts) and the other query entry points are
+/// available on it, as is [`importer()`](PostArchiverManager::importer) with the `importer` feature.
 ///
 /// # Examples
 /// ```no_run

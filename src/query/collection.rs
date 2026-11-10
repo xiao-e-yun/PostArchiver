@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 use crate::{
-    impl_sortable,
+    query::impl_sortable,
     query::{OrderBy, Pagination, Query, Repo, SqlBuilder},
     Collection, CollectionId,
 };
@@ -23,7 +23,7 @@ impl<'a> Repo<'a, Collection> {
     }
 }
 
-/// Fluent query builder for collections.  Obtained via [`PostArchiverManager::collections()`].
+/// Fluent query builder for collections. Obtained via `manager.collections().query()`.
 ///
 /// # Available filter fields
 /// - `ids`: filter by a set of [`CollectionId`] values.
@@ -40,7 +40,7 @@ pub struct CollectionQuery<'a> {
     pub pagination: Pagination,
 }
 
-impl_sortable!(CollectionQuery(CollectionSort) {
+impl_sortable!(CollectionSort {
     Id: "id",
     Name: "name",
     Source: "source"

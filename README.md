@@ -20,7 +20,9 @@ A simple unify post archive.
 
 ### For Rust
 ```sh
-cargo add post-archiver
+cargo add post-archiver                     # manager + query (default `utils` feature)
+cargo add post-archiver -F importer         # + importer for scrapers
+cargo add post-archiver --no-default-features  # data types only, no SQLite
 ```
 
 ### For TypeScript
@@ -32,6 +34,13 @@ Import you need types
 ```ts
 import type { Post } from "post-archiver"
 ```
+
+## Upgrading an archive
+Archives created by older versions are upgraded with [`post-archiver-bridge`](post-archiver-bridge):
+```sh
+cargo run --release --manifest-path post-archiver-bridge/Cargo.toml -- <old-archive> <new-archive>
+```
+Pass the same path twice to upgrade in place. See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Build 
 ### For Rust

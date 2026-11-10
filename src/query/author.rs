@@ -33,7 +33,7 @@ impl<'a> Repo<'a, Author> {
     }
 }
 
-/// Fluent query builder for authors.  Obtained via [`PostArchiverManager::authors()`].
+/// Fluent query builder for authors. Obtained via `manager.authors().query()`.
 ///
 /// # Available filter fields
 /// - `ids`: filter by a set of [`AuthorId`] values.
@@ -50,7 +50,7 @@ pub struct AuthorQuery<'a> {
     pub pagination: Pagination,
 }
 
-impl_sortable!(AuthorQuery(AuthorSort) {
+impl_sortable!(AuthorSort {
     Id: "id",
     Name: "name",
     Updated: "updated"

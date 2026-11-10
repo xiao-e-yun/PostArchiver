@@ -21,7 +21,7 @@ pub struct Author {
 
 /// A mapping between an alternative author name and their canonical identifier
 ///
-/// - Links to [`Author`](crate::author::Author) through the target ID
+/// - Links to [`Author`] through the target ID
 /// - Used by importer modules for author resolution
 /// - Referenced in post management for author lookups
 #[cfg_attr(feature = "typescript", derive(TS))]

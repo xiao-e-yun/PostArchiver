@@ -127,7 +127,7 @@ impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
 #[derive(Debug, Clone)]
 /// Represents a post that is not yet synchronized with the archive.
 pub struct UnsyncPost {
-    /// The original URL of this post (e.g., "https://example.com/blog/1")
+    /// The original URL of this post (e.g., `https://example.com/blog/1`)
     pub source: String,
     /// The title of the post
     pub title: String,

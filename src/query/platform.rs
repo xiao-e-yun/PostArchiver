@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 use crate::{
-    impl_sortable,
+    query::impl_sortable,
     query::{OrderBy, Pagination, Repo, SqlBuilder},
     Platform, PlatformId,
 };
@@ -25,10 +25,7 @@ impl<'a> Repo<'a, Platform> {
     }
 }
 
-/// Query builder for platforms.  Obtained via [`PostArchiverManager::platforms()`].
-///
-/// Platforms are typically few in number, so this builder is intentionally simple—no
-/// pagination or total-count is provided.  `.query()` always returns `Vec<Platform>`.
+/// Fluent query builder for platforms. Obtained via `manager.platforms().query()`.
 ///
 /// # Available filter fields
 /// - `ids`: filter by a set of [`PlatformId`] values.
@@ -43,7 +40,7 @@ pub struct PlatformQuery<'a> {
     pub pagination: Pagination,
 }
 
-impl_sortable!(PlatformQuery(PlatformSort) {
+impl_sortable!(PlatformSort {
     Id: "id",
     Name: "name"
 });

@@ -7,9 +7,18 @@
 //! that can handle different content types and maintain relationships between entities.
 //!
 //! # Features
-//! - `utils`: Enables utility functions and manager functionality
-//! - `importer`: Enables post importing capabilities
-//! - `typescript`: Generates TypeScript type definitions
+//! - `utils` (default): the SQLite-backed [`manager`] and [`query`] APIs. Without it the crate
+//!   only provides the data types.
+//! - `importer`: the [`importer`] module for importing scraped data (implies `utils`).
+//! - `typescript`: derives TypeScript type definitions with `ts-rs`.
+//!
+//! # Storage
+//! An archive is a directory holding `post-archiver.db` and one directory per post for its
+//! files (see [`Post::directory`]). The database is opened with foreign keys enforced and in
+//! WAL mode, so `post-archiver.db-wal` / `post-archiver.db-shm` may sit next to it while it is
+//! open. Copy all three (or close every connection first) when backing up an archive.
+//!
+//! Archives created by older versions are upgraded with `post-archiver-bridge`.
 //!
 //! # Core Types
 //! The system is built around several core types:

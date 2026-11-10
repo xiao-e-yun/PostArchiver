@@ -80,8 +80,6 @@ pub(crate) fn json_column<T: serde::de::DeserializeOwned>(
 /// Implement `FromQuery` for a projection of a table: a struct holding some of its columns
 /// and relation columns, under the same names as in the table's `as_table!` definition.
 ///
-/// The expansion names `rusqlite::Row`, so the calling crate needs `rusqlite` as a dependency.
-///
 /// ```
 /// use post_archiver::{impl_from_query, manager::PostArchiverManager, query::PostArchiverQueryExt};
 /// use post_archiver::{AuthorId, FileMetaId, Post, PostId};

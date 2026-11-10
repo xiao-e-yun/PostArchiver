@@ -306,9 +306,8 @@ impl<T: SortField> OrderBy<T> {
 
 pub trait SortField: Display {}
 
-#[macro_export]
 macro_rules! impl_sortable {
-    ($query_type:ident ($sort_field_enum:ident) {
+    ($sort_field_enum:ident {
         $($field:ident: $column:literal),*
     }) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -326,4 +325,4 @@ macro_rules! impl_sortable {
         }
     };
 }
-pub use impl_sortable;
+pub(crate) use impl_sortable;

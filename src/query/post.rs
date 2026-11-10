@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 use crate::{
-    impl_sortable,
+    query::impl_sortable,
     query::{OrderBy, Pagination, Repo, SqlBuilder},
     AuthorId, CollectionId, PlatformId, Post, PostId, TagId,
 };
@@ -75,7 +75,7 @@ pub struct PostQuery<'a> {
     pub pagination: Pagination,
 }
 
-impl_sortable!(PostQuery(PostSort) {
+impl_sortable!(PostSort {
     Id: "id",
     Updated: "updated",
     Published: "published",

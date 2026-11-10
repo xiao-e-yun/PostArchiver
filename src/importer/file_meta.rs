@@ -74,12 +74,17 @@ impl<C: SavepointExt> Importer<'_, '_, C> {
     }
 }
 
-/// Represents a file metadata that is not yet synced to the database.
+/// A file to import, together with its metadata.
 #[derive(Debug, Clone)]
 pub struct UnsyncFileMeta {
+    /// Name of the file inside the post directory. Must be a plain file name
+    /// (no path separators or `..`); it is unique per post.
     pub filename: String,
+    /// MIME type. The first `image/*` file of a post becomes its thumbnail when none is given.
     pub mime: String,
+    /// Arbitrary metadata stored as JSON.
     pub extra: HashMap<String, Value>,
+    /// File to copy into the archive. It is not moved or deleted.
     pub source: PathBuf,
 }
 

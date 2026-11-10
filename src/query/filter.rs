@@ -1,9 +1,9 @@
 //! Query filters: reusable SQL WHERE condition builder stamps.
 //!
 //! Each query builder (e.g. [`PostQuery`](super::post::PostQuery)) exposes its filters
-//! as public fields. Callers invoke methods on those fields; the filters write their
-//! conditions into [`RawSql`](super::RawSql) via [`build_sql()`] when
-//! [`BaseFilter::update_sql()`](super::BaseFilter::update_sql) is called.
+//! as public fields. Callers invoke methods on those fields; when the query runs, every
+//! filter adds its `WHERE` condition and parameters to the [`SqlBuilder`] through
+//! [`Filter::apply`]. Filters that were never set add nothing.
 //!
 //! | Filter | Use case |
 //! |--------|----------|

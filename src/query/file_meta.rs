@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 use crate::{
-    impl_sortable,
+    query::impl_sortable,
     query::{
         filter::{IdFilter, TextFilter},
         OrderBy, Pagination, Query, Repo, SqlBuilder,
@@ -25,12 +25,13 @@ impl<'a> Repo<'a, FileMeta> {
     }
 }
 
-/// Fluent query builder for collections.  Obtained via [`PostArchiverManager::collections()`].
+/// Fluent query builder for file metadata. Obtained via `manager.file_metas().query()`.
 ///
 /// # Available filter fields
-/// - `ids`: filter by a set of [`CollectionId`] values.
-/// - `name`: `LIKE` fuzzy match on the collection name.
-/// - `source`: `LIKE` fuzzy match on the source field.
+/// - `ids`: filter by a set of [`FileMetaId`] values.
+/// - `posts`: filter by the owning [`PostId`]s.
+/// - `filename`: `LIKE` fuzzy match on the filename.
+/// - `mime`: `LIKE` fuzzy match on the MIME type.
 #[derive(Debug)]
 pub struct FileMetaQuery<'a> {
     conn: &'a Connection,
@@ -43,7 +44,7 @@ pub struct FileMetaQuery<'a> {
     pub pagination: Pagination,
 }
 
-impl_sortable!(FileMetaQuery(FileMetaSort) {
+impl_sortable!(FileMetaSort {
     Id: "id",
     Post: "post",
     Filename: "filename",

@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 use crate::{
-    impl_sortable,
+    query::impl_sortable,
     query::{OrderBy, Pagination, Repo, SqlBuilder},
     PlatformId, Tag, TagId,
 };
@@ -26,12 +26,11 @@ impl<'a> Repo<'a, Tag> {
     }
 }
 
-/// Fluent query builder for tags.  Obtained via [`PostArchiverManager::tags()`].
+/// Fluent query builder for tags. Obtained via `manager.tags().query()`.
 ///
 /// # Available filter fields
 /// - `ids`: filter by a set of [`TagId`] values.
 /// - `name`: `LIKE` fuzzy match on the tag name.
-/// - `source`: `LIKE` fuzzy match on the source field.
 /// - `platforms`: filter by a set of [`PlatformId`] values.
 #[derive(Debug)]
 pub struct TagQuery<'a> {
@@ -44,7 +43,7 @@ pub struct TagQuery<'a> {
     pub pagination: Pagination,
 }
 
-impl_sortable!(TagQuery(TagSort) {
+impl_sortable!(TagSort {
     Id: "id",
     Name: "name",
     Platform: "platform"

@@ -1,12 +1,68 @@
-//! Module for importing data from various sources.
+//! Importing scraped data into an archive.
 //!
-//! This module contains the necessary structures and functions to handle the import of data
+//! Build `Unsync*` values (posts, authors, tags, collections, files) and hand them to an
+//! [`Importer`] from [`PostArchiverManager::importer`]. Entities are matched against what is
+//! already in the archive, so importing the same post again updates it in place:
 //!
-//! It includes two methods for importing data:
-//!   1. object like (recommended)
-//!      It is high level and easy to use.
-//!   2. function like
-//!      It is low level and more flexible.
+//! | Entity | Matched by |
+//! |--------|------------|
+//! | post | `source` |
+//! | author | any alias `(platform, source)` |
+//! | collection | `source` |
+//! | tag | `(name, platform)`; `platform: None` is a general tag |
+//! | platform | name (case-insensitive) |
+//! | file | `(post, filename)` |
+//!
+//! # Transactions
+//!
+//! Every `import_*` call is atomic: if it fails, nothing it did is kept.
+//! To make several imports all-or-nothing, open a savepoint yourself and
+//! [`commit`](Importer::commit) it; dropping it without committing rolls everything back.
+//! Savepoints can be nested.
+//!
+//! # Files
+//!
+//! - Files are **copied** from [`UnsyncFileMeta::source`] into the post's directory. The source
+//!   file is left alone; deleting it after a successful import is up to the caller.
+//! - Copies are written as `<filename>.importing` and renamed into place when the outermost
+//!   savepoint commits. On rollback they are deleted, and files already in the archive are
+//!   untouched.
+//! - [`UnsyncFileMeta::filename`] must be a plain file name (no `/`, `\` or `..`); it becomes
+//!   the file's name inside the post directory.
+//! - Re-importing a file with the same filename replaces its content, MIME type and `extra`.
+//!
+//! # Example
+//!
+//! ```
+//! use post_archiver::importer::{UnsyncContent, UnsyncFileMeta, UnsyncPost, UnsyncTag};
+//! use post_archiver::manager::PostArchiverManager;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let dir = tempdir::TempDir::new("doc")?;
+//! # let root = dir.path().join("archive");
+//! # let src = dir.path().join("downloaded.png");
+//! # std::fs::create_dir(&root)?;
+//! # std::fs::write(&src, b"png")?;
+//! let mut manager = PostArchiverManager::create(&root)?;
+//!
+//! let image = UnsyncFileMeta::new("1.png".into(), "image/png".into(), src.clone());
+//! let post = UnsyncPost::new(
+//!     "pixiv".into(),
+//!     "https://example.com/posts/1".into(),
+//!     "Hello".into(),
+//!     vec![UnsyncContent::Text("hi".into()), UnsyncContent::File(image)],
+//! )
+//! .tags(vec![UnsyncTag { name: "art".into(), platform: None }]);
+//!
+//! let mut importer = manager.importer();
+//! let mut tx = importer.savepoint()?; // optional: group several imports
+//! let id = tx.import_post(post)?;
+//! tx.commit()?;
+//!
+//! std::fs::remove_file(&src)?; // sources are kept; clean up after a successful import
+//! assert_eq!(manager.importer().lookup_post("https://example.com/posts/1")?, Some(id));
+//! # Ok(())
+//! # }
+//! ```
 
 pub mod author;
 
