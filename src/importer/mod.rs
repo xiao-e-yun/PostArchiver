@@ -105,7 +105,7 @@ impl ImporterPending<'_> {
     const IMPORTING_EXT: &'static str = "importing";
     pub fn stage(&mut self, src: &Path, dst: PathBuf) -> crate::error::Result<()> {
         let temp = dst.with_added_extension(Self::IMPORTING_EXT);
-        std::fs::hard_link(src, &temp).or_else(|_| std::fs::copy(src, &temp).map(|_| ()))?;
+        fs::copy(src, &temp)?;
         self.buffer.insert(dst);
         Ok(())
     }
@@ -126,6 +126,9 @@ impl ImporterPending<'_> {
 
 impl Drop for ImporterPending<'_> {
     fn drop(&mut self) {
+        if self.depth > 1 {
+            return;
+        }
         for dst in &self.buffer {
             let src = dst.with_added_extension(Self::IMPORTING_EXT);
             let _ = fs::remove_file(&src);
