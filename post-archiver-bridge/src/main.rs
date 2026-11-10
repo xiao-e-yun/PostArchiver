@@ -135,12 +135,15 @@ pub trait MigrationDatabase: Default {
         if bridge.verify(conn) {
             info!("=================================");
             info!("Migrating from v{}", Self::VERSION);
-            conn.pragma_update(None, "foreign_keys", "off").expect("Failed to disable foreign keys");
+            conn.pragma_update(None, "foreign_keys", "off")
+                .expect("Failed to disable foreign keys");
             let mut tx = conn.transaction().unwrap();
-            tx.execute_batch(Self::SQL).expect("Failed to execute migration SQL");
+            tx.execute_batch(Self::SQL)
+                .expect("Failed to execute migration SQL");
             bridge.upgrade(&config.target, &mut tx);
             tx.commit().expect("Failed to commit transaction");
-            conn.pragma_update(None, "foreign_keys", "on").expect("Failed to enable foreign keys");
+            conn.pragma_update(None, "foreign_keys", "on")
+                .expect("Failed to enable foreign keys");
             config.updated = true;
             info!("=================================");
         }
