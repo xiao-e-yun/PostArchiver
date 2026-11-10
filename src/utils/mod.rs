@@ -8,6 +8,9 @@
 pub mod macros;
 pub use macros::AsTable;
 
+#[doc(hidden)]
+pub use rusqlite;
+
 /// Default relative path to the SQLite database file
 ///
 /// # Usage

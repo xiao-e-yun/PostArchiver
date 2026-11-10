@@ -10,8 +10,9 @@ rust-version = "1.91"
 
 
 [features]
+default = ["utils"]
 typescript = ["dep:ts-rs"]
-utils = ["dep:rusqlite", "dep:thiserror", "dep:cached"]
+utils = ["dep:rusqlite", "dep:thiserror"]
 importer = ["utils"]
 
 [dependencies]
@@ -27,7 +28,6 @@ ts-rs = { version = "10.1", features = [
 # utils
 rusqlite = { version = "0.32", optional = true, features = ["chrono"] }
 thiserror = { version = "2", optional = true }
-cached = { version = "0.56", optional = true }
 serde_json = "1.0"
 
 [dev-dependencies]
