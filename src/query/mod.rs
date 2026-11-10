@@ -101,10 +101,10 @@ impl<'a, T: AsTable + HasId> Repo<'a, T> {
             _phantom: std::marker::PhantomData,
         }
     }
-    pub fn get<U: FromQuery<Based = T>>(&self, id: T::Id) -> crate::error::Result<Option<T>> {
+    pub fn get<U: FromQuery<Based = T>>(&self, id: T::Id) -> crate::error::Result<Option<U>> {
         let sql = format!("SELECT {} FROM {} WHERE id = ?", U::fields(), T::TABLE_NAME);
         let mut stmt = self.conn.prepare_cached(&sql)?;
-        Ok(stmt.query_row(params![id], T::from_row).optional()?)
+        Ok(stmt.query_row(params![id], U::from_row).optional()?)
     }
 }
 
