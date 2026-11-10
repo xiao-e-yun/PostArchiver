@@ -4,7 +4,6 @@ pub trait AsTable: FromQuery<Based = Self> + Sized {
     const TABLE_NAME: &'static str;
 }
 
-#[macro_export]
 macro_rules! as_table {
     // private helper
     (@as_column, $row: expr, $col: expr) => {
@@ -14,13 +13,13 @@ macro_rules! as_table {
         $crate::utils::macros::json_column($row, stringify!($col))
     };
     (@sub_query, $table: literal, $rel_table: ident, $rel_field: ident as { $($rests: tt)* }) => {
-        concat!( "(SELECT json_group_array(json_object(", $crate::as_table!(@sql_params, $($rests)*) ,")) FROM ", stringify!($rel_table), " WHERE ", stringify!($rel_field), " = ", $table, ".id) AS ", stringify!($rel_table))
+        concat!( "(SELECT json_group_array(json_object(", $crate::utils::macros::as_table!(@sql_params, $($rests)*) ,")) FROM ", stringify!($rel_table), " WHERE ", stringify!($rel_field), " = ", $table, ".id) AS ", stringify!($rel_table))
     };
     (@sub_query, $table: literal, $rel_table: ident, $rel_field: ident => $rel_value: tt) => {
         concat!( "(SELECT json_group_array(", stringify!($rel_value), ") FROM ", stringify!($rel_table), " WHERE ", stringify!($rel_field), " = ", $table, ".id) AS ", stringify!($rel_table))
     };
     (@sql_params, $key: ident: $value: literal, $($rests:tt)*) => {
-        concat!("'", stringify!($key), "', ", $value, ", ", $crate::as_table!(@sql_params, $($rests)*))
+        concat!("'", stringify!($key), "', ", $value, ", ", $crate::utils::macros::as_table!(@sql_params, $($rests)*))
     };
     (@sql_params, $key: ident: $value: literal) => {
         concat!("'", stringify!($key), "', ", $value)
@@ -40,7 +39,7 @@ macro_rules! as_table {
             #[doc(hidden)]
             pub const DEFINITIONS: $definitions = $definitions {
                 $($field: stringify!($field),)*
-                $($rel_table: $crate::as_table!(@sub_query, $table, $rel_table, $rel_field $($rests)*),)*
+                $($rel_table: $crate::utils::macros::as_table!(@sub_query, $table, $rel_table, $rel_field $($rests)*),)*
             };
         }
 
@@ -50,8 +49,8 @@ macro_rules! as_table {
             $(pub $rel_table: &'static str,)*
         }
         impl $definitions {
-            $(pub fn $field(&self, row: &$crate::utils::rusqlite::Row) -> $crate::utils::rusqlite::Result<$ty> { $crate::as_table!(@as_column, row, $field $(, $mode)?) })*
-            $(pub fn $rel_table(&self, row: &$crate::utils::rusqlite::Row) -> $crate::utils::rusqlite::Result<Vec<$rty>> { $crate::as_table!(@as_column, row, $rel_table, json) })*
+            $(pub fn $field(&self, row: &rusqlite::Row) -> rusqlite::Result<$ty> { $crate::utils::macros::as_table!(@as_column, row, $field $(, $mode)?) })*
+            $(pub fn $rel_table(&self, row: &rusqlite::Row) -> rusqlite::Result<Vec<$rty>> { $crate::utils::macros::as_table!(@as_column, row, $rel_table, json) })*
         }
 
         impl $crate::query::FromQuery for $name {
@@ -59,7 +58,7 @@ macro_rules! as_table {
             fn fields() -> String {
                 "*".to_string()
             }
-            fn from_row(row: &$crate::utils::rusqlite::Row) -> $crate::utils::rusqlite::Result<Self> {
+            fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
                 Ok(Self {
                     $( $field: $name::DEFINITIONS.$field(row)?, )*
                 })
