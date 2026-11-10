@@ -79,12 +79,12 @@ mod definitions {
     use super::*;
 
     as_table!(
-        "file_metas" => FileMeta {
-            id: "id",
-            post: "post",
-            filename: "filename",
-            mime: "mime",
-            extra: "extra" => json,
+        "file_metas" => FileMeta(FileMetaDefinitions) {
+            column id: FileMetaId,
+            column post: PostId,
+            column filename: String,
+            column mime: String,
+            column extra: HashMap<String, Value> => json,
         }
     );
 }

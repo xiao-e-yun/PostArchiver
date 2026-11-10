@@ -38,15 +38,16 @@ mod definitions {
     use super::*;
 
     as_table! {
-        "tags" => Tag {
-            id: "id",
-            name: "name",
-            platform: "platform",
+        "tags" => Tag(TagDefinitions) {
+            column id: TagId,
+            column name: String,
+            column platform: Option<PlatformId>,
+            relation post_tags(tag => post) as PostId,
         }
 
-        "post_tags" => PostTag {
-            post: "post",
-            tag: "tag",
+        "post_tags" => PostTag(PostTagDefinitions) {
+            column post: PostId,
+            column tag: TagId,
         }
     }
 }

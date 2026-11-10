@@ -34,16 +34,17 @@ mod definitions {
     use super::*;
 
     as_table!(
-        "collections" => Collection {
-            id: "id",
-            name: "name",
-            thumb: "thumb",
-            source: "source",
+        "collections" => Collection(CollectionDefinitions) {
+            column id: CollectionId,
+            column name: String,
+            column thumb: Option<FileMetaId>,
+            column source: Option<String>,
+            relation collection_posts(collection => post) as PostId,
         }
 
-        "collection_posts" => CollectionPost {
-            collection: "collection",
-            post: "post",
+        "collection_posts" => CollectionPost(CollectionPostDefinitions) {
+            column collection: CollectionId,
+            column post: PostId,
         }
     );
 }

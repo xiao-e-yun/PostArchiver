@@ -52,16 +52,43 @@ use std::fmt::{Debug, Display};
 
 use rusqlite::{params, Connection, OptionalExtension, Result, ToSql};
 
-use crate::{utils::macros::AsTable, HasId};
+use crate::{manager::PostArchiverManager, utils::macros::AsTable, HasId};
+
+impl PostArchiverManager {
+    pub fn posts(&self) -> Repo<'_, crate::Post> {
+        Repo::new(&self.conn)
+    }
+    pub fn authors(&self) -> Repo<'_, crate::Author> {
+        Repo::new(&self.conn)
+    }
+    pub fn tags(&self) -> Repo<'_, crate::Tag> {
+        Repo::new(&self.conn)
+    }
+    pub fn collections(&self) -> Repo<'_, crate::Collection> {
+        Repo::new(&self.conn)
+    }
+    pub fn platforms(&self) -> Repo<'_, crate::Platform> {
+        Repo::new(&self.conn)
+    }
+    pub fn file_metas(&self) -> Repo<'_, crate::FileMeta> {
+        Repo::new(&self.conn)
+    }
+}
 
 pub struct Repo<'a, T> {
     pub conn: &'a Connection,
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<E: AsTable + HasId> Repo<'_, E> {
+impl<'a, E: AsTable + HasId> Repo<'a, E> {
+    fn new(conn: &'a Connection) -> Repo<'a, E> {
+        Self {
+            conn,
+            _phantom: std::marker::PhantomData,
+        }
+    }
     pub fn get<T: FromQuery<Based = E>>(&self, id: E::Id) -> crate::error::Result<Option<T>> {
-        let sql = format!("{} WHERE id = ?", T::fields());
+        let sql = format!("SELECT {} FROM {} WHERE id = ?", T::fields(), E::TABLE_NAME);
         let mut stmt = self.conn.prepare_cached(&sql)?;
         Ok(stmt.query_row(params![id], T::from_row).optional()?)
     }

@@ -40,7 +40,7 @@ pub struct TagQuery<'a> {
     pub platforms: IdFilter<PlatformId>,
     pub name: TextFilter,
 
-    pub order: OrderBy<AuthorSort>,
+    pub order: OrderBy<TagSort>,
     pub pagination: Pagination,
 }
 

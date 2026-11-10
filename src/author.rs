@@ -63,23 +63,30 @@ mod definitions {
     use super::*;
 
     as_table! {
-        "authors" => Author {
-            id: "id",
-            name: "name",
-            thumb: "thumb",
-            updated: "updated",
+        "authors" => Author(AuthorDefinitions) {
+            column id: AuthorId,
+            column name: String,
+            column thumb: Option<FileMetaId>,
+            column updated: DateTime<Utc>,
+            relation author_posts(author => post) as PostId,
+            relation author_aliases(author as {
+                source: "source",
+                platform: "platform",
+                target: "target",
+                link: "link"
+            }) as Alias,
         }
 
-        "author_posts" => AuthorPost {
-            author: "author",
-            post: "post",
+        "author_posts" => AuthorPost(AuthorPostDefinitions) {
+            column author: AuthorId,
+            column post: PostId,
         }
 
-        "author_aliases" => Alias {
-            source: "source",
-            platform: "platform",
-            target: "target",
-            link: "link",
+        "author_aliases" => Alias(AliasDefinitions) {
+            column source: String,
+            column platform: PlatformId,
+            column target: AuthorId,
+            column link: Option<String>,
         }
     }
 }

@@ -26,14 +26,17 @@ impl Platform {
 
 #[cfg(feature = "utils")]
 mod definitions {
-    use crate::utils::macros::as_table;
+    use crate::{utils::macros::as_table, AuthorId, PostId, TagId};
 
     use super::*;
 
     as_table! {
-        "platforms" => Platform {
-            id: "id",
-            name: "name",
+        "platforms" => Platform(PlatformDefinitions) {
+            column id: PlatformId,
+            column name: String,
+            relation author_aliases(platform => target) as AuthorId,
+            relation posts(platform => id) as PostId,
+            relation tags(platform => id) as TagId,
         }
     }
 }
