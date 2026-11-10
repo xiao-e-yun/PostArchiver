@@ -1,7 +1,7 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Deref};
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
     error::Result,
@@ -100,8 +100,8 @@ impl<C: SavepointExt> Importer<'_, '_, C> {
     }
 }
 
-impl<C: SavepointExt> Importer<'_, '_, C> {
-    pub fn lookup_post(&mut self, source: &str) -> Result<Option<PostId>> {
+impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
+    pub fn lookup_post(&self, source: &str) -> Result<Option<PostId>> {
         let mut stmt = self
             .conn
             .prepare_cached("SELECT id FROM posts WHERE source = ?")?;
