@@ -19,7 +19,7 @@ CREATE TABLE
 -- Alias ---------------------------------------------------
 CREATE TABLE
     author_aliases (
-        source TEXT UNIQUE NOT NULL,
+        source TEXT NOT NULL,
         platform INTEGER NOT NULL DEFAULT 0,
         link TEXT,
         target INTEGER NOT NULL,
@@ -99,11 +99,12 @@ CREATE INDEX collection_posts_post_idx ON collection_posts (post);
 CREATE TABLE
     tags (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE ,
+        name TEXT NOT NULL,
         platform INTEGER REFERENCES platforms (id) ON DELETE CASCADE
     );
 
 CREATE UNIQUE INDEX tags_idx ON tags (platform, name);
+CREATE UNIQUE INDEX tags_general_idx ON tags (name) WHERE platform IS NULL;
 
 CREATE TABLE
     post_tags (
