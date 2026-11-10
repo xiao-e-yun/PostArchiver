@@ -1,8 +1,5 @@
 use crate::query::FromQuery;
 
-#[doc(hidden)]
-pub use rusqlite;
-
 pub trait AsTable: FromQuery<Based = Self> + Sized {
     const TABLE_NAME: &'static str;
 }
@@ -71,8 +68,7 @@ macro_rules! as_table {
     };
 }
 
-#[doc(hidden)]
-pub fn json_column<T: serde::de::DeserializeOwned>(
+pub(crate) fn json_column<T: serde::de::DeserializeOwned>(
     row: &rusqlite::Row,
     col: &str,
 ) -> Result<T, rusqlite::Error> {
@@ -128,4 +124,5 @@ macro_rules! impl_from_query {
     };
 }
 
-pub use {as_table, impl_from_query};
+pub(crate) use as_table;
+pub use impl_from_query;

@@ -32,8 +32,6 @@ serde_json = "1.0"
 
 [dev-dependencies]
 tempdir = "0.3.7"
-# `impl_from_query!` expands to `rusqlite::Row`, so downstream crates (and these tests) need it
-rusqlite = { version = "0.32", features = ["chrono"] }
 
 [package.metadata.docs.rs]
 all-features = true
