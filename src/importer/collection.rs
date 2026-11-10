@@ -9,7 +9,7 @@ use crate::{
     CollectionId,
 };
 
-impl<C: Deref<Target = Connection>> Importer<'_, C> {
+impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
     pub fn import_collection(&mut self, collection: UnsyncCollection) -> Result<CollectionId> {
         let id = self.lookup_collection(&collection.source)?;
         Ok(match id {

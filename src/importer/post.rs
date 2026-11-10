@@ -12,7 +12,7 @@ use crate::{
 
 use super::{collection::UnsyncCollection, tag::UnsyncTag, UnsyncFileMeta};
 
-impl<C: SavepointExt> Importer<'_, C> {
+impl<C: SavepointExt> Importer<'_, '_, C> {
     /// Import a post into the archive.
     ///
     /// If the post already exists (by source), it updates its title, platform, published date,
@@ -100,7 +100,7 @@ impl<C: SavepointExt> Importer<'_, C> {
     }
 }
 
-impl<C: SavepointExt> Importer<'_, C> {
+impl<C: SavepointExt> Importer<'_, '_, C> {
     pub fn lookup_post(&mut self, source: &str) -> Result<Option<PostId>> {
         let mut stmt = self
             .conn

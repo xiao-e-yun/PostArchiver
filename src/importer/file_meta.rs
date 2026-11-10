@@ -10,7 +10,7 @@ use crate::{
     FileMetaId, Post, PostId,
 };
 
-impl<C: SavepointExt> Importer<'_, C> {
+impl<C: SavepointExt> Importer<'_, '_, C> {
     /// Create or update a file metadata entry in the archive.
     ///
     /// Takes a file metadata object and either creates a new entry or updates an existing one.
@@ -26,15 +26,15 @@ impl<C: SavepointExt> Importer<'_, C> {
     ) -> Result<FileMetaId> {
         let id: Option<FileMetaId> = self.lookup_file_meta(post, &file_meta)?;
 
-        let sp = self.conn.savepoint()?;
+        let mut sp = self.savepoint()?;
         let id = match id {
             Some(id) => {
                 let upd = UpdateFileMeta::default().extra(file_meta.extra.clone());
-                sp.bind(id).update(upd)?;
+                sp.conn.bind(id).update(upd)?;
                 id
             }
             None => {
-                let mut ins_stmt = sp.prepare_cached(
+                let mut ins_stmt = sp.conn.prepare_cached(
                     "INSERT INTO file_metas (post, filename, mime, extra) VALUES (?, ?, ?, ?) RETURNING id",
                 )?;
                 ins_stmt.query_row(
@@ -49,11 +49,11 @@ impl<C: SavepointExt> Importer<'_, C> {
             }
         };
 
-        let path = self.path.join(Post::directory(post));
+        let path = sp.path.join(Post::directory(post));
         std::fs::create_dir_all(&path)?;
 
         let target = path.join(&file_meta.filename);
-        std::fs::rename(file_meta.source, target)?;
+        sp.pending.stage(&file_meta.source, target)?;
         sp.commit()?;
 
         Ok(id)

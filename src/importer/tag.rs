@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{error::Result, importer::Importer, PlatformId, TagId};
 
-impl<C: Deref<Target = Connection>> Importer<'_, C> {
+impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
     /// Import a tag into the archive.
     ///
     /// If the tag already exists, it returns the existing ID.

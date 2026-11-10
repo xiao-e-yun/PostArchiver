@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::{error::Result, importer::Importer, PlatformId};
 
-impl<C: Deref<Target = Connection>> Importer<'_, C> {
+impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
     /// Import a platform into the archive.
     ///
     /// If the platform already exists, it returns the existing ID.

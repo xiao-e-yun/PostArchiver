@@ -9,7 +9,7 @@ use crate::{
     AuthorId, PlatformId,
 };
 
-impl<C: SavepointExt> Importer<'_, C> {
+impl<C: SavepointExt> Importer<'_, '_, C> {
     pub fn import_author(&mut self, author: UnsyncAuthor) -> Result<AuthorId> {
         let id = self.lookup_author(author.clone())?;
         let aliases = author.aliases.into_iter().map(|v| v.into());
@@ -39,7 +39,7 @@ impl<C: SavepointExt> Importer<'_, C> {
     }
 }
 
-impl<C: Deref<Target = Connection>> Importer<'_, C> {
+impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
     pub fn lookup_author(&self, author: UnsyncAuthor) -> Result<Option<AuthorId>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT target FROM author_aliases WHERE platform = ? AND source = ?",
