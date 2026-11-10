@@ -13,8 +13,8 @@ use super::{
     Query,
 };
 
-impl Repo<'_, Post> {
-    pub fn query(&self) -> PostQuery<'_> {
+impl<'a> Repo<'a, Post> {
+    pub fn query(&self) -> PostQuery<'a> {
         PostQuery {
             conn: self.conn,
             ids: IdFilter::new("id"),
@@ -32,7 +32,7 @@ impl Repo<'_, Post> {
     }
 }
 
-/// Fluent query builder for posts.  Obtained via [`PostArchiverManager::posts()`].
+/// Fluent query builder for posts. Obtained via `manager.posts().query()`.
 ///
 /// # Available filter fields
 /// - `ids`: filter by a set of [`PostId`] values.
@@ -46,16 +46,17 @@ impl Repo<'_, Post> {
 /// - `collections`：filter by a set of [`CollectionId`] values, through the `collection_posts` relation table.
 ///
 /// # Example
-/// ```no_run
+/// ```
 /// # use post_archiver::manager::PostArchiverManager;
-/// # use post_archiver::query::{SortDir, Sortable, Countable, Paginate, Query};
-/// # use post_archiver::query::post::PostSort;
+/// use post_archiver::query::{post::PostSort, Pagination, PostArchiverQueryExt, Query};
+/// use post_archiver::{AuthorId, Post};
 /// # let manager = PostArchiverManager::open_in_memory().unwrap();
-/// let posts = manager.posts()
-///     .sort(PostSort::Updated, SortDir::Desc)
-///     .pagination(20, 0)
-///     .query::<post_archiver::Post>()
-///     .unwrap();
+/// let mut q = manager.posts().query();
+/// q.authors.insert(AuthorId(1));
+/// q.order.desc(PostSort::Updated);
+/// q.pagination = Pagination::default().limit(20);
+/// let posts: Vec<Post> = q.query().unwrap();
+/// # assert!(posts.is_empty());
 /// ```
 #[derive(Debug)]
 pub struct PostQuery<'a> {

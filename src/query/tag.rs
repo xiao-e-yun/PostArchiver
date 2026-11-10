@@ -13,8 +13,8 @@ use super::{
     Query,
 };
 
-impl Repo<'_, Tag> {
-    pub fn query(&self) -> TagQuery<'_> {
+impl<'a> Repo<'a, Tag> {
+    pub fn query(&self) -> TagQuery<'a> {
         TagQuery {
             conn: self.conn,
             ids: IdFilter::new("id"),

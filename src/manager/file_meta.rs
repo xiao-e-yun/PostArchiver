@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::PathBuf};
 
 use serde_json::Value;
 
@@ -18,14 +13,12 @@ use crate::{
 pub struct UpdateFileMeta {
     pub mime: Option<String>,
     pub extra: Option<HashMap<String, Value>>,
-    pub content: Option<FileMetaContent>,
 }
 
 impl UpdateFileMeta {
     /// Convert this update to a version, for use in the `update` method.
     pub fn new() -> UpdateFileMeta {
         UpdateFileMeta {
-            content: None,
             mime: None,
             extra: None,
         }
@@ -39,17 +32,6 @@ impl UpdateFileMeta {
     /// Set the extra metadata.
     pub fn extra(mut self, extra: HashMap<String, Value>) -> Self {
         self.extra = Some(extra);
-        self
-    }
-    /// Set the file content by path.
-    pub fn path(mut self, content: impl AsRef<Path>) -> UpdateFileMeta {
-        self.content = Some(FileMetaContent::path(content));
-        self
-    }
-
-    /// Set the file content by bytes.
-    pub fn content(mut self, content: Vec<u8>) -> Self {
-        self.content = Some(FileMetaContent::content(content));
         self
     }
 }
@@ -108,6 +90,7 @@ impl<'a> Binded<'a, FileMetaId> {
         let sql = format!("UPDATE file_metas SET {} WHERE id = ?", sets.join(", "));
         let id = self.id();
         params.push(&id);
+
         self.conn.execute(&sql, params.as_slice())?;
 
         Ok(())
@@ -123,36 +106,5 @@ impl<'a> Binded<'a, FileMetaId> {
             let filename: String = row.get(1)?;
             Ok(Post::directory(post_id).join(filename))
         })?)
-    }
-}
-
-//=============================================================
-// File content
-//=============================================================
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum FileMetaContent {
-    Content(Vec<u8>),
-    Path(PathBuf),
-}
-
-impl FileMetaContent {
-    pub fn content(content: Vec<u8>) -> Self {
-        FileMetaContent::Content(content)
-    }
-    pub fn path(path: impl AsRef<Path>) -> Self {
-        FileMetaContent::Path(path.as_ref().to_path_buf())
-    }
-    pub fn write(&self, path: &Path) -> Result<()> {
-        match self {
-            FileMetaContent::Content(content) => {
-                let mut file = File::create(path)?;
-                file.write_all(content)?;
-            }
-            FileMetaContent::Path(src_path) => {
-                fs::copy(src_path, path)?;
-            }
-        };
-        Ok(())
     }
 }

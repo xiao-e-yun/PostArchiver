@@ -10,8 +10,8 @@ use crate::{
 
 use super::filter::{IdFilter, TextFilter};
 
-impl Repo<'_, Collection> {
-    pub fn query(&self) -> CollectionQuery<'_> {
+impl<'a> Repo<'a, Collection> {
+    pub fn query(&self) -> CollectionQuery<'a> {
         CollectionQuery {
             conn: self.conn,
             ids: IdFilter::new("id"),

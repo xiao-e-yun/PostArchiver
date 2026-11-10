@@ -29,7 +29,9 @@ impl<C: SavepointExt> Importer<'_, '_, C> {
         let mut sp = self.savepoint()?;
         let id = match id {
             Some(id) => {
-                let upd = UpdateFileMeta::default().extra(file_meta.extra.clone());
+                let upd = UpdateFileMeta::default()
+                    .extra(file_meta.extra.clone())
+                    .mime(file_meta.mime.clone());
                 sp.conn.bind(id).update(upd)?;
                 id
             }

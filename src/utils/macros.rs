@@ -1,5 +1,8 @@
 use crate::query::FromQuery;
 
+#[doc(hidden)]
+pub use rusqlite;
+
 pub trait AsTable: FromQuery<Based = Self> + Sized {
     const TABLE_NAME: &'static str;
 }
@@ -50,8 +53,8 @@ macro_rules! as_table {
             $(pub $rel_table: &'static str,)*
         }
         impl $definitions {
-            $(pub fn $field(&self, row: &rusqlite::Row) -> Result<$ty, rusqlite::Error> { $crate::as_table!(@as_column, row, $field $(, $mode)?) })*
-            $(pub fn $rel_table(&self, row: &rusqlite::Row) -> Result<Vec<$rty>, rusqlite::Error> { $crate::as_table!(@as_column, row, $rel_table, json) })*
+            $(pub fn $field(&self, row: &$crate::utils::rusqlite::Row) -> $crate::utils::rusqlite::Result<$ty> { $crate::as_table!(@as_column, row, $field $(, $mode)?) })*
+            $(pub fn $rel_table(&self, row: &$crate::utils::rusqlite::Row) -> $crate::utils::rusqlite::Result<Vec<$rty>> { $crate::as_table!(@as_column, row, $rel_table, json) })*
         }
 
         impl $crate::query::FromQuery for $name {
@@ -59,7 +62,7 @@ macro_rules! as_table {
             fn fields() -> String {
                 "*".to_string()
             }
-            fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
+            fn from_row(row: &$crate::utils::rusqlite::Row) -> $crate::utils::rusqlite::Result<Self> {
                 Ok(Self {
                     $( $field: $name::DEFINITIONS.$field(row)?, )*
                 })
@@ -79,27 +82,34 @@ pub fn json_column<T: serde::de::DeserializeOwned>(
     })
 }
 
-/// Helper macro to implement `FromQuery` for a struct with custom column mappings and optional JSON deserialization.
-/// ```
-/// # use post_archiver::{utils::macros::impl_from_query, *};
+/// Implement `FromQuery` for a projection of a table: a struct holding some of its columns
+/// and relation columns, under the same names as in the table's `as_table!` definition.
 ///
-/// struct PostPreview {
-///     id: i64,
+/// The expansion names `rusqlite::Row`, so the calling crate needs `rusqlite` as a dependency.
+///
+/// ```
+/// use post_archiver::{impl_from_query, manager::PostArchiverManager, query::PostArchiverQueryExt};
+/// use post_archiver::{AuthorId, FileMetaId, Post, PostId};
+///
+/// struct PostCard {
+///     id: PostId,
 ///     title: String,
 ///     thumb: Option<FileMetaId>,
-///     updated: i64,
-///     comments: Vec<Comment>,
+///     author_posts: Vec<AuthorId>, // relation column
 /// }
 ///
 /// impl_from_query! {
-///     PostPreview extends Post {
-///         id: "id",
-///         title: "title",
-///         thumb: "thumb",
-///         updated: "updated",
-///         comments: "comments" => json,
+///     PostCard extends Post {
+///         id: id,
+///         title: title,
+///         thumb: thumb,
+///         author_posts: author_posts,
 ///     }
 /// }
+///
+/// let manager = PostArchiverManager::open_in_memory().unwrap();
+/// let card: Option<PostCard> = manager.posts().get(PostId(1)).unwrap();
+/// # assert!(card.is_none());
 /// ```
 #[macro_export]
 macro_rules! impl_from_query {
@@ -109,9 +119,9 @@ macro_rules! impl_from_query {
         impl $crate::query::FromQuery for $name {
             type Based = $based;
             fn fields() -> String {
-                [ $($based::DEFINITIONS.$field),* ].join(", ")
+                [ $($based::DEFINITIONS.$col),* ].join(", ")
             }
-            fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
+            fn from_row(row: &$crate::utils::rusqlite::Row) -> $crate::utils::rusqlite::Result<Self> {
                 Ok(Self { $($field: $based::DEFINITIONS.$col(row)?,)* })
             }
         }

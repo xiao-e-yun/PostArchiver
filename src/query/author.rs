@@ -12,8 +12,8 @@ use super::{
     impl_sortable, FromQuery, Query,
 };
 
-impl Repo<'_, Author> {
-    pub fn query(&self) -> AuthorQuery<'_> {
+impl<'a> Repo<'a, Author> {
+    pub fn query(&self) -> AuthorQuery<'a> {
         AuthorQuery {
             conn: self.conn,
             ids: IdFilter::new("id"),

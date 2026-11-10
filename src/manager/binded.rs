@@ -18,15 +18,16 @@ impl BindableId for FileMetaId {}
 
 /// A bound entity context for update, delete, and relation operations.
 ///
-/// Created via [`PostArchiverManager::bind(id)`](PostArchiverManager::bind).
+/// Created via [`PostArchiverBindExt::bind`], available on the manager and on any
+/// `Deref<Target = Connection>` such as a transaction.
 /// The `Id` type parameter is inferred from the argument — no turbofish needed.
 ///
 /// # Examples
 /// ```no_run
-/// # use post_archiver::manager::PostArchiverManager;
+/// # use post_archiver::manager::{PostArchiverBindExt, PostArchiverManager};
 /// # use post_archiver::PostId;
 /// # fn example(manager: &PostArchiverManager, post_id: PostId) -> Result<(), post_archiver::error::Error> {
-/// // Binded<'_, PostId, _> — type inferred from post_id
+/// // Binded<'_, PostId> — type inferred from post_id
 /// manager.bind(post_id).delete()?;
 /// # Ok(())
 /// # }
@@ -57,7 +58,7 @@ pub trait PostArchiverBindExt {
     ///
     /// # Examples
     /// ```no_run
-    /// # use post_archiver::manager::PostArchiverManager;
+    /// # use post_archiver::manager::{PostArchiverBindExt, PostArchiverManager};
     /// # use post_archiver::PostId;
     /// # fn example(manager: &PostArchiverManager, post_id: PostId) {
     /// let binded = manager.bind(post_id);

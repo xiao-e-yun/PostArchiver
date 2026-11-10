@@ -7,37 +7,45 @@
 //! `RelationshipsFilter`). Callers mutate those fields directly, then call
 //! [`Query::query()`] to execute the SQL and retrieve results.
 //!
-//! Builders can be composed via decorator wrappers:
-//! - [`Paginate::pagination(limit, page)`](Paginate::pagination) → [`Paginated<Q>`](Paginated): appends `LIMIT … OFFSET …`
-//! - [`Sortable::sort(field, dir)`](Sortable::sort) → [`Sorted<Q, F>`](sortable::Sorted): appends `ORDER BY …`
-//! - [`Sortable::sort_random()`](Sortable::sort_random): appends `ORDER BY RANDOM()`
-//! - [`Countable::with_total()`](Countable::with_total) → [`WithTotal<Q>`](countable::WithTotal): also returns the total row count
+//! Ordering and paging are plain fields on every builder:
+//! - `order`: [`OrderBy`], keys apply in call order (`q.order.desc(..).asc(..)`, or `q.order.random()`)
+//! - `pagination`: [`Pagination`], e.g. `Pagination::default().limit(20).page(1)`
+//! - [`Query::count()`] returns the number of matching rows, ignoring `order` and `pagination`
 //!
-//! # Entry points on [`PostArchiverManager`](crate::manager::PostArchiverManager)
+//! Single rows are fetched by ID with [`Repo::get()`], into any [`FromQuery`] type based on
+//! that table (the entity itself, or a projection made with
+//! [`impl_from_query!`](crate::impl_from_query)).
 //!
-//! | Method | Builder | Returns |
-//! |--------|---------|----------|
-//! | `manager.posts()` | [`PostQuery`](post::PostQuery) | `Vec<Post>` / `Totalled<Vec<Post>>` |
-//! | `manager.authors()` | [`AuthorQuery`](author::AuthorQuery) | `Vec<Author>` / `Totalled<Vec<Author>>` |
-//! | `manager.tags()` | [`TagQuery`](tag::TagQuery) | `Vec<Tag>` / `Totalled<Vec<Tag>>` |
-//! | `manager.platforms()` | [`PlatformQuery`](platform::PlatformQuery) | `Vec<Platform>` |
-//! | `manager.collections()` | [`CollectionQuery`](collection::CollectionQuery) | `Vec<Collection>` / `Totalled<Vec<Collection>>` |
+//! # Entry points ([`PostArchiverQueryExt`], on the manager or any `Deref<Target = Connection>`)
+//!
+//! | Method | Builder from `.query()` |
+//! |--------|-------------------------|
+//! | `manager.posts()` | [`PostQuery`](post::PostQuery) |
+//! | `manager.authors()` | [`AuthorQuery`](author::AuthorQuery) |
+//! | `manager.tags()` | [`TagQuery`](tag::TagQuery) |
+//! | `manager.platforms()` | [`PlatformQuery`](platform::PlatformQuery) |
+//! | `manager.collections()` | [`CollectionQuery`](collection::CollectionQuery) |
+//! | `manager.file_metas()` | [`FileMetaQuery`](file_meta::FileMetaQuery) |
 //!
 //! # Examples
 //!
-//! ```no_run
+//! ```
 //! # use post_archiver::manager::PostArchiverManager;
-//! # use post_archiver::query::{Countable, Paginate, Query};
+//! use post_archiver::query::{post::PostSort, Pagination, PostArchiverQueryExt, Query};
+//! use post_archiver::{Post, PostId};
 //! # let manager = PostArchiverManager::open_in_memory().unwrap();
-//! // All matching posts (no LIMIT)
-//! let v = manager.posts().query::<post_archiver::Post>().unwrap();
 //!
-//! // Paginated — page 0, 20 items per page
-//! let v = manager.posts().pagination(20, 0).query::<post_archiver::Post>().unwrap();
+//! // newest posts, second page of 20, plus the total for the pager
+//! let mut q = manager.posts().query();
+//! q.title.contains("hello");
+//! q.order.desc(PostSort::Updated);
+//! q.pagination = Pagination::default().limit(20).page(1);
+//! let total = q.count().unwrap();
+//! let page: Vec<Post> = q.query().unwrap();
 //!
-//! // Paginated + total count
-//! let p = manager.posts().pagination(20, 0).with_total().query::<post_archiver::Post>().unwrap();
-//! println!("{} total posts", p.total);
+//! // a single post by ID
+//! let post: Option<Post> = manager.posts().get(PostId(1)).unwrap();
+//! # assert_eq!((total, page.len(), post), (0, 0, None));
 //! ```
 
 pub mod author;

@@ -77,6 +77,13 @@ impl PostArchiverManager {
             [VERSION],
         )?;
 
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON; 
+            PRAGMA journal_mode = WAL;
+        ",
+        )?;
+
         Ok(Self { conn, path })
     }
 
@@ -149,6 +156,13 @@ impl PostArchiverManager {
 
         let conn = Connection::open(db_path)?;
 
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON; 
+            PRAGMA journal_mode = WAL;
+        ",
+        )?;
+
         Ok(Some(Self { conn, path }))
     }
 
@@ -189,6 +203,13 @@ impl PostArchiverManager {
         conn.execute(
             "INSERT INTO post_archiver_meta (version) VALUES (?)",
             [VERSION],
+        )?;
+
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON; 
+            PRAGMA journal_mode = WAL;
+        ",
         )?;
 
         Ok(Self { conn, path })

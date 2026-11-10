@@ -11,8 +11,8 @@ use crate::{
     FileMeta, FileMetaId, PostId,
 };
 
-impl Repo<'_, FileMeta> {
-    pub fn query(&self) -> FileMetaQuery<'_> {
+impl<'a> Repo<'a, FileMeta> {
+    pub fn query(&self) -> FileMetaQuery<'a> {
         FileMetaQuery {
             conn: self.conn,
             ids: IdFilter::new("id"),

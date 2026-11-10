@@ -22,11 +22,13 @@ impl<C: SavepointExt> Importer<'_, '_, C> {
     /// Returns `Error` if there was an error accessing the database.
     pub fn import_post(&mut self, post: UnsyncPost) -> Result<PostId> {
         let mut sp = self.savepoint()?;
+
+        let updated = post.updated.unwrap_or_else(Utc::now);
         let id: PostId = {
             let mut stmt = sp.conn.prepare_cached(
-                "INSERT INTO posts (source, title) VALUES (?1, ?2) ON CONFLICT(source) DO UPDATE SET source = excluded.source RETURNING id",
+                "INSERT INTO posts (source, title, updated) VALUES (?, ?, ?) ON CONFLICT(source) DO UPDATE SET source = excluded.source RETURNING id",
             )?;
-            stmt.query_row(params![post.source, post.title], |row| row.get(0))?
+            stmt.query_row(params![post.source, post.title, updated], |row| row.get(0))?
         };
 
         let mut thumb = match post.thumb {
@@ -70,7 +72,7 @@ impl<C: SavepointExt> Importer<'_, '_, C> {
                 .title(post.title)
                 .platform(Some(platform))
                 .published(post.published.unwrap_or_else(Utc::now))
-                .updated_by_latest(post.updated.unwrap_or_else(Utc::now))
+                .updated_by_latest(updated)
                 .thumb(thumb)
                 .content(content)
                 .comments(post.comments),

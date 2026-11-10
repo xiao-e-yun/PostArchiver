@@ -13,8 +13,8 @@ use super::{
     Query,
 };
 
-impl Repo<'_, Platform> {
-    pub fn query(&self) -> PlatformQuery<'_> {
+impl<'a> Repo<'a, Platform> {
+    pub fn query(&self) -> PlatformQuery<'a> {
         PlatformQuery {
             conn: self.conn,
             ids: IdFilter::new("id"),

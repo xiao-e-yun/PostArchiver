@@ -69,7 +69,7 @@ mod definitions {
             column thumb: Option<FileMetaId>,
             column updated: DateTime<Utc>,
             relation author_posts(author => post) as PostId,
-            relation author_aliases(author as {
+            relation author_aliases(target as {
                 source: "source",
                 platform: "platform",
                 target: "target",
