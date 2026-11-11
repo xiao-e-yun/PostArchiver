@@ -9,7 +9,8 @@ use crate::MigrationDatabase;
 ///
 /// - `tags.name` is no longer globally unique: general tags (`platform IS NULL`) are unique by
 ///   name, platform tags by `(platform, name)`.
-/// - `author_aliases.source` is no longer globally unique, only per platform.
+/// - `author_aliases.source` is no longer globally unique, only per platform, and the table gets
+///   an index on `target`.
 /// - `file_metas` gets `UNIQUE (post, filename)`. Older importers could insert the same file twice,
 ///   so duplicates are merged first and every reference is pointed at the kept row.
 /// - `posts_source_idx` is dropped (`posts.source` is already `UNIQUE`).
@@ -124,6 +125,9 @@ INSERT INTO author_aliases_new (source, platform, link, target)
 SELECT source, platform, link, target FROM author_aliases;
 DROP TABLE author_aliases;
 ALTER TABLE author_aliases_new RENAME TO author_aliases;
+
+-- aliases are looked up by author (and cascade-deleted with it)
+CREATE INDEX author_aliases_target_idx ON author_aliases (target);
 
 UPDATE post_archiver_meta SET version = '0.6.0';
 "#;

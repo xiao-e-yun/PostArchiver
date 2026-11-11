@@ -6,7 +6,9 @@
 
 - `tags.name` is no longer globally unique. General tags (`platform IS NULL`) are unique by name,
   platform tags by `(platform, name)`.
-- `author_aliases.source` is no longer globally unique, only per platform.
+- `author_aliases.source` is no longer globally unique, only per platform. New index
+  `author_aliases_target_idx` on `target`, used to list an author's aliases and by the cascade
+  when an author is deleted.
 - `file_metas` is unique by `(post, filename)`. The bridge merges existing duplicates and points
   `posts.content` and every `thumb` at the kept row.
 - Foreign keys are now enforced, so `ON DELETE CASCADE` / `SET NULL` take effect. Deleting a post

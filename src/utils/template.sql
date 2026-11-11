@@ -28,6 +28,8 @@ CREATE TABLE
         PRIMARY KEY (platform, source)
     );
 
+CREATE INDEX author_aliases_target_idx ON author_aliases (target);
+
 -- Post ---------------------------------------------------
 CREATE TABLE
     author_posts (
