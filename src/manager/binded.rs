@@ -50,6 +50,8 @@ impl<'a, Id: BindableId> Binded<'a, Id> {
 }
 
 pub trait PostArchiverBindExt {
+    /// The connection [`bind`](Self::bind) works on. Use `manager.conn` for raw SQL.
+    #[doc(hidden)]
     fn conn(&self) -> &Connection;
 
     /// Bind an entity ID to get a [`Binded`] context for update/delete/relation operations.

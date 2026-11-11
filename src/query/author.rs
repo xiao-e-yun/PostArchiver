@@ -4,12 +4,12 @@ use rusqlite::Connection;
 
 use crate::{
     query::{OrderBy, Pagination, Repo, SqlBuilder},
-    Alias, Author, AuthorId,
+    Author, AuthorId,
 };
 
 use super::{
     filter::{DateFilter, IdFilter, TextFilter},
-    impl_sortable, FromQuery, Query,
+    impl_sortable, Query,
 };
 
 impl<'a> Repo<'a, Author> {
@@ -22,14 +22,6 @@ impl<'a> Repo<'a, Author> {
             order: OrderBy::default(),
             pagination: Pagination::default(),
         }
-    }
-    //
-    pub fn list_aliases(&self, id: AuthorId) -> crate::error::Result<Vec<Alias>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT * FROM author_aliases WHERE target = ?")?;
-        let rows = stmt.query_map([id], Alias::from_row)?;
-        rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 }
 

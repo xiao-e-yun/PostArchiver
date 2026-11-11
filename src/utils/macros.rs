@@ -80,6 +80,35 @@ pub(crate) fn json_column<T: serde::de::DeserializeOwned>(
 /// Implement `FromQuery` for a projection of a table: a struct holding some of its columns
 /// and relation columns, under the same names as in the table's `as_table!` definition.
 ///
+/// Each mapping is `struct_field: column`, so a field may be named differently from its column.
+///
+/// # Relation columns
+///
+/// Besides its own columns, a projection can read related rows in the same query (each one is a
+/// correlated subquery, so a row with no relations gives an empty `Vec`):
+///
+/// | Table | Relation column | Type |
+/// |-------|-----------------|------|
+/// | [`Post`](crate::Post) | `author_posts` | `Vec<AuthorId>` |
+/// | | `post_tags` | `Vec<TagId>` |
+/// | | `collection_posts` | `Vec<CollectionId>` |
+/// | | `file_metas` | `Vec<FileMeta>` (whole rows) |
+/// | [`Author`](crate::Author) | `author_posts` | `Vec<PostId>` |
+/// | | `author_aliases` | `Vec<Alias>` (whole rows) |
+/// | [`Tag`](crate::Tag) | `post_tags` | `Vec<PostId>` |
+/// | [`Collection`](crate::Collection) | `collection_posts` | `Vec<PostId>` |
+/// | [`Platform`](crate::Platform) | `posts` | `Vec<PostId>` |
+/// | | `tags` | `Vec<TagId>` |
+/// | | `author_aliases` | `Vec<AuthorId>` |
+///
+/// They work with [`Repo::get`](crate::query::Repo::get),
+/// [`Repo::get_many`](crate::query::Repo::get_many) and [`Query::query`](crate::query::Query::query).
+/// In a list every row runs the subqueries, so keep list projections to what you show.
+///
+/// # Examples
+///
+/// A post card with its author ids:
+///
 /// ```
 /// use post_archiver::{impl_from_query, manager::PostArchiverManager, query::PostArchiverQueryExt};
 /// use post_archiver::{AuthorId, FileMetaId, Post, PostId};
@@ -103,6 +132,56 @@ pub(crate) fn json_column<T: serde::de::DeserializeOwned>(
 /// let manager = PostArchiverManager::open_in_memory().unwrap();
 /// let card: Option<PostCard> = manager.posts().get(PostId(1)).unwrap();
 /// # assert!(card.is_none());
+/// ```
+///
+/// A post page and an author page, each read in one query (whole `FileMeta` / `Alias` rows):
+///
+/// ```
+/// use post_archiver::{impl_from_query, manager::PostArchiverManager, query::PostArchiverQueryExt};
+/// use post_archiver::{Alias, Author, AuthorId, Content, FileMeta, Post, PostId, TagId};
+///
+/// struct PostPage {
+///     title: String,
+///     content: Vec<Content>,
+///     tags: Vec<TagId>,          // ids: load the rows with `manager.tags().get_many(tags)`
+///     files: Vec<FileMeta>,      // every file of the post
+/// }
+///
+/// impl_from_query! {
+///     PostPage extends Post {
+///         title: title,
+///         content: content,
+///         tags: post_tags,
+///         files: file_metas,
+///     }
+/// }
+///
+/// struct AuthorPage {
+///     name: String,
+///     aliases: Vec<Alias>,
+/// }
+///
+/// impl_from_query! {
+///     AuthorPage extends Author {
+///         name: name,
+///         aliases: author_aliases,
+///     }
+/// }
+///
+/// let manager = PostArchiverManager::open_in_memory().unwrap();
+/// # manager.conn.execute_batch(r#"
+/// #     INSERT INTO posts (id, title, content) VALUES (1, 'Hello', '["hi", 1]');
+/// #     INSERT INTO file_metas (id, post, filename, mime) VALUES (1, 1, 'a.png', 'image/png');
+/// #     INSERT INTO authors (id, name) VALUES (1, 'Alice');
+/// #     INSERT INTO author_aliases (source, platform, target) VALUES ('alice', 0, 1);
+/// # "#).unwrap();
+/// let post: PostPage = manager.posts().get(PostId(1)).unwrap().unwrap();
+/// assert_eq!(post.title, "Hello");
+/// assert!(post.tags.is_empty());
+/// assert_eq!(post.files[0].filename, "a.png");
+///
+/// let author: AuthorPage = manager.authors().get(AuthorId(1)).unwrap().unwrap();
+/// assert_eq!((author.name.as_str(), author.aliases[0].source.as_str()), ("Alice", "alice"));
 /// ```
 #[macro_export]
 macro_rules! impl_from_query {

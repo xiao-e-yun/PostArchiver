@@ -26,7 +26,8 @@
 |-----|-----|
 | `PostArchiverManager<C>`, `manager.transaction()` / `commit()` | `PostArchiverManager` (no type parameter); group imports with `manager.importer().savepoint()` and `commit()` |
 | `manager.bind(id)` | same, through `PostArchiverBindExt`, which also works on any `Deref<Target = Connection>` |
-| `get_post(id)`, `get_author(id)`, ... | `manager.posts().get(id)`, `manager.authors().get(id)`, ... (`PostArchiverQueryExt`); any `FromQuery` type works, e.g. `get::<MyCard>(id)` |
+| `get_post(id)`, `get_author(id)`, ... | `manager.posts().get(id)`, `manager.authors().get(id)`, ... (`PostArchiverQueryExt`), and `get_many(ids)` for a set; any `FromQuery` type works, e.g. `get::<MyCard>(id)` |
+| `list_author_aliases(author)` | `manager.bind(author).list_aliases()`, or an `impl_from_query!` projection with the `author_aliases` relation column |
 | `find_post`, `find_author_by_alias`, `find_tag`, ... | `importer.lookup_post`, `lookup_author`, `lookup_tag`, ... |
 | `list_post_tags(post)`, `add_post_tags(post, ..)`, ... | `manager.bind(post).list_tags()`, `.add_tags(..)`, ... |
 | `import_post(post, update_relation) -> (PostId, Vec<AuthorId>, Vec<CollectionId>)` | `import_post(post) -> PostId` |
@@ -35,7 +36,8 @@
 | `UnsyncFileMeta { data: FileMetaContent, .. }` | `UnsyncFileMeta { source: PathBuf, .. }`: the file is copied in; deleting the source is up to the caller |
 | `UpdateFileMeta::content()` / `path()` | removed; re-import the file with the same filename to replace its content |
 | `Paginate` / `Countable` / `Sortable` wrappers, `with_total()` | `q.pagination`, `q.order` fields and `q.count()` on the query builder |
-| `#[macro_export] as_table!` | crate-private; use `impl_from_query!` to define projections (it no longer needs `rusqlite` in your dependencies) |
+| `POSTS_PRE_CHUNK`, `Post::POSTS_PRE_CHUNK` | `Post::POSTS_PER_CHUNK`; prefer `Post::directory(id)` / `FileMeta::path()` |
+| `#[macro_export] as_table!` | crate-private; use `impl_from_query!` to define projections (it no longer needs `rusqlite` in your dependencies). Projections can read relation columns, e.g. a post with its tag ids and file metas, or an author with its aliases, in one query |
 
 ### Fixes
 

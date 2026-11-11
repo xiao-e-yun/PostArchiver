@@ -28,13 +28,20 @@ pub struct Post {
 }
 
 impl Post {
-    /// The number of posts in one chunk.
-    pub const POSTS_PRE_CHUNK: u32 = 2048;
+    /// The number of post directories in one chunk directory.
+    pub const POSTS_PER_CHUNK: u32 = 2048;
 
+    /// Directory of a post's files, relative to the archive root: `<chunk>/<index>`,
+    /// where `<chunk>` is `post_id / POSTS_PER_CHUNK` and `<index>` is `post_id % POSTS_PER_CHUNK`.
+    ///
+    /// ```
+    /// use post_archiver::{Post, PostId};
+    /// assert_eq!(Post::directory(PostId::new(2049)).to_str(), Some("1/1"));
+    /// ```
     pub fn directory(post_id: PostId) -> PathBuf {
         let id = post_id.raw();
-        let chunk = id / Self::POSTS_PRE_CHUNK;
-        let index = id % Self::POSTS_PRE_CHUNK;
+        let chunk = id / Self::POSTS_PER_CHUNK;
+        let index = id % Self::POSTS_PER_CHUNK;
         PathBuf::from(chunk.to_string()).join(index.to_string())
     }
 }

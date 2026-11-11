@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use log::{debug, info};
-use post_archiver_latest::POSTS_PRE_CHUNK;
+use post_archiver_latest::{Post, PostId};
 use rusqlite::Transaction;
 
 use crate::MigrationDatabase;
@@ -279,13 +279,11 @@ UPDATE post_archiver_meta SET version = '0.4.0';
             let author_id: u32 = row.get(1).unwrap();
 
             // Move the post to the author's directory
-            let chunk = post_id / POSTS_PRE_CHUNK;
-            let index = post_id % POSTS_PRE_CHUNK;
             let source = path
                 .join("v3_old")
                 .join(author_id.to_string())
                 .join(post_id.to_string());
-            let target = path.join(chunk.to_string()).join(index.to_string());
+            let target = path.join(Post::directory(PostId::new(post_id)));
 
             if source.exists() {
                 debug!(

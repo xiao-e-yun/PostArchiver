@@ -397,6 +397,29 @@ fn get_full_entity_and_missing_id() {
 }
 
 #[test]
+fn get_many_skips_missing_and_duplicates() {
+    let f = fixture();
+    let mut posts: Vec<Post> =
+        f.a.m
+            .posts()
+            .get_many([f.p[2], f.p[0], f.p[2], PostId(9999)])
+            .unwrap();
+    posts.sort_by_key(|p| p.id.raw());
+    assert_eq!(
+        posts.iter().map(|p| p.id).collect::<Vec<_>>(),
+        vec![f.p[0], f.p[2]]
+    );
+
+    // single id, and a projection
+    let cards: Vec<AuthorCard> = f.a.m.authors().get_many([f.bob]).unwrap();
+    assert_eq!(cards.len(), 1);
+    assert_eq!(cards[0].author_aliases[0].source, "bob");
+
+    // empty input means no rows, not the whole table
+    assert!(f.a.m.posts().get_many::<Post>([]).unwrap().is_empty());
+}
+
+#[test]
 fn projection_with_relation_columns() {
     let f = fixture();
     let card: PostCard = f.a.m.posts().get(f.p[1]).unwrap().unwrap();
@@ -490,5 +513,6 @@ fn other_entity_queries() {
     q.mime.starts_with("image/");
     assert_eq!(q.count().unwrap(), 1);
 
-    assert_eq!(f.a.m.authors().list_aliases(f.bob).unwrap().len(), 1);
+    let bob: AuthorCard = f.a.m.authors().get(f.bob).unwrap().unwrap();
+    assert_eq!(bob.author_aliases.len(), 1);
 }

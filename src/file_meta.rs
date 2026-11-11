@@ -11,9 +11,6 @@ use crate::{
     Post,
 };
 
-/// The number of posts in one chunk.
-pub const POSTS_PRE_CHUNK: u32 = 2048;
-
 /// Metadata for a file in the system with hierarchical path organization
 #[cfg_attr(feature = "typescript", derive(TS))]
 #[cfg_attr(feature = "typescript", ts(export))]
@@ -28,11 +25,8 @@ pub struct FileMeta {
 }
 
 impl FileMeta {
-    /// Returns relative path to the file.  
-    /// it will be `<chunk>/<index>/<filename>`.  
-    /// the `<chunk>` is `postId / POSTS_PRE_CHUNK`,
-    /// the `<index>` is `postId % POSTS_PRE_CHUNK`,
-    /// [`POSTS_PRE_CHUNK`] is a constant that defines how many posts are in one chunk. (default is 2048).
+    /// Returns the path of the file relative to the archive root:
+    /// `<chunk>/<index>/<filename>`, inside [`Post::directory`].
     ///
     /// # Examples
     /// ```rust
@@ -57,6 +51,7 @@ impl FileMeta {
         directory.join(&self.filename)
     }
 
+    /// Directory of the file, see [`Post::directory`].
     pub fn directory(&self) -> PathBuf {
         Post::directory(self.post)
     }

@@ -12,9 +12,10 @@
 //! - `pagination`: [`Pagination`], e.g. `Pagination::default().limit(20).page(1)`
 //! - [`Query::count()`] returns the number of matching rows, ignoring `order` and `pagination`
 //!
-//! Single rows are fetched by ID with [`Repo::get()`], into any [`FromQuery`] type based on
-//! that table (the entity itself, or a projection made with
-//! [`impl_from_query!`](crate::impl_from_query)).
+//! Rows are fetched by ID with [`Repo::get()`] (one) or [`Repo::get_many()`] (a set), into any
+//! [`FromQuery`] type based on that table (the entity itself, or a projection made with
+//! [`impl_from_query!`](crate::impl_from_query), which can also read relation columns such as
+//! a post's tags or an author's aliases in the same query).
 //!
 //! # Entry points ([`PostArchiverQueryExt`], on the manager or any `Deref<Target = Connection>`)
 //!
@@ -113,6 +114,45 @@ impl<'a, T: AsTable + HasId> Repo<'a, T> {
         let sql = format!("SELECT {} FROM {} WHERE id = ?", U::fields(), T::TABLE_NAME);
         let mut stmt = self.conn.prepare_cached(&sql)?;
         Ok(stmt.query_row(params![id], U::from_row).optional()?)
+    }
+
+    /// Fetch every row whose ID is in `ids`, into any [`FromQuery`] type based on this table.
+    ///
+    /// Duplicate IDs are ignored and missing IDs are skipped. Rows come back in table order,
+    /// not in the order of `ids`. An empty `ids` returns an empty `Vec` without querying
+    /// (unlike an empty [`IdFilter`](filter::IdFilter), which matches every row).
+    ///
+    /// ```
+    /// # use post_archiver::manager::PostArchiverManager;
+    /// use post_archiver::query::PostArchiverQueryExt;
+    /// use post_archiver::{Tag, TagId};
+    /// # let manager = PostArchiverManager::open_in_memory().unwrap();
+    /// let tags: Vec<Tag> = manager.tags().get_many([TagId(1), TagId(2)]).unwrap();
+    /// # assert!(tags.is_empty());
+    /// let none: Vec<Tag> = manager.tags().get_many([]).unwrap();
+    /// # assert!(none.is_empty());
+    /// ```
+    pub fn get_many<U: FromQuery<Based = T>>(
+        &self,
+        ids: impl IntoIterator<Item = T::Id>,
+    ) -> crate::error::Result<Vec<U>>
+    where
+        T::Id: serde::Serialize + Copy + 'static,
+    {
+        let mut filter = filter::IdFilter::new("id");
+        filter.extend(ids);
+        if filter.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let (sql, params) = SqlBuilder::table(T::TABLE_NAME)
+            .select(U::fields())
+            .filter(&filter)
+            .build();
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let params = params.iter().map(|p| p.as_ref()).collect::<Vec<_>>();
+        let rows = stmt.query_map(params.as_slice(), U::from_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 }
 
