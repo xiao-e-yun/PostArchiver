@@ -228,6 +228,7 @@ pub type Param = Box<dyn ToSql>;
 pub struct Pagination {
     limit: Option<u64>,
     offset: Option<u64>,
+    is_page: bool,
 }
 
 impl Pagination {
@@ -237,12 +238,12 @@ impl Pagination {
     }
     pub fn offset(mut self, offset: u64) -> Self {
         self.offset = Some(offset);
+        self.is_page = false;
         self
     }
     pub fn page(mut self, page: u64) -> Self {
-        if let Some(limit) = self.limit {
-            self.offset = Some(page * limit);
-        }
+        self.offset = Some(page);
+        self.is_page = true;
         self
     }
     pub fn extract(&self) -> Option<(String, Vec<Param>)> {
@@ -256,7 +257,10 @@ impl Pagination {
                         Some(l) => Box::new(l) as Param,
                         None => Box::new(-1) as Param,
                     },
-                    Box::new(offset) as Param,
+                    Box::new(match self.is_page {
+                        true => offset * limit.unwrap_or(0),
+                        false => offset,
+                    }) as Param,
                 ],
             )),
         }
