@@ -38,9 +38,10 @@ fn fixture() -> Fixture {
     let mut a = Archive::new();
     let pixiv = a.m.importer().import_platform("pixiv".into()).unwrap();
     let fanbox = a.m.importer().import_platform("fanbox".into()).unwrap();
-    let alice =
-        UnsyncAuthor::new("Alice".into()).aliases(vec![UnsyncAlias::new(pixiv, "alice".into())]);
-    let bob = UnsyncAuthor::new("Bob".into()).aliases(vec![UnsyncAlias::new(pixiv, "bob".into())]);
+    let alice = UnsyncAuthor::new("Alice".into())
+        .aliases(vec![UnsyncAlias::new("pixiv".into(), "alice".into())]);
+    let bob = UnsyncAuthor::new("Bob".into())
+        .aliases(vec![UnsyncAlias::new("pixiv".into(), "bob".into())]);
     let general = UnsyncTag {
         name: "general".into(),
         platform: None,
@@ -94,8 +95,8 @@ fn fixture() -> Fixture {
 
     let imp = a.m.importer();
     let fixture_ids = (
-        imp.lookup_author(alice).unwrap().unwrap(),
-        imp.lookup_author(bob).unwrap().unwrap(),
+        imp.lookup_author("alice", pixiv).unwrap().unwrap(),
+        imp.lookup_author("bob", pixiv).unwrap().unwrap(),
         imp.lookup_tag("general", None).unwrap().unwrap(),
         imp.lookup_tag("local", Some(pixiv)).unwrap().unwrap(),
         imp.lookup_collection("series").unwrap().unwrap(),

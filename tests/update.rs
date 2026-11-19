@@ -12,7 +12,7 @@ use post_archiver::{
         UpdatePost, UpdateTag,
     },
     query::{PostArchiverQueryExt, Query},
-    Comment, Content, PlatformId, Post,
+    Comment, Content, Post,
 };
 
 // ── Field round-trips: set every field once, read it back ─────────────────────
@@ -237,7 +237,7 @@ fn deleting_a_post_removes_its_relations_and_file_metas() {
         post("s1")
             .content(vec![file_content(&img)])
             .authors(vec![UnsyncAuthor::new("A".into())
-                .aliases(vec![UnsyncAlias::new(PlatformId(0), "a".into())])])
+                .aliases(vec![UnsyncAlias::new("unknown".into(), "a".into())])])
             .tags(vec![UnsyncTag {
                 name: "t".into(),
                 platform: None,

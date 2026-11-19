@@ -36,17 +36,17 @@ fn tag_uniqueness() {
 #[test]
 fn same_alias_source_on_two_platforms_are_two_authors() {
     let mut a = Archive::new();
-    let pixiv = a.m.importer().import_platform("pixiv".into()).unwrap();
-    let fanbox = a.m.importer().import_platform("fanbox".into()).unwrap();
     let mut imp = a.m.importer();
     let on_pixiv = imp
         .import_author(
-            UnsyncAuthor::new("P".into()).aliases(vec![UnsyncAlias::new(pixiv, "123".into())]),
+            UnsyncAuthor::new("P".into())
+                .aliases(vec![UnsyncAlias::new("pixiv".into(), "123".into())]),
         )
         .unwrap();
     let on_fanbox = imp
         .import_author(
-            UnsyncAuthor::new("F".into()).aliases(vec![UnsyncAlias::new(fanbox, "123".into())]),
+            UnsyncAuthor::new("F".into())
+                .aliases(vec![UnsyncAlias::new("fanbox".into(), "123".into())]),
         )
         .unwrap();
 

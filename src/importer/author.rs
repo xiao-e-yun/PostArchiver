@@ -11,7 +11,7 @@ use crate::{
 
 impl<C: SavepointExt> Importer<'_, '_, C> {
     pub fn import_author(&mut self, author: UnsyncAuthor) -> Result<AuthorId> {
-        let aliases = self.resolve_aliases(author.aliases);
+        let aliases = self.resolve_aliases(author.aliases)?;
         let id = aliases
             .iter()
             .find_map(|(s, p, _)| self.lookup_author(s, *p).transpose())
@@ -51,18 +51,18 @@ impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
         Ok(query.optional()?)
     }
 
+    /// Resolve alias platform names to IDs, creating platforms that don't exist yet.
+    /// Falling back to "unknown" would file the alias under the wrong platform, so later
+    /// lookups by the real platform (e.g. merging authors across tools) would miss it.
     fn resolve_aliases(
         &self,
         aliases: Vec<UnsyncAlias>,
-    ) -> Vec<(String, PlatformId, Option<String>)> {
+    ) -> Result<Vec<(String, PlatformId, Option<String>)>> {
         aliases
             .into_iter()
             .map(|alias| {
-                let platform = match self.lookup_platform(&alias.platform) {
-                    Ok(Some(id)) => id,
-                    _ => PlatformId(0),
-                };
-                (alias.source, platform, alias.link)
+                let platform = self.import_platform(alias.platform)?;
+                Ok((alias.source, platform, alias.link))
             })
             .collect()
     }

@@ -9,11 +9,11 @@ use post_archiver::{
     },
     manager::PostArchiverBindExt,
     query::{PostArchiverQueryExt, Query},
-    Author, Collection, Comment, Content, Platform, PlatformId, Post, Tag,
+    Author, Collection, Comment, Content, Platform, Post, Tag,
 };
 
-fn author(name: &str, platform: PlatformId, source: &str) -> UnsyncAuthor {
-    UnsyncAuthor::new(name.into()).aliases(vec![UnsyncAlias::new(platform, source.into())])
+fn author(name: &str, platform: &str, source: &str) -> UnsyncAuthor {
+    UnsyncAuthor::new(name.into()).aliases(vec![UnsyncAlias::new(platform.into(), source.into())])
 }
 
 // ── Posts ─────────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ fn import_post_with_everything() {
                     platform: Some(pixiv),
                 },
             ])
-            .authors(vec![author("Alice", pixiv, "alice")])
+            .authors(vec![author("Alice", "pixiv", "alice")])
             .collections(vec![UnsyncCollection::new(
                 "Series".into(),
                 "https://pixiv/s/1".into(),
@@ -169,19 +169,17 @@ fn lookups() {
 #[test]
 fn authors_are_merged_by_alias_and_aliases_are_updated() {
     let mut a = Archive::new();
-    let pixiv = a.m.importer().import_platform("pixiv".into()).unwrap();
-    let fanbox = a.m.importer().import_platform("fanbox".into()).unwrap();
 
     let first =
         a.m.importer()
-            .import_author(author("Alice", pixiv, "alice"))
+            .import_author(author("Alice", "pixiv", "alice"))
             .unwrap();
     // same pixiv alias plus a new fanbox alias, new name and a new link
     let second =
         a.m.importer()
             .import_author(UnsyncAuthor::new("Alice2".into()).aliases(vec![
-                UnsyncAlias::new(pixiv, "alice".into()).link("https://pixiv/alice"),
-                UnsyncAlias::new(fanbox, "alice-fb".into()),
+                UnsyncAlias::new("pixiv".into(), "alice".into()).link("https://pixiv/alice"),
+                UnsyncAlias::new("fanbox".into(), "alice-fb".into()),
             ]))
             .unwrap();
 
@@ -203,7 +201,7 @@ fn author_and_collection_follow_latest_post() {
     let mut a = Archive::new();
     let older = a.file("old.png", "old.png", b"OLD");
     let newer = a.file("new.png", "new.png", b"NEW");
-    let alice = author("Alice", PlatformId(0), "alice");
+    let alice = author("Alice", "unknown", "alice");
     let series = UnsyncCollection::new("Series".into(), "series".into());
 
     let new_post = a.import(
@@ -370,4 +368,27 @@ fn nested_rollback_keeps_files_staged_by_the_parent() {
 
     assert_eq!(a.read(id, "1.png").as_deref(), Some(&b"PNG"[..]));
     assert!(a.leftovers().is_empty());
+}
+
+#[test]
+fn alias_on_a_new_platform_creates_it() {
+    let mut a = Archive::new();
+    // "fanbox" doesn't exist yet: the alias must not fall back to the unknown platform,
+    // otherwise a later lookup by the real platform can't merge authors across tools.
+    let id =
+        a.m.importer()
+            .import_author(author("Alice", "fanbox", "alice"))
+            .unwrap();
+
+    let mut imp = a.m.importer();
+    let fanbox = imp
+        .lookup_platform("fanbox")
+        .unwrap()
+        .expect("platform created");
+    assert_eq!(imp.lookup_author("alice", fanbox).unwrap(), Some(id));
+
+    let merged = imp
+        .import_author(author("Alice", "fanbox", "alice"))
+        .unwrap();
+    assert_eq!(merged, id);
 }
