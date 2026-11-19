@@ -11,8 +11,11 @@ use crate::{
 
 impl<C: SavepointExt> Importer<'_, '_, C> {
     pub fn import_author(&mut self, author: UnsyncAuthor) -> Result<AuthorId> {
-        let id = self.lookup_author(author.clone())?;
-        let aliases = author.aliases.into_iter().map(|v| v.into());
+        let aliases = self.resolve_aliases(author.aliases);
+        let id = aliases
+            .iter()
+            .find_map(|(s, p, _)| self.lookup_author(s, *p).transpose())
+            .transpose()?;
         let id = match id {
             Some(id) => {
                 let sp = self.savepoint()?;
@@ -40,17 +43,28 @@ impl<C: SavepointExt> Importer<'_, '_, C> {
 }
 
 impl<C: Deref<Target = Connection>> Importer<'_, '_, C> {
-    pub fn lookup_author(&self, author: UnsyncAuthor) -> Result<Option<AuthorId>> {
+    pub fn lookup_author(&self, source: &str, platform: PlatformId) -> Result<Option<AuthorId>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT target FROM author_aliases WHERE platform = ? AND source = ?",
         )?;
-        for alias in &author.aliases {
-            let query = stmt.query_row(params![alias.platform, alias.source], |row| row.get(0));
-            if let Some(author_id) = query.optional()? {
-                return Ok(Some(author_id));
-            }
-        }
-        Ok(None)
+        let query = stmt.query_row(params![platform, source], |row| row.get(0));
+        Ok(query.optional()?)
+    }
+
+    fn resolve_aliases(
+        &self,
+        aliases: Vec<UnsyncAlias>,
+    ) -> Vec<(String, PlatformId, Option<String>)> {
+        aliases
+            .into_iter()
+            .map(|alias| {
+                let platform = match self.lookup_platform(&alias.platform) {
+                    Ok(Some(id)) => id,
+                    _ => PlatformId(0),
+                };
+                (alias.source, platform, alias.link)
+            })
+            .collect()
     }
 }
 
@@ -84,12 +98,12 @@ impl UnsyncAuthor {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsyncAlias {
     pub source: String,
-    pub platform: PlatformId,
+    pub platform: String,
     pub link: Option<String>,
 }
 
 impl UnsyncAlias {
-    pub fn new(platform: PlatformId, source: String) -> Self {
+    pub fn new(platform: String, source: String) -> Self {
         Self {
             link: None,
             source,
@@ -102,7 +116,7 @@ impl UnsyncAlias {
         self
     }
 
-    pub fn platform(mut self, platform: PlatformId) -> Self {
+    pub fn platform(mut self, platform: String) -> Self {
         self.platform = platform;
         self
     }
@@ -110,11 +124,5 @@ impl UnsyncAlias {
     pub fn link<S: Into<String>>(mut self, link: S) -> Self {
         self.link = Some(link.into());
         self
-    }
-}
-
-impl From<UnsyncAlias> for (String, PlatformId, Option<String>) {
-    fn from(val: UnsyncAlias) -> Self {
-        (val.source, val.platform, val.link)
     }
 }
