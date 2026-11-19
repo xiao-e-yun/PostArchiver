@@ -13,3 +13,6 @@ jobs:
 
       - name: cargo test
         run: cargo test --all-features
+
+      - name: cargo test (post-archiver-tools)
+        run: cargo test --manifest-path post-archiver-tools/Cargo.toml

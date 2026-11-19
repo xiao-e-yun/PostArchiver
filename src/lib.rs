@@ -18,7 +18,7 @@
 //! WAL mode, so `post-archiver.db-wal` / `post-archiver.db-shm` may sit next to it while it is
 //! open. Copy all three (or close every connection first) when backing up an archive.
 //!
-//! Archives created by older versions are upgraded with `post-archiver-bridge`.
+//! Archives created by older versions are upgraded with `post-archiver migrate` from `post-archiver-tools`.
 //!
 //! # Core Types
 //! The system is built around several core types:

@@ -1,4 +1,4 @@
-name: Release Bridge
+name: Release Tools
       
 permissions:
   contents: write
@@ -6,7 +6,7 @@ permissions:
 on:
   push:
     tags:
-      - bridge-v[0-9]+.*
+      - tools-v[0-9]+.*
 
 jobs:
   create-release:
@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/create-gh-release-action@v1
         with:
-          prefix: bridge-
+          prefix: tools-
           # (required) GitHub token for creating GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -45,10 +45,10 @@ jobs:
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
         
-          manifest-path: post-archiver-bridge/Cargo.toml
+          manifest-path: post-archiver-tools/Cargo.toml
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
           # Note that glob pattern is not supported yet.
-          bin: post-archiver-bridge
+          bin: post-archiver
           # (optional) Target triple, default is host triple.
           # This is optional but it is recommended that this always be set to
           # clarify which target you are building for if macOS is included in
