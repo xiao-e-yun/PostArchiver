@@ -43,8 +43,8 @@ post-archiver info <archive>               # version and statistics
 post-archiver migrate <archive> [--yes]    # upgrade in place to the latest version
 post-archiver vacuum <archive> [--dry-run] # remove unreferenced files, then VACUUM the database
 ```
-`migrate` cannot be undone: back up `post-archiver.db` first. To keep the old archive untouched,
-migrate a hard-linked copy instead (`cp -al <archive> <new-archive>`).
+`migrate` cannot be undone and changes the database in place: back up `post-archiver.db` first
+(e.g. `sqlite3 <archive>/post-archiver.db ".backup <backup>"`).
 See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Build 

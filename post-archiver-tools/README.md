@@ -19,8 +19,8 @@ tools you use support the new version.
 ### migrate
 
 Upgrades the archive in place, step by step. **This cannot be undone**: back up the database first,
-e.g. `sqlite3 <archive>/post-archiver.db ".backup post-archiver.db.bak"`, or migrate a hard-linked
-copy (`cp -al <archive> <new-archive>`) to keep the old archive untouched.
+e.g. `sqlite3 <archive>/post-archiver.db ".backup post-archiver.db.bak"`. (A hard-linked copy made
+with `cp -al` shares the database file, so migrating it would change the original too.)
 
 It asks for confirmation unless `--yes` is given. Without a terminal (scripts, agents) it refuses to
 run unless `--yes` is given. Each database step runs in its own transaction.
