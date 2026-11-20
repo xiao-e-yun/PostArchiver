@@ -23,12 +23,14 @@ jobs:
   upload-assets:
     needs: create-release
     strategy:
+      # Keep the other platforms' uploads going if one build fails.
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          # - target: x86_64-apple-darwin
-          #   os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
 
